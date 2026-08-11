@@ -1,18 +1,33 @@
 import React, { useState } from 'react';
-import { Clock, Calendar, CheckCircle2, AlertCircle, Plus, UserCheck } from 'lucide-react';
+import { Clock, Calendar, CheckCircle2, AlertCircle, Plus, UserCheck, Play, Square } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
+import { Modal } from '../../../components/common/Modal';
+import { Input } from '../../../components/common/Input';
+import { Select } from '../../../components/common/Select';
 
 export const AttendancePage: React.FC = () => {
   const { attendanceRecords } = useApp();
   const [activeSubTab, setActiveSubTab] = useState<'daily' | 'roster'>('daily');
+  const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  const [isRegularizeOpen, setIsRegularizeOpen] = useState(false);
 
   const shiftTemplates = [
     { name: 'General Shift (GS)', timing: '09:00 AM - 06:00 PM', grace: '15 mins' },
     { name: 'Morning Shift (MS)', timing: '07:00 AM - 04:00 PM', grace: '15 mins' },
     { name: 'Night Shift (NS)', timing: '09:00 PM - 06:00 AM', grace: '30 mins' }
   ];
+
+  const handlePunchToggle = () => {
+    if (!isCheckedIn) {
+      setIsCheckedIn(true);
+      setCheckInTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    } else {
+      setIsCheckedIn(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -27,13 +42,30 @@ export const AttendancePage: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => setIsRegularizeOpen(true)}>
             <Clock size={14} /> Regularization Request
           </Button>
-          <Button variant="primary" size="sm">
-            Check-In / Out
+          <Button variant={isCheckedIn ? 'danger' : 'primary'} size="sm" onClick={handlePunchToggle}>
+            {isCheckedIn ? <Square size={14} /> : <Play size={14} />}
+            {isCheckedIn ? 'Check Out' : 'Check In'}
           </Button>
         </div>
+      </div>
+
+      {/* Live Punch Status Card */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-4 rounded-xl flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${isCheckedIn ? 'bg-emerald-600' : 'bg-slate-400'}`}>
+            <Clock size={20} />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold text-slate-900">Current Status: {isCheckedIn ? 'Checked In' : 'Checked Out'}</h3>
+            <p className="text-[11px] text-slate-500">
+              {isCheckedIn ? `Punched in at ${checkInTime} • Location: HQ Office` : 'Press Check In button to record today\'s attendance.'}
+            </p>
+          </div>
+        </div>
+        {isCheckedIn && <Badge variant="success">Punched In</Badge>}
       </div>
 
       {/* Sub Tabs */}
@@ -98,6 +130,26 @@ export const AttendancePage: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* Regularization Modal */}
+      <Modal isOpen={isRegularizeOpen} onClose={() => setIsRegularizeOpen(false)} title="Attendance Regularization Request">
+        <div className="space-y-4 text-xs">
+          <Input label="Date" type="date" defaultValue="2026-08-11" />
+          <Select
+            label="Type of Request"
+            options={[
+              { label: 'Missed Punch In', value: 'in' },
+              { label: 'Missed Punch Out', value: 'out' },
+              { label: 'On-Duty Outside Office', value: 'onduty' }
+            ]}
+          />
+          <Input label="Reason" placeholder="Explain the reason for regularization..." />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsRegularizeOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setIsRegularizeOpen(false)}>Submit Request</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

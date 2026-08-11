@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
-import { FileText, Plus, CheckCircle2, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { FileText, Plus, ArrowUpRight, ArrowDownLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
+import { Modal } from '../../../components/common/Modal';
+import { Input } from '../../../components/common/Input';
+import { Select } from '../../../components/common/Select';
 
 export const LedgerPage: React.FC = () => {
   const { journalEntries } = useApp();
   const [activeTab, setActiveTab] = useState<'journals' | 'vouchers'>('journals');
+  const [isPostJournalOpen, setIsPostJournalOpen] = useState(false);
+  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
+
+  // Journal form state
+  const [debitAmount, setDebitAmount] = useState(50000);
+  const [creditAmount, setCreditAmount] = useState(50000);
+  const isBalanced = debitAmount === creditAmount && debitAmount > 0;
 
   const vouchers = [
     { no: 'RCV-901', type: 'Receipt Voucher', party: 'Globex Corp', amount: 450000, date: '2026-08-10', status: 'Posted' },
@@ -26,9 +36,14 @@ export const LedgerPage: React.FC = () => {
             Immutable double-entry journal postings, receipt/payment vouchers, and debit/credit line balances.
           </p>
         </div>
-        <Button variant="primary" size="sm">
-          <Plus size={14} /> Post Journal Entry
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setIsVoucherModalOpen(true)}>
+            <Plus size={14} /> New Voucher
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setIsPostJournalOpen(true)}>
+            <Plus size={14} /> Post Journal Entry
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -98,6 +113,51 @@ export const LedgerPage: React.FC = () => {
           </table>
         </div>
       )}
+
+      {/* Post Journal Modal with Balanced Line Validation */}
+      <Modal isOpen={isPostJournalOpen} onClose={() => setIsPostJournalOpen(false)} title="Post Double-Entry Journal">
+        <div className="space-y-4 text-xs">
+          <Input label="Narration / Reference" placeholder="e.g. Sales Invoice Adjustment" />
+          <div className="grid grid-cols-2 gap-2">
+            <Input label="Debit Line Amount (₹)" type="number" value={debitAmount} onChange={(e) => setDebitAmount(Number(e.target.value))} />
+            <Input label="Credit Line Amount (₹)" type="number" value={creditAmount} onChange={(e) => setCreditAmount(Number(e.target.value))} />
+          </div>
+
+          <div className={`p-3 rounded-lg border text-xs font-semibold ${isBalanced ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+            {isBalanced ? (
+              <span className="flex items-center gap-1"><CheckCircle2 size={16} /> Balanced Entry: Total Debit (₹ {debitAmount}) equals Total Credit (₹ {creditAmount})</span>
+            ) : (
+              <span className="flex items-center gap-1"><AlertCircle size={16} /> Unbalanced Entry: Debit and Credit totals must be equal to post!</span>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsPostJournalOpen(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!isBalanced} onClick={() => setIsPostJournalOpen(false)}>Post Balanced Entry</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Voucher Modal */}
+      <Modal isOpen={isVoucherModalOpen} onClose={() => setIsVoucherModalOpen(false)} title="Create Accounting Voucher">
+        <div className="space-y-4 text-xs">
+          <Select
+            label="Voucher Type"
+            options={[
+              { label: 'Receipt Voucher', value: 'rcv' },
+              { label: 'Payment Voucher', value: 'pmt' },
+              { label: 'Contra Voucher', value: 'cnt' },
+              { label: 'Journal Voucher', value: 'jrn' }
+            ]}
+          />
+          <Input label="Party / Reference Name" placeholder="e.g. Globex Corp" />
+          <Input label="Voucher Amount (₹)" type="number" defaultValue="50000" />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsVoucherModalOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setIsVoucherModalOpen(false)}>Create Voucher</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, Save, Globe, Hash, Percent, Bell } from 'lucide-react';
+import { Settings, Save, Globe, Hash, Percent, Bell, Shield } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Input } from '../../../components/common/Input';
@@ -56,27 +56,24 @@ export const SettingsPage: React.FC = () => {
 
         <div className="space-y-4">
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2">
-            <Hash size={16} className="text-slate-500" /> Numbering Sequences & Localization
+            <Hash size={16} className="text-slate-500" /> Auto-Numbering Sequences
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Base Currency</label>
-              <input
-                type="text"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Voucher Prefix</label>
-              <input
-                type="text"
-                value="VCHR-2026-"
-                disabled
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-500"
-              />
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <Input label="Invoice Prefix" defaultValue="INV-2026-" />
+            <Input label="Voucher Prefix" defaultValue="VCHR-2026-" />
+            <Input label="PO Prefix" defaultValue="PO-2026-" />
+            <Input label="Employee Prefix" defaultValue="EMP-" />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-2">
+            <Percent size={16} className="text-slate-500" /> GST & Statutory Tax Rates
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            <Input label="CGST Rate (%)" type="number" defaultValue="9" />
+            <Input label="SGST Rate (%)" type="number" defaultValue="9" />
+            <Input label="IGST Rate (%)" type="number" defaultValue="18" />
           </div>
         </div>
       </div>

@@ -1,11 +1,15 @@
-import React from 'react';
-import { Receipt, Plus, CheckCircle2, FileText } from 'lucide-react';
+import React, { useState } from 'react';
+import { Receipt, Plus, CheckCircle2, FileText, Upload } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
+import { Modal } from '../../../components/common/Modal';
+import { Input } from '../../../components/common/Input';
+import { Select } from '../../../components/common/Select';
 
 export const ExpensesPage: React.FC = () => {
   const { expenseClaims, approveExpense } = useApp();
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -19,7 +23,7 @@ export const ExpensesPage: React.FC = () => {
             Employee travel, office, client meeting reimbursement claims and approval workflows.
           </p>
         </div>
-        <Button variant="primary" size="sm">
+        <Button variant="primary" size="sm" onClick={() => setIsSubmitModalOpen(true)}>
           <Plus size={14} /> Submit Expense Claim
         </Button>
       </div>
@@ -61,6 +65,34 @@ export const ExpensesPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Submit Expense Claim Modal */}
+      <Modal isOpen={isSubmitModalOpen} onClose={() => setIsSubmitModalOpen(false)} title="Submit Reimbursement Claim">
+        <div className="space-y-4 text-xs">
+          <Select
+            label="Expense Category"
+            options={[
+              { label: 'Travel & Transport', value: 'travel' },
+              { label: 'Client Entertainment / Meals', value: 'meals' },
+              { label: 'Office Supplies', value: 'supplies' },
+              { label: 'Software & Tools', value: 'software' }
+            ]}
+          />
+          <Input label="Claim Amount (₹)" type="number" defaultValue="4500" />
+          <Input label="Description / Business Purpose" placeholder="Explain the expense details..." />
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Receipt Attachment</label>
+            <div className="p-4 border-2 border-dashed border-slate-200 rounded-lg text-center bg-slate-50 text-slate-400 hover:border-amber-400 transition-colors cursor-pointer">
+              <Upload size={20} className="mx-auto mb-1" />
+              <span>Click to attach receipt bill image (PNG, JPG, PDF)</span>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsSubmitModalOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setIsSubmitModalOpen(false)}>Submit Claim</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

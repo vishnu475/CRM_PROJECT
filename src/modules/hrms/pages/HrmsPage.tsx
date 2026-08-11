@@ -1,13 +1,30 @@
 import React, { useState } from 'react';
-import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, IndianRupee } from 'lucide-react';
+import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, CreditCard, Shield, FileText, User } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
+import { Modal } from '../../../components/common/Modal';
+import { Input } from '../../../components/common/Input';
+import { Select } from '../../../components/common/Select';
+import { Employee } from '../../../types';
 
 export const HrmsPage: React.FC = () => {
   const { employees } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('All');
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+
+  // Add Employee Form State
+  const [newEmp, setNewEmp] = useState({
+    name: '',
+    designation: '',
+    department: 'Engineering',
+    salary: 100000,
+    email: '',
+    phone: '',
+    joiningDate: '2026-08-01'
+  });
 
   const filteredEmployees = employees.filter(emp => {
     const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || emp.designation.toLowerCase().includes(searchTerm.toLowerCase());
@@ -27,7 +44,7 @@ export const HrmsPage: React.FC = () => {
             Central employee repository, statutory records, department hierarchies, and lifecycle management.
           </p>
         </div>
-        <Button variant="primary" size="sm">
+        <Button variant="primary" size="sm" onClick={() => setIsAddModalOpen(true)}>
           <Plus size={14} /> Add Employee
         </Button>
       </div>
@@ -57,6 +74,7 @@ export const HrmsPage: React.FC = () => {
             <option value="HR">HR</option>
             <option value="Finance">Finance</option>
             <option value="Engineering">Engineering</option>
+            <option value="Marketing">Marketing</option>
           </select>
         </div>
       </div>
@@ -92,11 +110,68 @@ export const HrmsPage: React.FC = () => {
 
             <div className="pt-2 flex justify-between items-center border-t border-slate-100 text-[10px]">
               <Badge variant="success">Active</Badge>
-              <button className="text-purple-600 font-bold hover:underline">View Profile &rarr;</button>
+              <button onClick={() => setSelectedEmployee(emp)} className="text-purple-600 font-bold hover:underline">View Profile &rr;</button>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Add Employee Modal */}
+      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add New Employee">
+        <div className="space-y-4 text-xs">
+          <Input label="Full Name" placeholder="e.g. Sarah Connor" value={newEmp.name} onChange={(e) => setNewEmp({ ...newEmp, name: e.target.value })} />
+          <Input label="Designation" placeholder="e.g. Senior Software Engineer" value={newEmp.designation} onChange={(e) => setNewEmp({ ...newEmp, designation: e.target.value })} />
+          <Select
+            label="Department"
+            value={newEmp.department}
+            onChange={(e) => setNewEmp({ ...newEmp, department: e.target.value })}
+            options={[
+              { label: 'Engineering', value: 'Engineering' },
+              { label: 'Sales', value: 'Sales' },
+              { label: 'HR', value: 'HR' },
+              { label: 'Finance', value: 'Finance' },
+              { label: 'Marketing', value: 'Marketing' }
+            ]}
+          />
+          <Input label="Monthly Salary (₹)" type="number" value={newEmp.salary} onChange={(e) => setNewEmp({ ...newEmp, salary: Number(e.target.value) })} />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setIsAddModalOpen(false)}>Save Employee</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* View Employee Details Modal */}
+      {selectedEmployee && (
+        <Modal isOpen={!!selectedEmployee} onClose={() => setSelectedEmployee(null)} title={`Employee Profile: ${selectedEmployee.name}`}>
+          <div className="space-y-4 text-xs">
+            <div className="flex items-center space-x-3 bg-purple-50 p-3 rounded-lg border border-purple-100">
+              <div className="w-12 h-12 rounded-full bg-purple-600 text-white font-bold text-lg flex items-center justify-center">
+                {selectedEmployee.name.charAt(0)}
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">{selectedEmployee.name}</h3>
+                <p className="text-purple-700 font-semibold">{selectedEmployee.designation} • {selectedEmployee.department}</p>
+                <p className="text-slate-400 font-mono text-[10px]">ID: {selectedEmployee.id}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
+              <h4 className="font-bold text-slate-700 uppercase text-[10px] tracking-wider">Statutory & Bank Records</h4>
+              <div className="grid grid-cols-2 gap-2 text-slate-600">
+                <p><span className="text-slate-400">PAN:</span> ABCDE1234F</p>
+                <p><span className="text-slate-400">PF UAN:</span> 100987654321</p>
+                <p><span className="text-slate-400">Bank Acc:</span> 98765432101</p>
+                <p><span className="text-slate-400">IFSC Code:</span> HDFC0001234</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setSelectedEmployee(null)}>Close</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

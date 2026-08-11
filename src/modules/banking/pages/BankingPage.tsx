@@ -1,11 +1,22 @@
-import React from 'react';
-import { Landmark, Plus, ArrowUpRight, ArrowDownLeft, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Landmark, Plus, ArrowUpRight, ArrowDownLeft, RefreshCw, ArrowRightLeft } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
+import { Modal } from '../../../components/common/Modal';
+import { Input } from '../../../components/common/Input';
+import { Select } from '../../../components/common/Select';
 
 export const BankingPage: React.FC = () => {
   const { bankAccounts } = useApp();
+  const [isReconcileOpen, setIsReconcileOpen] = useState(false);
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
+
+  const transactions = [
+    { date: '2026-08-11', desc: 'Customer Receipt - Globex Corp', type: 'Credit', amount: 450000, acc: 'HDFC Bank' },
+    { date: '2026-08-10', desc: 'Vendor Payment - Office Supplies Ltd', type: 'Debit', amount: 125000, acc: 'HDFC Bank' },
+    { date: '2026-08-08', desc: 'Petty Cash Deposit', type: 'Credit', amount: 50000, acc: 'Axis Cash Account' }
+  ];
 
   return (
     <div className="space-y-6">
@@ -20,7 +31,10 @@ export const BankingPage: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => setIsTransferOpen(true)}>
+            <ArrowRightLeft size={14} /> Fund Transfer
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setIsReconcileOpen(true)}>
             <RefreshCw size={14} /> Bank Reconciliation
           </Button>
           <Button variant="primary" size="sm">
@@ -47,6 +61,72 @@ export const BankingPage: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* Transactions History */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Recent Bank & Cash Transactions</h3>
+        <div className="divide-y divide-slate-100 text-xs">
+          {transactions.map((tx, idx) => (
+            <div key={idx} className="py-3 flex justify-between items-center">
+              <div>
+                <p className="font-bold text-slate-900">{tx.desc}</p>
+                <p className="text-[10px] text-slate-400">{tx.acc} • {tx.date}</p>
+              </div>
+              <div className="text-right">
+                <p className={`font-bold ${tx.type === 'Credit' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {tx.type === 'Credit' ? '+' : '-'} ₹ {tx.amount.toLocaleString()}
+                </p>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">{tx.type}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Reconciliation Modal */}
+      <Modal isOpen={isReconcileOpen} onClose={() => setIsReconcileOpen(false)} title="Bank Statement Reconciliation">
+        <div className="space-y-4 text-xs">
+          <Select
+            label="Select Bank Account"
+            options={[
+              { label: 'HDFC Corporate Account', value: 'hdfc' },
+              { label: 'Axis Cash Account', value: 'axis' }
+            ]}
+          />
+          <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg text-indigo-900 space-y-1">
+            <p>• Ledger Cash Book Balance: ₹ 4,500,000</p>
+            <p>• Statement Import Balance: ₹ 4,500,000</p>
+            <p className="font-bold text-emerald-600">Status: Perfectly Reconciled (Diff: ₹ 0)</p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsReconcileOpen(false)}>Close</Button>
+            <Button variant="primary" onClick={() => setIsReconcileOpen(false)}>Run Automated Matcher</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Inter-Account Transfer Modal */}
+      <Modal isOpen={isTransferOpen} onClose={() => setIsTransferOpen(false)} title="Inter-Account Fund Transfer">
+        <div className="space-y-4 text-xs">
+          <Select
+            label="From Account"
+            options={[
+              { label: 'HDFC Corporate Account', value: 'hdfc' }
+            ]}
+          />
+          <Select
+            label="To Account"
+            options={[
+              { label: 'Axis Cash Account', value: 'axis' }
+            ]}
+          />
+          <Input label="Transfer Amount (₹)" type="number" defaultValue="50000" />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsTransferOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setIsTransferOpen(false)}>Confirm Transfer</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

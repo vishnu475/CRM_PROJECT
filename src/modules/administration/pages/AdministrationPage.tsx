@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Users, Building, Lock, FileKey, Check, Plus, Edit, Trash2 } from 'lucide-react';
+import { ShieldCheck, Users, Building, Lock, FileKey, Plus, Edit, CheckSquare, Square } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
+import { Modal } from '../../../components/common/Modal';
+import { Input } from '../../../components/common/Input';
+import { Select } from '../../../components/common/Select';
 
 export const AdministrationPage: React.FC = () => {
-  const { companyName, branchName } = useApp();
+  const { companyName } = useApp();
   const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'branches' | 'audit'>('users');
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
 
   const users = [
     { id: 'usr-1', name: 'John Doe', email: 'admin@company.com', role: 'Executive', status: 'Active', lastLogin: '10 mins ago' },
@@ -15,12 +19,23 @@ export const AdministrationPage: React.FC = () => {
     { id: 'usr-4', name: 'Michael Brown', email: 'michael@company.com', role: 'FinanceAccountant', status: 'Active', lastLogin: '5 mins ago' }
   ];
 
-  const roles = [
-    { name: 'Executive', permissions: 'Full Access (All Modules & Audit)', usersCount: 2 },
-    { name: 'SalesManager', permissions: 'CRM, Sales, Customers, Quotes', usersCount: 5 },
-    { name: 'HRAdmin', permissions: 'HRMS, Attendance, Leave, Payroll, ATS', usersCount: 3 },
-    { name: 'FinanceAccountant', permissions: 'COA, Ledger, Vouchers, Banking, Expenses', usersCount: 4 }
-  ];
+  // RBAC permissions grid state
+  const [matrix, setMatrix] = useState({
+    CRM: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
+    HRMS: { view: true, create: true, edit: true, delete: false, approve: true, export: true },
+    Payroll: { view: true, create: false, edit: false, delete: false, approve: false, export: true },
+    Finance: { view: true, create: true, edit: true, delete: false, approve: true, export: true }
+  });
+
+  const toggleMatrix = (module: keyof typeof matrix, perm: keyof (typeof matrix)['CRM']) => {
+    setMatrix(prev => ({
+      ...prev,
+      [module]: {
+        ...prev[module],
+        [perm]: !prev[module][perm]
+      }
+    }));
+  };
 
   const branches = [
     { code: 'HQ-01', name: 'Headquarters (HQ)', city: 'Mumbai', status: 'Active', isPrimary: true },
@@ -40,7 +55,7 @@ export const AdministrationPage: React.FC = () => {
             Manage system access, role permissions, company branches, and security audit logs for {companyName}.
           </p>
         </div>
-        <Button variant="primary" size="sm">
+        <Button variant="primary" size="sm" onClick={() => setIsAddUserOpen(true)}>
           <Plus size={14} /> Add New User
         </Button>
       </div>
@@ -81,7 +96,6 @@ export const AdministrationPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Tab Contents */}
       {activeTab === 'users' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full text-left text-xs text-slate-600">
@@ -114,19 +128,42 @@ export const AdministrationPage: React.FC = () => {
       )}
 
       {activeTab === 'roles' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {roles.map((r, i) => (
-            <div key={i} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
-              <div className="flex justify-between items-center">
-                <h3 className="font-bold text-slate-900 text-sm">{r.name}</h3>
-                <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded font-semibold">{r.usersCount} Assigned Users</span>
-              </div>
-              <p className="text-xs text-slate-500">Scope: {r.permissions}</p>
-              <div className="pt-2 flex gap-2">
-                <Button variant="outline" size="sm">Edit Matrix</Button>
-              </div>
-            </div>
-          ))}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+          <h3 className="font-bold text-slate-900 text-sm">Interactive Permission Matrix (Role: SalesExecutive)</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                <tr>
+                  <th className="p-3 border">Module</th>
+                  <th className="p-3 border text-center">View</th>
+                  <th className="p-3 border text-center">Create</th>
+                  <th className="p-3 border text-center">Edit</th>
+                  <th className="p-3 border text-center">Delete</th>
+                  <th className="p-3 border text-center">Approve</th>
+                  <th className="p-3 border text-center">Export</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {(Object.keys(matrix) as Array<keyof typeof matrix>).map(mod => (
+                  <tr key={mod} className="hover:bg-slate-50">
+                    <td className="p-3 border font-bold text-slate-900">{mod}</td>
+                    {(['view', 'create', 'edit', 'delete', 'approve', 'export'] as const).map(p => (
+                      <td key={p} className="p-3 border text-center cursor-pointer" onClick={() => toggleMatrix(mod, p)}>
+                        {matrix[mod][p] ? (
+                          <CheckSquare size={16} className="text-purple-600 inline" />
+                        ) : (
+                          <Square size={16} className="text-slate-300 inline" />
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="primary" size="sm">Save Permission Matrix</Button>
+          </div>
         </div>
       )}
 
@@ -160,6 +197,27 @@ export const AdministrationPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Add User Modal */}
+      <Modal isOpen={isAddUserOpen} onClose={() => setIsAddUserOpen(false)} title="Provision New User">
+        <div className="space-y-4 text-xs">
+          <Input label="Full Name" placeholder="e.g. Alex Morgan" />
+          <Input label="Corporate Email" placeholder="alex@company.com" />
+          <Select
+            label="Assigned Role"
+            options={[
+              { label: 'Executive', value: 'Executive' },
+              { label: 'SalesManager', value: 'SalesManager' },
+              { label: 'HRAdmin', value: 'HRAdmin' },
+              { label: 'FinanceAccountant', value: 'FinanceAccountant' }
+            ]}
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setIsAddUserOpen(false)}>Cancel</Button>
+            <Button variant="primary" onClick={() => setIsAddUserOpen(false)}>Save User</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
