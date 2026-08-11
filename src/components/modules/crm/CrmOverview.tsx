@@ -94,16 +94,19 @@ export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
 
   const handleAddMockCustomer = () => {
     addCustomer({
-      code: `CUST${Math.floor(Math.random() * 1000)}`,
-      name: 'New Customer',
-      email: 'new@example.com',
-      phone: '555-1234',
-      companyName: 'New Corp',
-      taxId: 'TAX',
-      creditLimit: 50000,
-      outstanding: 0,
+      customerCode: `CUST${Math.floor(Math.random() * 1000)}`,
+      customerName: 'New Customer',
+      customerType: 'Company',
+      ownerId: 'usr-1',
       status: 'Active',
-      city: 'NY'
+      primaryContact: {
+        name: 'New Contact',
+        email: 'new@example.com',
+        phone: '555-1234'
+      },
+      billingAddress: {
+        city: 'NY'
+      }
     });
   };
 

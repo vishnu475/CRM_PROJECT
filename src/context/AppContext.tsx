@@ -55,7 +55,7 @@ interface AppContextType {
   updateLead: (id: string, updates: Partial<Lead>) => void;
   deleteLead: (id: string) => void;
   customers: Customer[];
-  addCustomer: (customer: Omit<Customer, 'id'>) => void;
+  addCustomer: (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
   contacts: Contact[];
   addContact: (contact: Omit<Contact, 'id'>) => void;
@@ -328,7 +328,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [projects] = useState<Project[]>(initialProjects);
   const [tasks] = useState<Task[]>(initialTasks);
   const [helpdeskTickets] = useState<HelpdeskTicket[]>(initialHelpdeskTickets);
-  const [documents] = useState<DocumentFile[]>(initialDocuments);
+  const [documents, setDocuments] = useState<DocumentFile[]>(initialDocuments);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
 
   // Sync user profile when user role changes
@@ -370,8 +370,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLeads((prev) => prev.filter((l) => l.id !== id));
   };
 
-  const addCustomer = (customer: Omit<Customer, 'id'>) => {
-    setCustomers((prev) => [{ ...customer, id: `CUST-${Math.floor(2000 + Math.random() * 900)}` }, ...prev]);
+  const addCustomer = (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => {
+    const now = new Date().toISOString().split('T')[0];
+    setCustomers((prev) => [
+      {
+        createdAt: now,
+        updatedAt: now,
+        ...customer,
+        id: `CUST-${Math.floor(2000 + Math.random() * 900)}`
+      },
+      ...prev
+    ]);
   };
 
   const updateCustomer = (id: string, updates: Partial<Customer>) => {
