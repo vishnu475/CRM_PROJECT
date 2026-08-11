@@ -32,7 +32,7 @@ import {
   FileDown,
   ArrowRight,
 } from 'lucide-react';
-import { CrmModule } from './crm/CrmModule';
+import { CrmModule } from '../../modules/crm';
 
 
 
