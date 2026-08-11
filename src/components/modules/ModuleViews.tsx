@@ -33,6 +33,19 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { CrmModule } from '../../modules/crm';
+import {
+  AdministrationPage,
+  HrmsPage,
+  AttendancePage,
+  LeavePage,
+  PayrollPage,
+  RecruitmentPage,
+  AccountsPage,
+  LedgerPage,
+  BankingPage,
+  ExpensesPage,
+  SettingsPage
+} from '../../modules/friend_2_frontend_implementation';
 
 
 
@@ -188,329 +201,31 @@ export const ModuleViews: React.FC = () => {
       );
 
     case 'recruitment':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <UserPlus className="text-purple-400" size={22} />
-            Recruitment & Candidate ATS
-          </h1>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {jobCandidates.map((cand) => (
-              <div key={cand.id} className="bg-white shadow-sm border border-slate-200 p-4 rounded-2xl flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-bold text-[#0f172a]">{cand.name}</p>
-                  <p className="text-xs text-slate-500">{cand.jobTitle} • {cand.email}</p>
-                </div>
-                <div className="text-right">
-                  <span className="px-2.5 py-1 bg-purple-500/10 text-purple-400 text-xs font-bold rounded-lg">{cand.stage}</span>
-                  <button className="block text-[10px] text-emerald-400 font-bold hover:underline mt-1">
-                    Convert to Employee →
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <RecruitmentPage />;
 
     case 'hrms':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <UserCheck className="text-purple-400" size={22} />
-            HRMS Employee Master
-          </h1>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {employees.map((emp) => (
-              <div key={emp.id} className="bg-white shadow-sm border border-slate-200 p-4 rounded-2xl space-y-2">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-full bg-purple-500/20 text-purple-300 font-bold flex items-center justify-center">
-                    {emp.name.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-[#0f172a]">{emp.name}</p>
-                    <p className="text-[10px] text-slate-500">{emp.designation}</p>
-                  </div>
-                </div>
-                <div className="text-[11px] text-slate-500 border-t border-slate-200 pt-2 space-y-1">
-                  <p>Dept: <span className="text-slate-700">{emp.department}</span></p>
-                  <p>Salary: <span className="text-emerald-400 font-bold">₹ {emp.salary.toLocaleString()}/mo</span></p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <HrmsPage />;
 
     case 'attendance':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Clock className="text-blue-400" size={22} />
-            Attendance Logs & Roster
-          </h1>
-
-          <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
-                <tr>
-                  <th className="p-3.5">Employee</th>
-                  <th className="p-3.5">Date</th>
-                  <th className="p-3.5">Check In</th>
-                  <th className="p-3.5">Check Out</th>
-                  <th className="p-3.5">Work Hours</th>
-                  <th className="p-3.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {attendanceRecords.map((att) => (
-                  <tr key={att.id}>
-                    <td className="p-3.5 font-bold text-[#0f172a]">{att.empName}</td>
-                    <td className="p-3.5">{att.date}</td>
-                    <td className="p-3.5">{att.checkIn}</td>
-                    <td className="p-3.5">{att.checkOut}</td>
-                    <td className="p-3.5 font-bold">{att.workHours} hrs</td>
-                    <td className="p-3.5">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        att.status === 'Present' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
-                      }`}>
-                        {att.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
+      return <AttendancePage />;
 
     case 'leave':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <CalendarDays className="text-amber-400" size={22} />
-            Leave Management Portal
-          </h1>
-
-          <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
-                <tr>
-                  <th className="p-3.5">Employee</th>
-                  <th className="p-3.5">Leave Type</th>
-                  <th className="p-3.5">Dates</th>
-                  <th className="p-3.5">Days</th>
-                  <th className="p-3.5">Reason</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {leaveRequests.map((lv) => (
-                  <tr key={lv.id}>
-                    <td className="p-3.5 font-bold text-[#0f172a]">{lv.empName}</td>
-                    <td className="p-3.5">{lv.leaveType}</td>
-                    <td className="p-3.5">{lv.startDate} to {lv.endDate}</td>
-                    <td className="p-3.5 font-bold">{lv.days}</td>
-                    <td className="p-3.5">{lv.reason}</td>
-                    <td className="p-3.5">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        lv.status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
-                      }`}>
-                        {lv.status}
-                      </span>
-                    </td>
-                    <td className="p-3.5">
-                      {lv.status === 'Pending' && (
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => approveLeave(lv.id)}
-                            className="p-1 bg-emerald-600 hover:bg-emerald-500 text-[#0f172a] rounded"
-                            title="Approve"
-                          >
-                            <CheckCircle size={14} />
-                          </button>
-                          <button
-                            onClick={() => rejectLeave(lv.id)}
-                            className="p-1 bg-rose-600 hover:bg-rose-500 text-[#0f172a] rounded"
-                            title="Reject"
-                          >
-                            <XCircle size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
+      return <LeavePage />;
 
     case 'payroll':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Banknote className="text-emerald-400" size={22} />
-            Payroll Processing Engine
-          </h1>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {payrollRuns.map((pr) => (
-              <div key={pr.id} className="bg-white shadow-sm border border-slate-200 p-5 rounded-2xl space-y-3">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-extrabold text-[#0f172a] text-base">{pr.month}</h3>
-                  <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded-lg">{pr.status}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-xs text-slate-500 pt-2 border-t border-slate-200">
-                  <div>
-                    <p>Employees</p>
-                    <p className="font-bold text-[#0f172a] text-sm mt-0.5">{pr.totalEmployees}</p>
-                  </div>
-                  <div>
-                    <p>Gross Pay</p>
-                    <p className="font-bold text-emerald-400 text-sm mt-0.5">₹ {pr.grossAmount.toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p>Net Disbursal</p>
-                    <p className="font-bold text-indigo-400 text-sm mt-0.5">₹ {pr.netPay.toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <PayrollPage />;
 
     case 'expenses':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Receipt className="text-amber-400" size={22} />
-            Expense Claims Management
-          </h1>
-
-          <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
-                <tr>
-                  <th className="p-3.5">Claim #</th>
-                  <th className="p-3.5">Employee</th>
-                  <th className="p-3.5">Category</th>
-                  <th className="p-3.5">Amount</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {expenseClaims.map((exp) => (
-                  <tr key={exp.id}>
-                    <td className="p-3.5 font-mono text-indigo-400">{exp.claimNumber}</td>
-                    <td className="p-3.5 font-bold text-[#0f172a]">{exp.empName}</td>
-                    <td className="p-3.5">{exp.category}</td>
-                    <td className="p-3.5 font-bold text-amber-400">₹ {exp.amount.toLocaleString()}</td>
-                    <td className="p-3.5"><span className="text-amber-400 font-bold">{exp.status}</span></td>
-                    <td className="p-3.5">
-                      {exp.status === 'Pending' && (
-                        <button
-                          onClick={() => approveExpense(exp.id)}
-                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-[#0f172a] rounded text-[10px] font-bold"
-                        >
-                          Approve Claim
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
+      return <ExpensesPage />;
 
     case 'accounts':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <BookOpen className="text-indigo-400" size={22} />
-            Chart of Accounts (COA)
-          </h1>
-
-          <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
-                <tr>
-                  <th className="p-3.5">Account Code</th>
-                  <th className="p-3.5">Account Name</th>
-                  <th className="p-3.5">Type</th>
-                  <th className="p-3.5">Current Balance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {accounts.map((acc) => (
-                  <tr key={acc.id}>
-                    <td className="p-3.5 font-mono text-indigo-400">{acc.code}</td>
-                    <td className="p-3.5 font-bold text-[#0f172a]">{acc.name}</td>
-                    <td className="p-3.5">{acc.type}</td>
-                    <td className="p-3.5 font-bold text-emerald-400">₹ {acc.balance.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
+      return <AccountsPage />;
 
     case 'ledger':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <FileText className="text-emerald-400" size={22} />
-            General Ledger & Double-Entry Postings
-          </h1>
-
-          <div className="bg-white shadow-sm border border-slate-200 rounded-2xl p-5 space-y-4">
-            {journalEntries.map((je) => (
-              <div key={je.id} className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="font-mono text-indigo-400 font-bold">{je.entryNumber}</span>
-                  <span className="text-slate-500">{je.date}</span>
-                </div>
-                <p className="text-xs text-slate-700">{je.narration}</p>
-                <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-200">
-                  <span className="text-emerald-400 font-bold">Total Debit: ₹ {je.debitTotal.toLocaleString()}</span>
-                  <span className="text-emerald-400 font-bold">Total Credit: ₹ {je.creditTotal.toLocaleString()}</span>
-                  <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 font-bold rounded text-[10px]">{je.status}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <LedgerPage />;
 
     case 'banking':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Landmark className="text-indigo-400" size={22} />
-            Banking & Cash Management
-          </h1>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {bankAccounts.map((bnk) => (
-              <div key={bnk.id} className="bg-white shadow-sm border border-slate-200 p-5 rounded-2xl space-y-2">
-                <p className="text-xs font-semibold text-slate-500">{bnk.bankName}</p>
-                <p className="text-xl font-extrabold text-[#0f172a]">₹ {bnk.balance.toLocaleString()}</p>
-                <p className="text-[10px] font-mono text-slate-500">Acc: {bnk.accountNumber}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <BankingPage />;
 
     case 'vendors':
       return (
@@ -728,32 +443,10 @@ export const ModuleViews: React.FC = () => {
       );
 
     case 'administration':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <ShieldCheck className="text-purple-400" size={22} />
-            Administration & RBAC Matrix
-          </h1>
-          <div className="bg-white shadow-sm border border-slate-200 p-5 rounded-2xl text-xs text-slate-600 space-y-2">
-            <p className="font-bold text-[#0f172a]">System Security & Audit Controls</p>
-            <p className="text-slate-500">Manage user roles, company branches, and view immutable audit trails.</p>
-          </div>
-        </div>
-      );
+      return <AdministrationPage />;
 
     case 'settings':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Settings className="text-slate-500" size={22} />
-            System Global Settings
-          </h1>
-          <div className="bg-white shadow-sm border border-slate-200 p-5 rounded-2xl text-xs text-slate-600 space-y-2">
-            <p className="font-bold text-[#0f172a]">Company Branding & Numbering Sequences</p>
-            <p className="text-slate-500">Configure tax rates, default currencies, and API webhook endpoints.</p>
-          </div>
-        </div>
-      );
+      return <SettingsPage />;
 
     default:
       return null;
