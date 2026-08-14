@@ -1,0 +1,180 @@
+import { pool } from '../db/pool.js';
+
+async function logActivity(client, { module, entity, entityId, action, oldValue, newValue, performedBy }) {
+  try {
+    await client.query(
+      `INSERT INTO activity_logs (module, entity, entity_id, action, old_value, new_value, performed_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [module, entity, entityId, action, oldValue || null, newValue || null, performedBy || 'system']
+    );
+  } catch (e) {
+    console.warn('Activity log error:', e.message);
+  }
+}
+
+export class PayrollService {
+  /**
+   * Run Monthly Payroll — SQL Transaction across payroll_runs + payslips
+   */
+  static async runPayroll(month, year, processedBy = 'HR Admin') {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const runCode = `PR-${year}-${String(month).padStart(2, '0')}`;
+
+      // Check if already run
+      const existing = await client.query('SELECT id FROM payroll_runs WHERE month = $1 AND year = $2', [month, year]);
+      if (existing.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `Payroll for ${month}/${year} already processed. Run code: ${existing.rows[0].id}` };
+      }
+
+      // Get all active employees
+      const empRes = await client.query(`
+        SELECT id, emp_code, name, salary, basic_salary, allowances
+        FROM employees 
+        WHERE status NOT IN ('Exited') 
+        ORDER BY emp_code
+      `);
+      const employees = empRes.rows;
+
+      let totalGross = 0, totalDeductions = 0, totalNet = 0;
+      const payslipsData = [];
+
+      for (const emp of employees) {
+        const grossSalary = Number(emp.salary) || 50000;
+        const basicSalary = Number(emp.basic_salary) || Math.round(grossSalary * 0.6);
+        const hra = Math.round(basicSalary * 0.4);
+        const specialAllowance = grossSalary - basicSalary - hra;
+
+        // Get attendance for month
+        const attendRes = await client.query(`
+          SELECT COUNT(*) as days_present 
+          FROM attendance_records 
+          WHERE employee_id = $1 AND EXTRACT(MONTH FROM date) = $2 AND EXTRACT(YEAR FROM date) = $3
+          AND status NOT IN ('Absent', 'Holiday')
+        `, [emp.id, month, year]);
+        const daysPresent = parseInt(attendRes.rows[0]?.days_present) || 26;
+
+        // Calculate deductions
+        const pfDeduction = Math.round(basicSalary * 0.12);  // 12% PF
+        const esiDeduction = grossSalary < 21000 ? Math.round(grossSalary * 0.0075) : 0;  // 0.75% ESI
+        const profTax = grossSalary > 15000 ? 200 : 0;
+        const totalDeductionEmp = pfDeduction + esiDeduction + profTax;
+        const netPay = grossSalary - totalDeductionEmp;
+
+        totalGross += grossSalary;
+        totalDeductions += totalDeductionEmp;
+        totalNet += netPay;
+
+        payslipsData.push({
+          employee_id: emp.id,
+          employee_name: emp.name,
+          month, year,
+          working_days: 26,
+          days_present: daysPresent,
+          days_absent: Math.max(0, 26 - daysPresent),
+          gross_salary: grossSalary,
+          basic_salary: basicSalary,
+          hra,
+          special_allowance: Math.max(0, specialAllowance),
+          pf_deduction: pfDeduction,
+          esi_deduction: esiDeduction,
+          professional_tax: profTax,
+          tds_deduction: 0,
+          total_deductions: totalDeductionEmp,
+          net_pay: netPay,
+          status: 'Generated'
+        });
+      }
+
+      // Insert payroll run
+      const runResult = await client.query(`
+        INSERT INTO payroll_runs (id, run_code, month, year, run_date, status, total_employees, total_gross, total_deductions, total_net, processed_by)
+        VALUES ($1, $1, $2, $3, CURRENT_DATE, 'Processed', $4, $5, $6, $7, $8)
+        RETURNING *
+      `, [runCode, month, year, employees.length, totalGross, totalDeductions, totalNet, processedBy]);
+      const payrollRunId = runResult.rows[0].id;
+
+      // Insert all payslips
+      for (const ps of payslipsData) {
+        const payslipId = `PS-${ps.employee_id}-${month}-${year}`;
+        const totalAllowances = ps.hra + ps.special_allowance;
+        await client.query(`
+          INSERT INTO payslips 
+            (id, payroll_run_id, employee_id, employee_name, month, year, working_days, days_present, present_days, days_absent, absent_days,
+             gross_pay, gross_salary, basic_pay, basic_salary, allowances, hra, special_allowance, pf_deduction, esi_deduction,
+             professional_tax, tds_deduction, total_deductions, net_pay, status)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$9,$10,$10,$11,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+          ON CONFLICT (id) DO UPDATE SET net_pay = EXCLUDED.net_pay
+        `, [payslipId, payrollRunId, ps.employee_id, ps.employee_name, ps.month, ps.year,
+            ps.working_days, ps.days_present, ps.days_absent,
+            ps.gross_salary, ps.basic_salary, totalAllowances, ps.hra, ps.special_allowance,
+            ps.pf_deduction, ps.esi_deduction, ps.professional_tax, ps.tds_deduction,
+            ps.total_deductions, ps.net_pay, ps.status]);
+      }
+
+      // Activity log
+      await logActivity(client, {
+        module: 'payroll', entity: 'payroll_run', entityId: runCode,
+        action: 'payroll_processed',
+        newValue: `Month: ${month}/${year} | Employees: ${employees.length} | Total Net: ₹${totalNet.toLocaleString()}`,
+        performedBy: processedBy
+      });
+
+      await client.query('COMMIT');
+      return {
+        success: true,
+        message: `Payroll processed for ${month}/${year}`,
+        data: { ...runResult.rows[0], payslipCount: payslipsData.length, totalNet }
+      };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`Payroll run failed: ${err.message}`);
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Get all payslips for a payroll run
+   */
+  static async getPayslipsByRun(payrollRunId) {
+    const result = await pool.query(
+      'SELECT * FROM payslips WHERE payroll_run_id = $1 ORDER BY employee_name',
+      [payrollRunId]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get single payslip by ID
+   */
+  static async getPayslipById(payslipId) {
+    const result = await pool.query(
+      `SELECT ps.*, pr.run_code, pr.run_date 
+       FROM payslips ps
+       JOIN payroll_runs pr ON ps.payroll_run_id = pr.id
+       WHERE ps.id = $1`,
+      [payslipId]
+    );
+    if (result.rows.length === 0) throw new Error('Payslip not found');
+    return result.rows[0];
+  }
+
+  /**
+   * Get payslips for a specific employee
+   */
+  static async getEmployeePayslips(employeeId) {
+    const result = await pool.query(
+      `SELECT ps.*, pr.run_code, pr.run_date, pr.status as run_status
+       FROM payslips ps
+       JOIN payroll_runs pr ON ps.payroll_run_id = pr.id
+       WHERE ps.employee_id = $1
+       ORDER BY ps.year DESC, ps.month DESC`,
+      [employeeId]
+    );
+    return result.rows;
+  }
+}

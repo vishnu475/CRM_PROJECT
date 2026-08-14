@@ -1,0 +1,22 @@
+{
+  "name": "crm-hrms-backend",
+  "version": "1.0.0",
+  "description": "Node.js Express & PostgreSQL Backend API Server for CRM, HRMS, and Attendance Kiosk Engine",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "winston": "^3.17.0",
+    "ws": "^8.18.0",
+    "zod": "^3.24.2"
+  }
+}
