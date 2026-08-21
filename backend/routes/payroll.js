@@ -66,4 +66,16 @@ router.get('/confirmed-summary', async (req, res) => {
   }
 });
 
+// POST /api/payroll/post-to-accounts — Post monthly payroll run to Accounts GL
+router.post('/post-to-accounts', async (req, res) => {
+  const { month, year, postedBy } = req.body;
+  try {
+    const result = await PayrollService.postPayrollToAccounts(month, year, postedBy);
+    if (!result.success) return res.status(400).json(result);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;

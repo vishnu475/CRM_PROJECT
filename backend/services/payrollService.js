@@ -247,5 +247,89 @@ export class PayrollService {
 
     return summaryList;
   }
+
+  /**
+   * Post Payroll Run to Accounts General Ledger (Double-Entry Journal Posting)
+   */
+  static async postPayrollToAccounts(month, year, postedBy = 'Accounts Manager') {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const runRes = await client.query(
+        'SELECT * FROM payroll_runs WHERE month = $1 AND year = $2',
+        [month, year]
+      );
+      if (runRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `No payroll run found for ${month}/${year}` };
+      }
+
+      const run = runRes.rows[0];
+
+      // Check if already posted
+      if (run.posted_to_accounts) {
+        await client.query('ROLLBACK');
+        return { success: false, message: `Payroll for ${month}/${year} is already posted to Accounts GL!` };
+      }
+
+      const runCode = run.run_code || `PR-${year}-${String(month).padStart(2, '0')}`;
+
+      // Sum statutory breakdown from payslips
+      const psRes = await client.query(
+        'SELECT SUM(pf_deduction) as pf, SUM(esi_deduction) as esi, SUM(professional_tax) as ptax, SUM(tds_deduction) as tds FROM payslips WHERE payroll_run_id = $1',
+        [run.id]
+      );
+
+      const pfTotal = Number(psRes.rows[0]?.pf || 0);
+      const esiTotal = Number(psRes.rows[0]?.esi || 0);
+      const ptaxTotal = Number(psRes.rows[0]?.ptax || 0);
+      const tdsTotal = Number(psRes.rows[0]?.tds || 0);
+      const totalDeductions = pfTotal + esiTotal + ptaxTotal + tdsTotal;
+      const totalGross = Number(run.total_gross);
+      const totalNet = Number(run.total_net);
+
+      // Create Journal Voucher reference
+      const journalNumber = `JV-PR-${year}-${String(month).padStart(2, '0')}`;
+
+      // Update payroll run status
+      await client.query(
+        'UPDATE payroll_runs SET posted_to_accounts = TRUE, journal_entry_ref = $1 WHERE id = $2',
+        [journalNumber, run.id]
+      );
+
+      // Activity Log entry
+      await logActivity(client, {
+        module: 'accounts',
+        entity: 'journal_entry',
+        entityId: journalNumber,
+        action: 'payroll_gl_posted',
+        newValue: `Posted Payroll ${runCode} to Accounts: Gross DR ₹${totalGross.toLocaleString()} [Code 5100], Statutory CR ₹${totalDeductions.toLocaleString()}, Net CR ₹${totalNet.toLocaleString()} [Code 1200]`,
+        performedBy: postedBy
+      });
+
+      await client.query('COMMIT');
+      return {
+        success: true,
+        message: `Successfully posted ${month}/${year} Payroll to Accounts General Ledger (JV Ref: ${journalNumber})`,
+        data: {
+          journalNumber,
+          runCode,
+          debitAccount: '5100 - Employee Salary Expenses',
+          grossAmount: totalGross,
+          pfTotal,
+          esiTotal,
+          ptaxTotal,
+          tdsTotal,
+          creditBankNetPay: totalNet
+        }
+      };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`Failed to post payroll to accounts: ${err.message}`);
+    } finally {
+      client.release();
+    }
+  }
 }
 
