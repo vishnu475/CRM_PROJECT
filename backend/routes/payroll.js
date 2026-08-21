@@ -56,12 +56,11 @@ router.get('/payslip/:id', async (req, res) => {
   }
 });
 
-// GET /api/payroll/employee/:id — Get all payslips for an employee
-router.get('/employee/:id', async (req, res) => {
-  const { id } = req.params;
+// GET /api/payroll/confirmed-summary — Dynamic AI pre-calculated payroll for confirmed employees
+router.get('/confirmed-summary', async (req, res) => {
   try {
-    const payslips = await PayrollService.getEmployeePayslips(id);
-    res.json({ success: true, data: payslips });
+    const summary = await PayrollService.getConfirmedPayrollSummary();
+    res.json({ success: true, data: summary });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

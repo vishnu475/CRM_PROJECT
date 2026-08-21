@@ -375,7 +375,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(() => {
-    return localStorage.getItem('crm_auth') !== 'false';
+    return localStorage.getItem('crm_auth') === 'true';
   });
 
   const setIsAuthenticated = (auth: boolean) => {

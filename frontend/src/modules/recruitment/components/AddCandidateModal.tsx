@@ -75,6 +75,7 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({
       skills: form.primarySkills.split(',').map(s => s.trim()),
       resumeUrl: form.resumeUrl,
       recruiter: form.recruiter,
+      expectedSalary: Number(form.expectedSalary),
       stage: 'Applied',
       score: 80
     });

@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Info,
+  Home,
+  LogOut,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { UserRole } from '../../types';
@@ -25,6 +27,7 @@ export const Header: React.FC = () => {
     setCompanyName = () => {},
     notifications = [],
     markNotificationRead = () => {},
+    setIsAuthenticated = () => {},
   } = useApp() || {};
 
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
@@ -160,6 +163,32 @@ export const Header: React.FC = () => {
         <div className="h-6 w-px bg-slate-200 hidden md:block mx-1"></div>
 
         {/* Action Icons */}
+        <button 
+          onClick={() => {
+            window.history.pushState({}, '', '/landing');
+            window.dispatchEvent(new Event('popstate'));
+          }}
+          className="flex items-center space-x-1 px-2.5 py-1.5 bg-slate-100 hover:bg-blue-50 hover:text-[#2563eb] text-slate-700 text-xs font-bold rounded-lg transition-all border border-slate-200"
+          title="Open Landing / Home Screen UI"
+        >
+          <Home size={15} />
+          <span className="hidden lg:inline">Home Screen</span>
+        </button>
+
+        <button 
+          onClick={() => {
+            localStorage.removeItem('crm_auth');
+            setIsAuthenticated(false);
+            window.history.pushState({}, '', '/landing');
+            window.dispatchEvent(new Event('popstate'));
+          }}
+          className="flex items-center space-x-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-lg transition-all border border-rose-200"
+          title="Sign Out to Home Screen"
+        >
+          <LogOut size={15} />
+          <span className="hidden lg:inline">Sign Out</span>
+        </button>
+
         <button className="p-1.5 text-slate-500 hover:text-[#2563eb] hover:bg-blue-50 border border-transparent hover:border-blue-100 rounded-lg transition-all hidden sm:block">
           <Calendar size={18} />
         </button>

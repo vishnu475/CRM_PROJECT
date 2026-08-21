@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Banknote, Plus, Edit, ShieldCheck, Layers, UserCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Banknote, Plus, Edit, ShieldCheck, Layers, UserCheck, RefreshCw } from 'lucide-react';
 import { SalaryStructureConfig, EmployeeSalaryMapping } from '../types';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
@@ -14,12 +14,43 @@ export const SalaryStructureManager: React.FC = () => {
     { id: 'struct-3', name: 'Junior Associate Grade (50/20/30)', basicPct: 50, hraPct: 20, conveyance: 3000, specialAllowance: 10000, pfRate: 12, esiRate: 0.75, ptaxAmount: 200, status: 'Active' }
   ]);
 
-  const [mappings, setMappings] = useState<EmployeeSalaryMapping[]>([
-    { empId: 'EMP-001', empName: 'Emma Watson', department: 'HR', monthlyCtc: 120000, structureId: 'struct-1', structureName: 'Executive & Lead Grade', basicSalary: 60000, hraAmount: 30000, specialAllowance: 30000, pfAmount: 7200, esiAmount: 900, ptaxAmount: 200 },
-    { empId: 'EMP-002', empName: 'Robert Vance', department: 'Sales', monthlyCtc: 140000, structureId: 'struct-1', structureName: 'Executive & Lead Grade', basicSalary: 70000, hraAmount: 35000, specialAllowance: 35000, pfAmount: 8400, esiAmount: 1050, ptaxAmount: 200 },
-    { empId: 'EMP-003', empName: 'James Smith', department: 'Engineering', monthlyCtc: 180000, structureId: 'struct-2', structureName: 'Senior Developer Grade', basicSalary: 72000, hraAmount: 54000, specialAllowance: 54000, pfAmount: 8640, esiAmount: 1350, ptaxAmount: 200 },
-    { empId: 'EMP-004', empName: 'Michael Brown', department: 'Finance', monthlyCtc: 190000, structureId: 'struct-1', structureName: 'Executive & Lead Grade', basicSalary: 95000, hraAmount: 47500, specialAllowance: 47500, pfAmount: 11400, esiAmount: 1425, ptaxAmount: 200 }
-  ]);
+  const [mappings, setMappings] = useState<EmployeeSalaryMapping[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchConfirmedMappings = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/payroll/confirmed-summary');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          const dynamicMappings: EmployeeSalaryMapping[] = json.data.map((emp: any) => ({
+            empId: emp.empCode || emp.id,
+            empName: emp.name,
+            department: emp.department || 'Engineering',
+            monthlyCtc: emp.grossPay,
+            structureId: emp.grossPay >= 150000 ? 'struct-1' : 'struct-2',
+            structureName: emp.grossPay >= 150000 ? 'Executive & Lead Grade' : 'Senior Developer Grade',
+            basicSalary: emp.basicSalary,
+            hraAmount: emp.hra,
+            specialAllowance: emp.specialAllowance,
+            pfAmount: emp.pf,
+            esiAmount: emp.esi,
+            ptaxAmount: emp.ptax
+          }));
+          setMappings(dynamicMappings);
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Salary structures sync note:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConfirmedMappings();
+  }, []);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isMapModalOpen, setIsMapModalOpen] = useState(false);
@@ -61,9 +92,14 @@ export const SalaryStructureManager: React.FC = () => {
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">Earnings formulas (Basic %, HRA %, Special Allowance) & Statutory Deductions (PF 12%, ESI 0.75%, PTax).</p>
           </div>
-          <Button variant="primary" size="sm" onClick={() => setIsAddModalOpen(true)}>
-            <Plus size={14} /> Add Salary Structure
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={fetchConfirmedMappings} disabled={isLoading}>
+              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> Refresh DB Data
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setIsAddModalOpen(true)}>
+              <Plus size={14} /> Add Salary Structure
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -102,9 +138,11 @@ export const SalaryStructureManager: React.FC = () => {
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
         <div className="flex justify-between items-center pb-2 border-b border-slate-100">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-            <UserCheck size={16} className="text-emerald-600" /> Employee → Salary Structure Mappings
+            <UserCheck size={16} className="text-emerald-600" /> Confirmed Employees → Salary Structure Mappings ({mappings.length})
           </h3>
-          <span className="text-xs text-slate-400 font-mono">Backend statutory API delegation ready</span>
+          <span className="text-xs text-blue-600 font-bold bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+            ⚡ Synchronized with PostgreSQL HRMS
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -116,8 +154,8 @@ export const SalaryStructureManager: React.FC = () => {
                 <th className="p-3.5">Department</th>
                 <th className="p-3.5 font-bold text-slate-900">Monthly CTC</th>
                 <th className="p-3.5">Assigned Structure</th>
-                <th className="p-3.5">Basic Salary</th>
-                <th className="p-3.5">HRA</th>
+                <th className="p-3.5">Basic Salary (60%)</th>
+                <th className="p-3.5">HRA (24%)</th>
                 <th className="p-3.5">PF (12%)</th>
                 <th className="p-3.5 text-right">Actions</th>
               </tr>
@@ -130,8 +168,8 @@ export const SalaryStructureManager: React.FC = () => {
                   <td className="p-3.5 font-semibold text-slate-700">{m.department}</td>
                   <td className="p-3.5 font-extrabold text-slate-900">₹ {m.monthlyCtc.toLocaleString()}</td>
                   <td className="p-3.5 font-semibold text-emerald-600">{m.structureName}</td>
-                  <td className="p-3.5 font-mono">₹ {m.basicSalary.toLocaleString()}</td>
-                  <td className="p-3.5 font-mono">₹ {m.hraAmount.toLocaleString()}</td>
+                  <td className="p-3.5 font-mono font-bold">₹ {m.basicSalary.toLocaleString()}</td>
+                  <td className="p-3.5 font-mono font-bold">₹ {m.hraAmount.toLocaleString()}</td>
                   <td className="p-3.5 font-mono text-rose-600 font-bold">₹ {m.pfAmount.toLocaleString()}</td>
                   <td className="p-3.5 text-right">
                     <button onClick={() => { setSelectedMapEmp(m); setIsMapModalOpen(true); }} className="text-emerald-600 font-bold hover:underline">

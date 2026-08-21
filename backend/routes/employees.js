@@ -124,7 +124,15 @@ router.post('/', async (req, res) => {
          status, salary, basic_salary, allowances, reporting_manager_id, reporting_manager_name,
          pan_number, uan_number, bank_account, ifsc_code, plain_pin, branch, employment_type)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-      ON CONFLICT (id) DO NOTHING
+      ON CONFLICT (email) DO UPDATE SET
+        name = EXCLUDED.name,
+        department = EXCLUDED.department,
+        designation = EXCLUDED.designation,
+        salary = EXCLUDED.salary,
+        basic_salary = EXCLUDED.basic_salary,
+        allowances = EXCLUDED.allowances,
+        status = EXCLUDED.status,
+        updated_at = CURRENT_TIMESTAMP
       RETURNING *
     `, [
       empCode, empCode, name, email, phone || null, department, designation,

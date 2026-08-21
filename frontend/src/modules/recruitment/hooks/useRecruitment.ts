@@ -167,6 +167,7 @@ export function useRecruitment() {
       appliedPosition: candidate.appliedPosition || 'Developer',
       department: candidate.department || 'Engineering',
       recruiter: candidate.recruiter || 'Priya Sharma',
+      expectedSalary: candidate.expectedSalary || 1800000,
       stage: 'Applied',
       score: candidate.score || 80,
       education: candidate.education || '',

@@ -22,7 +22,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       setUserRole(role as any);
       setIsAuthenticated(true);
       setIsLoading(false);
-    }, 1200);
+      window.history.pushState({}, '', '/dashboard');
+      window.dispatchEvent(new Event('popstate'));
+    }, 600);
   };
 
   return (

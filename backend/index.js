@@ -26,6 +26,7 @@ import dashboardRouter from './routes/dashboard.js';
 
 import { authenticateUser } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { ensureDatabaseAndMigrate } from './setup_hrms.js';
 
 dotenv.config();
 
@@ -113,5 +114,11 @@ initWebSocketServer(server);
 
 server.listen(PORT, async () => {
   console.log(`🚀 100% DB-First Enterprise API Server active on http://localhost:${PORT}`);
+  try {
+    await ensureDatabaseAndMigrate();
+  } catch (e) {
+    console.error("Database startup check failed:", e.message);
+  }
   await initializeDatabaseSchema();
 });
+

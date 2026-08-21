@@ -164,17 +164,88 @@ export class PayrollService {
   }
 
   /**
-   * Get payslips for a specific employee
+   * Get dynamic pre-calculated payroll summary for Confirmed & Joined Employees with AI Tax, LOP Attendance Loss & Risk Audit
    */
-  static async getEmployeePayslips(employeeId) {
-    const result = await pool.query(
-      `SELECT ps.*, pr.run_code, pr.run_date, pr.status as run_status
-       FROM payslips ps
-       JOIN payroll_runs pr ON ps.payroll_run_id = pr.id
-       WHERE ps.employee_id = $1
-       ORDER BY ps.year DESC, ps.month DESC`,
-      [employeeId]
-    );
-    return result.rows;
+  static async getConfirmedPayrollSummary() {
+    const result = await pool.query(`
+      SELECT id, emp_code, name, department, designation, salary, basic_salary, allowances, pan_number, uan_number, bank_account, ifsc_code, status
+      FROM employees
+      WHERE status IN ('Confirmed', 'Joined', 'Active', 'Probation', 'Transferred')
+      ORDER BY name
+    `);
+
+    const employees = result.rows;
+    const currentMonth = new Date().getMonth() + 1;
+    const currentYear = new Date().getFullYear();
+
+    const summaryList = [];
+
+    for (const emp of employees) {
+      const gross = Number(emp.salary) || 50000;
+      const basic = Number(emp.basic_salary) || Math.round(gross * 0.6);
+      const hra = Math.round(basic * 0.4);
+      const specialAllowance = Math.max(0, gross - basic - hra);
+
+      // Check Attendance LOP & Absent Days for current month
+      const attRes = await pool.query(`
+        SELECT COUNT(*) as absent_count
+        FROM attendance_records
+        WHERE (employee_id = $1 OR employee_id = $2)
+          AND EXTRACT(MONTH FROM date) = $3
+          AND EXTRACT(YEAR FROM date) = $4
+          AND status IN ('Absent', 'Unexcused')
+      `, [emp.id, emp.emp_code || emp.id, currentMonth, currentYear]);
+
+      const absentDays = parseInt(attRes.rows[0]?.absent_count) || 0;
+      const dailyRate = Math.round(gross / 26);
+      const lopDeduction = Math.round(dailyRate * absentDays);
+
+      const pf = Math.round(Math.min(basic * 0.12, 1800));
+      const esi = gross <= 21000 ? Math.round(gross * 0.0075) : 0;
+      const ptax = gross > 15000 ? 200 : 0;
+
+      const annualGross = gross * 12;
+      let tdsMonthly = 0;
+      if (annualGross > 1200000) tdsMonthly = Math.round((annualGross * 0.15) / 12);
+      else if (annualGross > 700000) tdsMonthly = Math.round((annualGross * 0.10) / 12);
+      else if (annualGross > 500000) tdsMonthly = Math.round((annualGross * 0.05) / 12);
+
+      const totalDeductions = pf + esi + ptax + tdsMonthly + lopDeduction;
+      const netPay = Math.max(0, gross - totalDeductions);
+
+      const anomalyFlags = [];
+      if (absentDays > 3) anomalyFlags.push(`High LOP Loss (${absentDays} Days)`);
+      if (!emp.pan_number || emp.pan_number.length < 5) anomalyFlags.push('Missing PAN');
+      if (!emp.bank_account || emp.bank_account.length < 5) anomalyFlags.push('Missing Bank Account');
+      if (!emp.ifsc_code) anomalyFlags.push('Missing IFSC Code');
+
+      const aiRiskScore = anomalyFlags.length === 0 ? 'Low Risk' : anomalyFlags.length === 1 ? 'Medium Risk' : 'High Anomaly Risk';
+
+      summaryList.push({
+        id: emp.id,
+        empCode: emp.emp_code || emp.id,
+        name: emp.name,
+        department: emp.department,
+        designation: emp.designation,
+        status: emp.status,
+        grossPay: gross,
+        basicSalary: basic,
+        hra,
+        specialAllowance,
+        lopDays: absentDays,
+        lopDeduction,
+        pf,
+        esi,
+        ptax,
+        tds: tdsMonthly,
+        totalDeductions,
+        netPay,
+        anomalyFlags,
+        aiRiskScore
+      });
+    }
+
+    return summaryList;
   }
 }
+

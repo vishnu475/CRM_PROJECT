@@ -24,6 +24,7 @@ export class RecruitmentService {
         applied_date AS "appliedDate",
         education,
         skills,
+        COALESCE(expected_salary, 1800000) AS "expectedSalary",
         employee_id AS "convertedEmployeeId",
         stage = 'Employee' AS "isConverted"
       FROM job_candidates 
@@ -54,8 +55,8 @@ export class RecruitmentService {
 
       const insertQuery = `
         INSERT INTO job_candidates 
-        (id, candidate_no, name, email, phone, department, applied_position, job_title, recruiter, stage, status, score, applied_date, education, experience_years, skills)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_DATE, $13, $14, $15)
+        (id, candidate_no, name, email, phone, department, applied_position, job_title, recruiter, stage, status, score, applied_date, education, experience_years, skills, expected_salary)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_DATE, $13, $14, $15, $16)
         RETURNING *
       `;
 
@@ -74,7 +75,8 @@ export class RecruitmentService {
         candidateData.score || 80,
         candidateData.education || '',
         candidateData.experienceYears || 3,
-        JSON.stringify(candidateData.skills || ['React', 'TypeScript'])
+        JSON.stringify(candidateData.skills || ['React', 'TypeScript']),
+        candidateData.expectedSalary || 1800000
       ];
 
       const res = await client.query(insertQuery, values);
@@ -93,6 +95,7 @@ export class RecruitmentService {
         stage: row.stage,
         status: row.status,
         score: row.score,
+        expectedSalary: Number(row.expected_salary) || 1800000,
         appliedDate: row.applied_date,
         education: row.education,
         experienceYears: row.experience_years,
@@ -328,19 +331,30 @@ export class RecruitmentService {
         const insertRes = await client.query(
           `INSERT INTO employees 
            (id, emp_code, name, email, phone, department, designation, joining_date, status, salary, basic_salary, allowances, reporting_manager_id, reporting_manager_name, pan_number, uan_number, bank_account, ifsc_code, pin_hash, plain_pin)
-           VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Active', $7, $8, $9, 'EMP-001', 'Sarah Jenkins', 'ABCDE1234F', '100987654321', '98765432101', 'HDFC0001234', $10, $11)
+           VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Joined', $7, $8, $9, 'EMP-001', 'Sarah Jenkins', 'ABCDE1234F', '100987654321', '98765432101', 'HDFC0001234', $10, $11)
+           ON CONFLICT (email) DO UPDATE SET
+             name = EXCLUDED.name,
+             department = EXCLUDED.department,
+             designation = EXCLUDED.designation,
+             salary = EXCLUDED.salary,
+             basic_salary = EXCLUDED.basic_salary,
+             allowances = EXCLUDED.allowances,
+             status = 'Joined',
+             updated_at = CURRENT_TIMESTAMP
            RETURNING *`,
           [empCode, name, finalEmail, phone, department, designation, salary, basicSalary, allowances, pinHash, defaultPin]
         );
         newEmployee = insertRes.rows[0];
       }
 
+      const targetEmpId = newEmployee?.emp_code || newEmployee?.id || empCode;
+
       // 3B. Insert into employee_onboarding pipeline table
       await client.query(
         `INSERT INTO employee_onboarding (employee_id, current_stage, stage, joined_date)
          VALUES ($1, 'JOINED', 'Joined', CURRENT_DATE)
          ON CONFLICT (employee_id) DO UPDATE SET current_stage = 'JOINED', stage = 'Joined', updated_at = CURRENT_TIMESTAMP`,
-        [empCode]
+        [targetEmpId]
       );
 
       // 4. Insert into employee_bank_details table
@@ -348,7 +362,7 @@ export class RecruitmentService {
         `INSERT INTO employee_bank_details (id, employee_id, bank_name, account_number, ifsc_code) 
          VALUES ($1, $2, 'HDFC Bank', '98765432101', 'HDFC0001234')
          ON CONFLICT (id) DO NOTHING`,
-        [`BANK-${empCode}`, empCode]
+        [`BANK-${targetEmpId}`, targetEmpId]
       );
 
       // 5. Insert into employee_statutory table
@@ -356,7 +370,7 @@ export class RecruitmentService {
         `INSERT INTO employee_statutory (id, employee_id, pan_number, uan_number) 
          VALUES ($1, $2, 'ABCDE1234F', '100987654321')
          ON CONFLICT (id) DO NOTHING`,
-        [`STAT-${empCode}`, empCode]
+        [`STAT-${targetEmpId}`, targetEmpId]
       );
 
       // 6. Insert into employee_documents table
@@ -364,7 +378,7 @@ export class RecruitmentService {
         `INSERT INTO employee_documents (id, employee_id, document_type, file_name, file_url) 
          VALUES ($1, $2, 'Offer Letter', 'Offer_Letter.pdf', 'https://example.com/documents/offer.pdf')
          ON CONFLICT (id) DO NOTHING`,
-        [`DOC-${empCode}`, empCode]
+        [`DOC-${targetEmpId}`, targetEmpId]
       );
 
       // 7. Insert into employee_shift_history table
@@ -372,7 +386,7 @@ export class RecruitmentService {
         `INSERT INTO employee_shift_history (id, employee_id, shift_id, effective_from) 
          VALUES ($1, $2, 'shift-gen', CURRENT_DATE)
          ON CONFLICT (id) DO NOTHING`,
-        [`HIST-${empCode}`, empCode]
+        [`HIST-${targetEmpId}`, targetEmpId]
       );
 
       // 8. Insert into leave_balances table (12 CL, 10 SL, 15 PL)
@@ -387,7 +401,7 @@ export class RecruitmentService {
           `INSERT INTO leave_balances (id, employee_id, leave_type_id, leave_type_name, total_allocated, allocated, used, pending, available, balance, year)
            VALUES ($1, $2, $3, $4, $5, $5, 0, 0, $5, $5, EXTRACT(YEAR FROM CURRENT_DATE))
            ON CONFLICT DO NOTHING`,
-          [`LB-${empCode}-${lt.code}`, empCode, `lt-${lt.code.toLowerCase()}`, lt.name, lt.allowance]
+          [`LB-${targetEmpId}-${lt.code}`, targetEmpId, `lt-${lt.code.toLowerCase()}`, lt.name, lt.allowance]
         );
       }
 
@@ -395,7 +409,7 @@ export class RecruitmentService {
       if (candidate) {
         await client.query(
           "UPDATE job_candidates SET stage = 'Employee', status = 'CONVERTED', employee_id = $1, updated_at = NOW() WHERE id = $2 OR candidate_no = $2",
-          [empCode, candidate.id]
+          [targetEmpId, candidate.id]
         );
       }
 

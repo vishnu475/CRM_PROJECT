@@ -28,11 +28,15 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
   const nextEmpNum = employees.length + 1;
   const defaultEmpCode = `EMP-${String(nextEmpNum).padStart(3, '0')}`;
 
+  const candidateMonthlySalary = candidate?.expectedSalary 
+    ? (candidate.expectedSalary > 500000 ? Math.round(candidate.expectedSalary / 12) : candidate.expectedSalary)
+    : 95000;
+
   const [form, setForm] = useState({
     empCode: defaultEmpCode,
     department: candidate?.department || 'Engineering',
     designation: candidate?.appliedPosition || 'Senior Software Engineer',
-    salary: 85000,
+    salary: candidateMonthlySalary,
     reportingManager: 'Sarah Jenkins',
     branch: 'Bengaluru HQ',
     pin: '1234'

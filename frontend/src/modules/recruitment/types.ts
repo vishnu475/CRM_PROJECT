@@ -77,6 +77,7 @@ export interface Candidate {
   experienceYears?: number;
   skills?: string[];
   notes?: string;
+  expectedSalary?: number;
   isConverted?: boolean;
   convertedEmployeeId?: string;
   interviews?: InterviewSchedule[];

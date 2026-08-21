@@ -38,19 +38,43 @@ const MainLayout: React.FC = () => {
 const AuthWrapper: React.FC = () => {
   const { isAuthenticated } = useApp();
   const [currentView, setCurrentView] = useState<'landing' | 'login' | 'register'>('landing');
+  const [path, setPath] = useState(() => window.location.pathname.toLowerCase());
 
-  if (!isAuthenticated) {
-    if (currentView === 'landing') {
-      return <LandingPage onNavigate={setCurrentView} />;
+  React.useEffect(() => {
+    const handlePopState = () => {
+      setPath(window.location.pathname.toLowerCase());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const isExplicitAuthPath = path === '/landing' || path === '/login' || path === '/register';
+
+  if (!isAuthenticated || isExplicitAuthPath) {
+    let view = currentView;
+    if (path === '/login') view = 'login';
+    else if (path === '/register') view = 'register';
+    else if (path === '/landing') view = 'landing';
+
+    const handleNavigate = (v: 'landing' | 'login' | 'register') => {
+      setCurrentView(v);
+      const targetPath = v === 'landing' ? '/landing' : v === 'login' ? '/login' : '/register';
+      window.history.pushState({}, '', targetPath);
+      setPath(targetPath);
+    };
+
+    if (view === 'landing') {
+      return <LandingPage onNavigate={handleNavigate} />;
     }
-    if (currentView === 'register') {
-      return <RegisterPage onNavigate={setCurrentView} />;
+    if (view === 'register') {
+      return <RegisterPage onNavigate={handleNavigate} />;
     }
-    return <LoginPage onNavigate={setCurrentView} />;
+    return <LoginPage onNavigate={handleNavigate} />;
   }
 
   return <MainLayout />;
 };
+
 
 export default function App() {
   return (

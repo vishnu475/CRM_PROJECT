@@ -115,6 +115,33 @@ export const HrmsPage: React.FC = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<ExtendedEmployee | null>(null);
   const [activeProfileSubTab, setActiveProfileSubTab] = useState<'info' | 'statutory' | 'salary' | 'history' | 'documents'>('info');
 
+  const [editSalaryEmp, setEditSalaryEmp] = useState<ExtendedEmployee | null>(null);
+  const [newSalaryValue, setNewSalaryValue] = useState<number>(0);
+
+  const handleSaveSalaryUpdate = async () => {
+    if (!editSalaryEmp || !newSalaryValue) return;
+    const basic = Math.round(newSalaryValue * 0.6);
+    const allowances = Math.round(newSalaryValue * 0.4);
+
+    try {
+      await updateEmployeeInDB(editSalaryEmp.id, {
+        salary: newSalaryValue,
+        basicSalary: basic,
+        allowances
+      });
+      updateEmployee(editSalaryEmp.id, {
+        salary: newSalaryValue,
+        basicSalary: basic,
+        allowances
+      });
+      setEditSalaryEmp(null);
+      await refreshFromDB();
+      alert(`Salary for ${editSalaryEmp.name} updated to ₹${newSalaryValue.toLocaleString()} and saved to Database!`);
+    } catch (err: any) {
+      alert(`Failed to update salary: ${err.message}`);
+    }
+  };
+
   // Map employees to ExtendedEmployee format cleanly with null-safety
   const activeEmployeeList = dbEmployees.length > 0 ? dbEmployees : employees;
   const extendedEmployees: ExtendedEmployee[] = activeEmployeeList.map((emp, idx) => {
@@ -528,6 +555,15 @@ export const HrmsPage: React.FC = () => {
                           )}
                           {emp.status !== 'Exited' && (
                             <button
+                              onClick={() => { setEditSalaryEmp(emp); setNewSalaryValue(emp.salary || 85000); }}
+                              className="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded text-[10px] font-bold flex items-center gap-1 border border-emerald-200"
+                              title="Edit Employee Monthly Gross Salary"
+                            >
+                              <DollarSign size={10} /> Edit Salary
+                            </button>
+                          )}
+                          {emp.status !== 'Exited' && (
+                            <button
                               onClick={() => setTransferTargetEmployee(emp)}
                               className="px-2 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded text-[10px] font-bold flex items-center gap-1"
                             >
@@ -769,6 +805,45 @@ export const HrmsPage: React.FC = () => {
 
             <div className="flex justify-end pt-2">
               <Button variant="outline" onClick={() => setSelectedEmployee(null)}>Close Profile</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* EDIT SALARY MODAL FOR TRANSFERRED & EXISTING EMPLOYEES */}
+      {editSalaryEmp && (
+        <Modal isOpen={!!editSalaryEmp} onClose={() => setEditSalaryEmp(null)} title={`Edit Salary: ${editSalaryEmp.name}`}>
+          <div className="space-y-4 text-xs text-slate-700">
+            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 space-y-1">
+              <p className="font-bold text-emerald-900">Update CTC for {editSalaryEmp.name}</p>
+              <p className="text-emerald-700 text-[11px]">
+                Employee Status: <span className="font-bold">{editSalaryEmp.status}</span> | Dept: <span className="font-bold">{editSalaryEmp.department}</span>
+              </p>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">New Monthly Gross Salary (₹)</label>
+              <input
+                type="number"
+                value={newSalaryValue}
+                onChange={(e) => setNewSalaryValue(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-[11px] space-y-1">
+              <div className="flex justify-between">
+                <span>Calculated Basic Salary (60%):</span>
+                <span className="font-bold text-slate-800">₹ {Math.round(newSalaryValue * 0.6).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between"><span>Calculated Allowances (40%):</span> <span className="font-bold text-slate-800">₹ {Math.round(newSalaryValue * 0.4).toLocaleString()}</span></div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button variant="outline" size="sm" onClick={() => setEditSalaryEmp(null)}>Cancel</Button>
+              <Button variant="primary" size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveSalaryUpdate}>
+                Save Salary to Database
+              </Button>
             </div>
           </div>
         </Modal>

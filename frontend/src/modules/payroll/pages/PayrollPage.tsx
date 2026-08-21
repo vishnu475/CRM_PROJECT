@@ -28,10 +28,13 @@ export const PayrollPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Banknote className="text-emerald-600" size={24} />
-            Payroll Processing Engine
+            <span>AI & ML Dynamic Payroll Engine</span>
+            <span className="text-[10px] bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold px-2.5 py-1 rounded-full shadow-xs">
+              🤖 AI Confirmed Employees Mode
+            </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Automated monthly payroll calculation, PF/ESI/TDS statutory deductions, salary structures, payslips, and bank transfer advice.
+            Automated monthly payroll calculation, PF/ESI/TDS statutory deductions, AI anomaly risk audits, confirmed employees data integration, and direct PostgreSQL disbursal.
           </p>
         </div>
       </div>
