@@ -21,6 +21,8 @@ export interface ExtendedEmployee {
   address?: string;
   department: string;
   designation: string;
+  annualSalary?: number;
+  annualCtc?: number;
   salary: number;
   basicSalary?: number;
   allowances?: number;

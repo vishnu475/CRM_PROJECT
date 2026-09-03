@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Zap, Mail, Lock, UserPlus, Building, User } from 'lucide-react';
 
 interface RegisterPageProps {
-  onNavigate: (view: 'landing' | 'login') => void;
+  onNavigate: (view: 'landing' | 'login' | 'register') => void;
 }
 
 export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
@@ -22,7 +22,9 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
       setUserRole('Executive'); // Default to Admin on new register
       setIsAuthenticated(true);
       setIsLoading(false);
-    }, 1500);
+      window.history.pushState({}, '', '/dashboard');
+      window.dispatchEvent(new Event('popstate'));
+    }, 1000);
   };
 
   return (

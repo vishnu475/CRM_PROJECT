@@ -152,12 +152,13 @@ async function approveLeaveHandler(req, res) {
     const reqRes = await client.query('SELECT * FROM leave_requests WHERE id = $1', [id]);
     if (reqRes.rows.length === 0) throw new Error('Leave request not found');
     const leaveReq = reqRes.rows[0];
-    if (leaveReq.status !== 'PENDING') throw new Error(`Cannot approve — status is already ${leaveReq.status}`);
+    const currentStatus = (leaveReq.status || '').toUpperCase();
+    if (currentStatus !== 'PENDING') throw new Error(`Cannot approve — status is already ${leaveReq.status}`);
 
     // Update status to APPROVED
     const updated = await client.query(
-      `UPDATE leave_requests SET status = 'APPROVED', manager_name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *`,
-      [approvedBy || 'HR Manager', id]
+      `UPDATE leave_requests SET status = 'APPROVED', manager_name = $1, manager_comment = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
+      [approvedBy || 'HR Manager', comments || 'Approved', id]
     );
 
     // Deduct from leave balance + clear pending
@@ -235,10 +236,12 @@ router.patch('/requests/:id/reject', async (req, res) => {
     const reqRes = await client.query('SELECT * FROM leave_requests WHERE id = $1', [id]);
     if (reqRes.rows.length === 0) throw new Error('Leave request not found');
     const leaveReq = reqRes.rows[0];
+    const currentStatus = (leaveReq.status || '').toUpperCase();
+    if (currentStatus !== 'PENDING') throw new Error(`Cannot reject — status is already ${leaveReq.status}`);
 
     const updated = await client.query(
-      `UPDATE leave_requests SET status = 'REJECTED', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
-      [id]
+      `UPDATE leave_requests SET status = 'REJECTED', manager_name = $1, manager_comment = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
+      [rejectedBy || 'HR Manager', reason || 'Rejected', id]
     );
 
     // Restore pending count
@@ -273,5 +276,74 @@ router.patch('/requests/:id/reject', async (req, res) => {
     client.release();
   }
 });
+
+// ────────────────────────────────────────────────────────────
+// PATCH /api/leave/requests/:id/cancel & /api/leave/:id/cancel — Cancel Leave
+// ────────────────────────────────────────────────────────────
+async function cancelLeaveHandler(req, res) {
+  const { id } = req.params;
+  const { cancelledBy, reason } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const reqRes = await client.query('SELECT * FROM leave_requests WHERE id = $1', [id]);
+    if (reqRes.rows.length === 0) throw new Error('Leave request not found');
+    const leaveReq = reqRes.rows[0];
+
+    const updated = await client.query(
+      `UPDATE leave_requests SET status = 'CANCELLED', manager_name = $1, manager_comment = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
+      [cancelledBy || 'HR Manager', reason || 'Cancelled', id]
+    );
+
+    // If was APPROVED, restore used balance and available balance
+    const currentYear = new Date().getFullYear();
+    const prevStatus = (leaveReq.status || '').toUpperCase();
+    if (prevStatus === 'APPROVED') {
+      await client.query(`
+        UPDATE leave_balances 
+        SET used = GREATEST(0, used - $1), available = available + $1
+        WHERE employee_id = $2 AND leave_type_name = $3 AND year = $4
+      `, [leaveReq.days, leaveReq.employee_id, leaveReq.leave_type, currentYear]);
+
+      // Remove 'On Leave' attendance records for date range
+      const startDate = leaveReq.from_date || leaveReq.start_date;
+      const endDate = leaveReq.to_date || leaveReq.end_date || startDate;
+      if (startDate && endDate) {
+        await client.query(`
+          DELETE FROM attendance_records 
+          WHERE employee_id = $1 AND date >= $2 AND date <= $3 AND status = 'On Leave'
+        `, [leaveReq.employee_id, startDate, endDate]);
+      }
+    } else if (prevStatus === 'PENDING') {
+      await client.query(`
+        UPDATE leave_balances 
+        SET pending = GREATEST(0, pending - $1)
+        WHERE employee_id = $2 AND leave_type_name = $3 AND year = $4
+      `, [leaveReq.days, leaveReq.employee_id, leaveReq.leave_type, currentYear]);
+    }
+
+    await logActivity(client, {
+      module: 'leave',
+      entity: 'leave_request',
+      entityId: id,
+      action: 'leave_cancelled',
+      oldValue: leaveReq.status,
+      newValue: 'CANCELLED',
+      performedBy: cancelledBy || 'HR Manager'
+    });
+
+    await client.query('COMMIT');
+    res.json({ success: true, data: updated.rows[0], message: 'Leave request cancelled successfully.' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(400).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+}
+
+router.patch('/requests/:id/cancel', cancelLeaveHandler);
+router.patch('/:id/cancel', cancelLeaveHandler);
 
 export default router;

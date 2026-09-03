@@ -10,8 +10,11 @@ export class AuthService {
       throw new Error('Employee ID and PIN are required.');
     }
 
-    // Find employee in DB
-    const res = await pool.query('SELECT * FROM employees WHERE emp_code = $1 OR id = $1', [employeeId]);
+    // Find employee in DB by emp_code, id, or email
+    const res = await pool.query(
+      'SELECT * FROM employees WHERE LOWER(emp_code) = LOWER($1) OR id = $1 OR LOWER(email) = LOWER($1) OR LOWER(email) LIKE LOWER($2)',
+      [employeeId, `${employeeId}%`]
+    );
     if (res.rows.length === 0) {
       throw new Error('Invalid Employee ID or PIN.');
     }

@@ -23,6 +23,7 @@ import departmentsRouter from './routes/departments.js';
 import designationsRouter from './routes/designations.js';
 import branchesRouter from './routes/branches.js';
 import dashboardRouter from './routes/dashboard.js';
+import tasksRouter from './routes/tasks.js';
 
 import { authenticateUser } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -35,7 +36,16 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Ensure uploads/tasks directory exists and serve statically
+const uploadsDir = path.join(__dirname, 'uploads');
+const tasksUploadsDir = path.join(uploadsDir, 'tasks');
+if (!fs.existsSync(tasksUploadsDir)) {
+  fs.mkdirSync(tasksUploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
 
 // Run automatic database migration scripts on boot
 async function initializeDatabaseSchema() {
@@ -45,6 +55,12 @@ async function initializeDatabaseSchema() {
     '003_automatic_database_triggers.sql',
     '004_db_first_complete.sql',
     '005_master_prompt_complete_schema.sql',
+    '006_central_payroll_engine.sql',
+    '007_ess_portal_engine.sql',
+    '008_ess_admin_two_way_integration.sql',
+    '009_admin_notifications_and_two_way_sync.sql',
+    '010_enterprise_task_management_and_performance.sql',
+    '011_task_attachments.sql',
   ];
 
   for (const migrationFile of migrations) {
@@ -68,6 +84,7 @@ app.use(authenticateUser);
 app.use('/api/auth', authRouter);
 app.use('/api/employees', employeesRouter);
 app.use('/api/hrms', hrmsRouter);
+app.use('/api/tasks', tasksRouter);
 app.use('/api/departments', departmentsRouter);
 app.use('/api/designations', designationsRouter);
 app.use('/api/branches', branchesRouter);
@@ -79,7 +96,10 @@ app.use('/api/payroll', payrollRouter);
 app.use('/api/recruitment', recruitmentRouter);
 app.use('/api/accounts', accountsRouter);
 app.use('/api/banking', bankingRouter);
-app.use('/api/expenses', expensesRouter);
+import essRouter from './routes/ess.js';
+
+app.use('/api/v1/employee', essRouter);
+app.use('/api/employee', essRouter);
 
 // Health Check
 app.get('/api/health', async (req, res) => {

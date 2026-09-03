@@ -17,7 +17,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
   // Days in month grid (31 days for August 2026)
   const daysInMonth = Array.from({ length: 31 }, (_, i) => i + 1);
 
-  const activeEmployees = employees.filter(e => {
+  const activeEmployees = employees.filter((e: any) => {
     if (e.status === 'Exited') return false;
     if (selectedDeptFilter !== 'All' && e.department !== selectedDeptFilter) return false;
     return true;
@@ -27,11 +27,11 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
     const formattedDay = String(dayNum).padStart(2, '0');
     const dateStr = `2026-08-${formattedDay}`;
 
-    const emp = employees.find(e => e.id === empCodeOrId || e.empCode === empCodeOrId);
+    const emp = employees.find((e: any) => e.id === empCodeOrId || e.empCode === empCodeOrId);
     const empId = emp ? (emp.empCode || emp.id) : empCodeOrId;
 
     // Filter matching attendance records
-    const dayRecords = records.filter(r => (r.employeeId === empId || r.empId === empId || r.employeeId === empCodeOrId || r.empId === empCodeOrId) && r.date === dateStr);
+    const dayRecords = records.filter((r: any) => (r.employeeId === empId || r.empId === empId || r.employeeId === empCodeOrId || r.empId === empCodeOrId) && r.date === dateStr);
 
     if (dayRecords.length > 0) {
       return dayRecords[0].status || 'Present';
@@ -45,7 +45,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
     if (!isWorkDay) return 'Weekly Off';
 
     if (emp) {
-      const matchingLeave = leaveRequests.find(lr => {
+      const matchingLeave = leaveRequests.find((lr: any) => {
         const safeLrName = (lr.empName || '').toLowerCase();
         const safeEmpName = (emp.name || '').toLowerCase();
         const isEmp = (lr.empId && lr.empId === emp.id) || (Boolean(safeLrName) && Boolean(safeEmpName) && safeLrName === safeEmpName);
@@ -134,7 +134,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
               className="bg-transparent font-semibold text-slate-700 focus:outline-none"
             >
               <option value="All">All Employees Matrix View ({activeEmployees.length})</option>
-              {activeEmployees.map((e) => (
+              {activeEmployees.map((e: any) => (
                 <option key={e.id} value={e.empCode || e.id}>
                   {e.name} ({e.empCode || e.id})
                 </option>
@@ -180,7 +180,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {activeEmployees.map((emp) => {
+              {activeEmployees.map((emp: any) => {
                 const empCode = emp.empCode || emp.id;
                 let presentTotal = 0;
                 let absentTotal = 0;
@@ -229,7 +229,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
         /* VIEW 2: INDIVIDUAL EMPLOYEE CALENDAR GRID */
         <div className="space-y-4">
           {(() => {
-            const emp = activeEmployees.find(e => (e.empCode || e.id) === selectedEmpId || e.id === selectedEmpId);
+            const emp = activeEmployees.find((e: any) => (e.empCode || e.id) === selectedEmpId || e.id === selectedEmpId);
             if (!emp) return null;
             return (
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center justify-between">
@@ -263,9 +263,9 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
               const status = getStatusForEmpAndDay(selectedEmpId, day);
               const style = getStatusStyle(status);
               return (
-                <div key={day} className={`p-3 rounded-xl border text-xs font-bold transition-all ${style}`}>
-                  <div className="text-sm">{day}</div>
-                  <div className="text-[10px] font-normal opacity-90 mt-1 truncate">{status}</div>
+                <div key={day} className={`p-2 px-2.5 rounded-xl border text-xs font-bold transition-all min-h-[58px] flex flex-col justify-between ${style} hover:shadow-md cursor-pointer`}>
+                  <div className="text-xs font-black text-left">{day}</div>
+                  <div className="text-[11px] font-semibold opacity-90 truncate text-center">{status}</div>
                 </div>
               );
             })}

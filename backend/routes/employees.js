@@ -19,7 +19,8 @@ router.get('/', async (req, res) => {
     // 1. Auto-sync candidates in Recruitment 'Employee' stage into employees master
     await pool.query(`
       INSERT INTO employees (
-        id, emp_code, name, email, phone, department, designation, joining_date, status, salary, basic_salary, allowances, reporting_manager_name
+        id, emp_code, name, email, phone, department, designation, joining_date, status,
+        annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_name
       )
       SELECT 
         COALESCE(c.employee_id, c.candidate_no, c.id),
@@ -31,9 +32,11 @@ router.get('/', async (req, res) => {
         COALESCE(c.applied_position, c.job_title, 'Senior Software Engineer'),
         CURRENT_DATE,
         'Active',
-        85000,
-        51000,
-        34000,
+        COALESCE(c.expected_salary, c.annual_ctc, 400000),
+        COALESCE(c.expected_salary, c.annual_ctc, 400000),
+        ROUND((COALESCE(c.expected_salary, c.annual_ctc, 400000) / 12)::numeric, 2),
+        ROUND((COALESCE(c.expected_salary, c.annual_ctc, 400000) / 12 * 0.6)::numeric, 2),
+        ROUND((COALESCE(c.expected_salary, c.annual_ctc, 400000) / 12 * 0.4)::numeric, 2),
         COALESCE(c.recruiter, 'Sarah Jenkins')
       FROM job_candidates c
       WHERE (c.stage = 'Employee' OR c.stage = 'Hired' OR c.status = 'CONVERTED')
@@ -65,12 +68,15 @@ router.get('/', async (req, res) => {
     // 2. Query employees joined with employee_onboarding
     let queryStr = `
       SELECT e.id, e.emp_code, e.name, e.email, e.phone, e.dob, e.gender, e.address,
-             e.department, e.designation, e.joining_date, e.status, e.salary,
+             e.department, e.designation, e.joining_date, e.status,
+             COALESCE(e.annual_salary, e.annual_ctc, ROUND((e.salary * 12)::numeric, 2)) AS annual_salary,
+             COALESCE(e.annual_salary, e.annual_ctc, ROUND((e.salary * 12)::numeric, 2)) AS annual_ctc,
+             e.salary,
              e.basic_salary, e.allowances, e.reporting_manager_id, e.reporting_manager_name,
              e.pan_number, e.uan_number, e.bank_account, e.ifsc_code, e.plain_pin,
              e.branch, e.employment_type, e.created_at,
-             COALESCE(o.stage, o.current_stage, e.status, 'Joined') AS onboarding_stage,
-             COALESCE(o.current_stage, UPPER(o.stage), 'JOINED') AS current_stage
+             COALESCE(e.status, o.stage, o.current_stage, 'Joined') AS onboarding_stage,
+             COALESCE(UPPER(e.status), o.current_stage, UPPER(o.stage), 'JOINED') AS current_stage
       FROM employees e
       LEFT JOIN employee_onboarding o ON (e.emp_code = o.employee_id OR e.id = o.employee_id)
     `;
@@ -93,7 +99,12 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('SELECT * FROM employees WHERE id = $1 OR emp_code = $1', [id]);
+    const result = await pool.query(`
+      SELECT *, 
+        COALESCE(annual_salary, annual_ctc, ROUND((salary * 12)::numeric, 2)) AS annual_salary,
+        COALESCE(annual_salary, annual_ctc, ROUND((salary * 12)::numeric, 2)) AS annual_ctc
+      FROM employees WHERE id = $1 OR emp_code = $1
+    `, [id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -103,7 +114,7 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/employees — Add new employee (DB transaction + activity log)
 router.post('/', async (req, res) => {
-  const { name, email, phone, department, designation, joiningDate, salary, basicSalary, allowances,
+  const { name, email, phone, department, designation, joiningDate, salary, annualSalary, annualCtc, basicSalary, allowances,
           pin, panNumber, uanNumber, bankAccount, ifscCode, reportingManagerId, reportingManagerName,
           status, branch, employmentType } = req.body;
   const client = await pool.connect();
@@ -118,16 +129,28 @@ router.post('/', async (req, res) => {
     const prefix = seqRes.rows[0]?.prefix || 'EMP';
     const empCode = `${prefix}-${String(nextVal).padStart(3, '0')}`;
 
+    // ANNUAL SALARY IS SOURCE OF TRUTH
+    let finalAnnual = Number(annualSalary || annualCtc || 0);
+    if (!finalAnnual) {
+      const rawSalary = Number(salary || 0);
+      finalAnnual = rawSalary >= 100000 ? rawSalary : Math.round(rawSalary * 12);
+    }
+    const finalMonthly = finalAnnual > 0 ? Math.round((finalAnnual / 12) * 100) / 100 : 0;
+    const finalBasic = Math.round((finalMonthly * 0.6) * 100) / 100;
+    const finalAllowances = Math.round((finalMonthly * 0.4) * 100) / 100;
+
     const result = await client.query(`
       INSERT INTO employees 
         (id, emp_code, name, email, phone, department, designation, joining_date,
-         status, salary, basic_salary, allowances, reporting_manager_id, reporting_manager_name,
+         status, annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_id, reporting_manager_name,
          pan_number, uan_number, bank_account, ifsc_code, plain_pin, branch, employment_type)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
       ON CONFLICT (email) DO UPDATE SET
         name = EXCLUDED.name,
         department = EXCLUDED.department,
         designation = EXCLUDED.designation,
+        annual_salary = EXCLUDED.annual_salary,
+        annual_ctc = EXCLUDED.annual_ctc,
         salary = EXCLUDED.salary,
         basic_salary = EXCLUDED.basic_salary,
         allowances = EXCLUDED.allowances,
@@ -138,9 +161,7 @@ router.post('/', async (req, res) => {
       empCode, empCode, name, email, phone || null, department, designation,
       joiningDate || new Date().toISOString().split('T')[0],
       status || 'Joined',
-      salary || 50000,
-      basicSalary || Math.round((salary || 50000) * 0.6),
-      allowances || Math.round((salary || 50000) * 0.4),
+      finalAnnual, finalAnnual, finalMonthly, finalBasic, finalAllowances,
       reportingManagerId || 'EMP-001',
       reportingManagerName || 'Sarah Jenkins',
       panNumber || null, uanNumber || null, bankAccount || null, ifscCode || null,
@@ -318,9 +339,25 @@ router.post('/:id/confirm', async (req, res) => {
     const result = await client.query(
       `UPDATE employees SET status = 'Confirmed', updated_at = CURRENT_TIMESTAMP WHERE id = $1 OR emp_code = $1 RETURNING *`, [id]
     );
-    await logActivity(client, { module: 'hrms', entity: 'employee', entityId: id, action: 'probation_confirmed', oldValue: 'Probation', newValue: 'Confirmed', performedBy: 'HR Admin' });
+    const emp = result.rows[0];
+    const targetCode = emp?.emp_code || emp?.id || id;
+
+    // Sync employee_onboarding table permanently
+    await client.query(`
+      INSERT INTO employee_onboarding (employee_id, current_stage, stage, updated_at)
+      VALUES ($1, 'CONFIRMED', 'Confirmed', CURRENT_TIMESTAMP)
+      ON CONFLICT (employee_id) DO UPDATE SET current_stage = 'CONFIRMED', stage = 'Confirmed', updated_at = CURRENT_TIMESTAMP
+    `, [targetCode]);
+
+    // Insert into employee_history audit log
+    await client.query(`
+      INSERT INTO employee_history (employee_id, change_type, old_status, new_status, reason, changed_by)
+      VALUES ($1, 'Status Change', 'Probation', 'Confirmed', 'Probation period successfully completed & confirmed', 'HR Admin')
+    `, [targetCode]);
+
+    await logActivity(client, { module: 'hrms', entity: 'employee', entityId: targetCode, action: 'probation_confirmed', oldValue: 'Probation', newValue: 'Confirmed', performedBy: 'HR Admin' });
     await client.query('COMMIT');
-    res.json({ success: true, data: result.rows[0] });
+    res.json({ success: true, data: emp });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ success: false, message: err.message });

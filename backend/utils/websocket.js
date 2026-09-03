@@ -31,3 +31,33 @@ export function broadcastAttendanceEvent(eventData) {
     }
   });
 }
+
+export function broadcastTaskEvent(taskData) {
+  if (!wss) return;
+  const payload = JSON.stringify({
+    type: 'TASK_EVENT',
+    data: taskData,
+    timestamp: new Date().toISOString()
+  });
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload);
+    }
+  });
+}
+
+export function broadcastNotificationEvent(notificationData) {
+  if (!wss) return;
+  const payload = JSON.stringify({
+    type: 'NOTIFICATION_EVENT',
+    data: notificationData,
+    timestamp: new Date().toISOString()
+  });
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(payload);
+    }
+  });
+}

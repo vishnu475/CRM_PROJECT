@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, LayoutGrid, List, Network, BarChart2, FileText, Shield, RefreshCw, LogOut, History, CheckCircle2, Award, Calendar, DollarSign, CreditCard } from 'lucide-react';
+import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, LayoutGrid, List, Network, BarChart2, FileText, Shield, RefreshCw, LogOut, History, CheckCircle2, Award, Calendar, DollarSign, CreditCard, Pencil } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
@@ -11,6 +11,7 @@ import { EmployeeDocumentManager } from '../components/EmployeeDocumentManager';
 import { EmployeeTransferModal } from '../components/EmployeeTransferModal';
 import { AddEmployeeModal } from '../components/AddEmployeeModal';
 import { ExtendedEmployee, EmployeeLifecycleStatus } from '../types';
+import { EmployeeDetailPage } from './EmployeeDetailPage';
 
 import { fetchAllEmployeesFromDB, saveEmployeeToDB, updateEmployeeInDB } from '../../../services/employeePersistence';
 
@@ -43,9 +44,9 @@ export const HrmsPage: React.FC = () => {
           address: 'H.No 12, Tech Park Enclave, City',
           department: emp.department || 'Engineering',
           designation: emp.designation || 'Software Engineer',
-          salary: emp.salary || 85000,
-          basicSalary: emp.basicSalary || Math.round((emp.salary || 85000) * 0.6),
-          allowances: emp.allowances || Math.round((emp.salary || 85000) * 0.4),
+          salary: Number(emp.salary) || 0,
+          basicSalary: Number(emp.basicSalary) || Math.round((Number(emp.salary) || 0) * 0.6),
+          allowances: Number(emp.allowances) || Math.round((Number(emp.salary) || 0) * 0.4),
           status: (emp.status as any) || 'Joined',
           joiningDate: emp.joiningDate || new Date().toISOString().split('T')[0],
           reportingManagerName: emp.reportingManagerName || 'Sarah Jenkins',
@@ -120,23 +121,29 @@ export const HrmsPage: React.FC = () => {
 
   const handleSaveSalaryUpdate = async () => {
     if (!editSalaryEmp || !newSalaryValue) return;
-    const basic = Math.round(newSalaryValue * 0.6);
-    const allowances = Math.round(newSalaryValue * 0.4);
+    const annual = Number(newSalaryValue);
+    const monthly = Math.round((annual / 12) * 100) / 100;
+    const basic = Math.round(monthly * 0.6 * 100) / 100;
+    const allowances = Math.round(monthly * 0.4 * 100) / 100;
 
     try {
       await updateEmployeeInDB(editSalaryEmp.id, {
-        salary: newSalaryValue,
+        annualSalary: annual,
+        annualCtc: annual,
+        salary: monthly,
         basicSalary: basic,
         allowances
       });
       updateEmployee(editSalaryEmp.id, {
-        salary: newSalaryValue,
+        annualSalary: annual,
+        annualCtc: annual,
+        salary: monthly,
         basicSalary: basic,
         allowances
       });
       setEditSalaryEmp(null);
       await refreshFromDB();
-      alert(`Salary for ${editSalaryEmp.name} updated to ₹${newSalaryValue.toLocaleString()} and saved to Database!`);
+      alert(`Annual Salary for ${editSalaryEmp.name} updated to ₹${annual.toLocaleString()} (Monthly: ₹${monthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) and saved to Database!`);
     } catch (err: any) {
       alert(`Failed to update salary: ${err.message}`);
     }
@@ -145,6 +152,9 @@ export const HrmsPage: React.FC = () => {
   // Map employees to ExtendedEmployee format cleanly with null-safety
   const activeEmployeeList = dbEmployees.length > 0 ? dbEmployees : employees;
   const extendedEmployees: ExtendedEmployee[] = activeEmployeeList.map((emp, idx) => {
+    const annualSal = Number(emp.annualSalary || emp.annualCtc || (Number(emp.salary) >= 100000 ? emp.salary : Number(emp.salary) * 12)) || 0;
+    const monthlySal = Number(emp.salary) > 0 ? (Number(emp.salary) >= 100000 ? Math.round((Number(emp.salary) / 12) * 100) / 100 : Number(emp.salary)) : Math.round((annualSal / 12) * 100) / 100;
+
     return {
       id: emp.id || emp.empCode || `EMP-${idx}`,
       empCode: emp.empCode || emp.id || `EMP-${idx}`,
@@ -156,9 +166,11 @@ export const HrmsPage: React.FC = () => {
       address: (emp as any).address || 'H.No 12, Tech Park Enclave, City',
       department: emp.department || 'Engineering',
       designation: emp.designation || 'Senior Software Engineer',
-      salary: Number(emp.salary) || 85000,
-      basicSalary: Number(emp.basicSalary) || Math.round((Number(emp.salary) || 85000) * 0.6),
-      allowances: Number(emp.allowances) || Math.round((Number(emp.salary) || 85000) * 0.4),
+      annualSalary: annualSal,
+      annualCtc: annualSal,
+      salary: monthlySal,
+      basicSalary: Number(emp.basicSalary) || Math.round(monthlySal * 0.6),
+      allowances: Number(emp.allowances) || Math.round(monthlySal * 0.4),
       status: (emp.status as any) || 'Joined',
       joiningDate: emp.joiningDate || new Date().toISOString().split('T')[0],
       reportingManagerName: emp.reportingManagerName || (emp as any).manager || 'Sarah Jenkins',
@@ -266,15 +278,26 @@ export const HrmsPage: React.FC = () => {
     }
   };
 
-  const handleApproveConfirmation = (emp: ExtendedEmployee) => {
+  const handleApproveConfirmation = async (emp: ExtendedEmployee) => {
     if (window.confirm(`Confirm probation completion for ${emp.name} (${emp.empCode || emp.id})? Status will update to Confirmed.`)) {
+      await updateEmployeeInDB(emp.id, { status: 'Confirmed' });
       confirmEmployee(emp.id);
-      alert(`${emp.name} has been successfully confirmed in Employee Master!`);
+      await refreshFromDB();
+      alert(`${emp.name} has been successfully confirmed and permanently saved in PostgreSQL Database!`);
       if (selectedEmployee && selectedEmployee.id === emp.id) {
         setSelectedEmployee(null);
       }
+      handleSelectStatus('Confirmed');
     }
   };
+
+  const subSectionLower = (activeSubSection || '').toLowerCase();
+  if (subSectionLower.startsWith('employees/') || subSectionLower.startsWith('employee/')) {
+    const targetEmpId = activeSubSection.split('/')[1];
+    if (targetEmpId) {
+      return <EmployeeDetailPage employeeId={targetEmpId} onBack={() => setActiveSubSection('all')} />;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -450,8 +473,27 @@ export const HrmsPage: React.FC = () => {
                       <span className="font-semibold text-slate-800">{emp.department}</span>
                     </div>
                     <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Annual Salary:</span>
+                      <span className="font-bold text-slate-900 font-mono">₹ {Number(emp.annualSalary || (emp.salary * 12)).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
                       <span className="text-slate-400">Monthly Salary:</span>
-                      <span className="font-bold text-emerald-600">₹ {emp.salary.toLocaleString()}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-emerald-600 font-mono">
+                          ₹ {Number(emp.salary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditSalaryEmp(emp);
+                            setNewSalaryValue(emp.annualSalary || (emp.salary * 12));
+                          }}
+                          className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+                          title="Edit Annual Salary (Source of Truth)"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -487,7 +529,7 @@ export const HrmsPage: React.FC = () => {
                           <RefreshCw size={12} />
                         </button>
                       )}
-                      <button onClick={() => setSelectedEmployee(emp)} className="text-purple-600 font-bold hover:underline">Profile &rarr;</button>
+                      <button onClick={() => setActiveSubSection(`employees/${emp.empCode || emp.id}`)} className="text-purple-600 font-bold hover:underline">Profile &rarr;</button>
                     </div>
                   </div>
                 </div>
@@ -506,7 +548,8 @@ export const HrmsPage: React.FC = () => {
                     <th className="p-3.5">Designation</th>
                     <th className="p-3.5">Department</th>
                     <th className="p-3.5">Reporting Manager</th>
-                    <th className="p-3.5 font-right">Monthly Salary</th>
+                    <th className="p-3.5">Annual CTC</th>
+                    <th className="p-3.5 font-right">Monthly Gross</th>
                     <th className="p-3.5">Lifecycle Status</th>
                     <th className="p-3.5 text-right">Actions</th>
                   </tr>
@@ -519,7 +562,8 @@ export const HrmsPage: React.FC = () => {
                       <td className="p-3.5">{emp.designation}</td>
                       <td className="p-3.5 font-semibold">{emp.department}</td>
                       <td className="p-3.5 text-slate-500">{emp.reportingManagerName || 'Executive'}</td>
-                      <td className="p-3.5 font-bold text-emerald-600">₹ {emp.salary.toLocaleString()}</td>
+                      <td className="p-3.5 font-mono font-bold text-slate-900">₹ {Number(emp.annualSalary || (emp.salary * 12)).toLocaleString()}</td>
+                      <td className="p-3.5 font-mono font-bold text-emerald-600">₹ {Number(emp.salary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="p-3.5">
                         <select
                           value={emp.status}
@@ -570,7 +614,7 @@ export const HrmsPage: React.FC = () => {
                               <RefreshCw size={10} /> Transfer
                             </button>
                           )}
-                          <button onClick={() => setSelectedEmployee(emp)} className="text-purple-600 font-bold hover:underline">Profile</button>
+                          <button onClick={() => setActiveSubSection(`employees/${emp.empCode || emp.id}`)} className="text-purple-600 font-bold hover:underline">Profile</button>
                         </div>
                       </td>
                     </tr>

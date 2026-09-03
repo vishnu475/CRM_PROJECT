@@ -12,7 +12,9 @@ export async function saveEmployeeToDB(employeeData: {
   department: string;
   designation: string;
   joiningDate?: string;
-  salary: number;
+  annualSalary?: number;
+  annualCtc?: number;
+  salary?: number;
   basicSalary?: number;
   allowances?: number;
   status?: string;
@@ -25,6 +27,15 @@ export async function saveEmployeeToDB(employeeData: {
   pin?: string;
 }): Promise<{ success: boolean; employee: any; empCode: string }> {
   try {
+    let finalAnnual = Number(employeeData.annualSalary || employeeData.annualCtc || 0);
+    if (!finalAnnual) {
+      const raw = Number(employeeData.salary || 0);
+      finalAnnual = raw >= 100000 ? raw : Math.round(raw * 12);
+    }
+    const finalMonthly = finalAnnual > 0 ? Math.round((finalAnnual / 12) * 100) / 100 : 0;
+    const finalBasic = Math.round((finalMonthly * 0.6) * 100) / 100;
+    const finalAllowances = Math.round((finalMonthly * 0.4) * 100) / 100;
+
     const payload = {
       name: employeeData.name,
       email: employeeData.email || `${employeeData.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
@@ -32,9 +43,11 @@ export async function saveEmployeeToDB(employeeData: {
       department: employeeData.department,
       designation: employeeData.designation,
       joiningDate: employeeData.joiningDate || new Date().toISOString().split('T')[0],
-      salary: employeeData.salary,
-      basicSalary: employeeData.basicSalary || Math.round(employeeData.salary * 0.6),
-      allowances: employeeData.allowances || Math.round(employeeData.salary * 0.4),
+      annualSalary: finalAnnual,
+      annualCtc: finalAnnual,
+      salary: finalMonthly,
+      basicSalary: employeeData.basicSalary || finalBasic,
+      allowances: employeeData.allowances || finalAllowances,
       status: employeeData.status || 'Joined',
       reportingManagerName: employeeData.reportingManagerName || 'Sarah Jenkins',
       reportingManagerId: employeeData.reportingManagerId || 'EMP-001',
@@ -75,28 +88,35 @@ export async function fetchAllEmployeesFromDB(stage?: string): Promise<any[]> {
     const res = await fetch(url);
     const json = await res.json();
     if (json.success && Array.isArray(json.data)) {
-      return json.data.map((emp: any) => ({
-        id: emp.id || emp.emp_code,
-        empCode: emp.emp_code || emp.id,
-        name: emp.name,
-        email: emp.email,
-        phone: emp.phone || '',
-        department: emp.department,
-        designation: emp.designation,
-        status: emp.onboarding_stage ? 
-          (emp.onboarding_stage.charAt(0).toUpperCase() + emp.onboarding_stage.slice(1).toLowerCase()) : 
-          (emp.status ? (emp.status.charAt(0).toUpperCase() + emp.status.slice(1).toLowerCase()) : 'Joined'),
-        salary: Number(emp.salary) || 50000,
-        basicSalary: Number(emp.basic_salary) || Math.round(Number(emp.salary) * 0.6),
-        allowances: Number(emp.allowances) || Math.round(Number(emp.salary) * 0.4),
-        reportingManagerId: emp.reporting_manager_id || 'EMP-001',
-        reportingManagerName: emp.reporting_manager_name || 'Sarah Jenkins',
-        panNumber: emp.pan_number || '',
-        uanNumber: emp.uan_number || '',
-        bankAccount: emp.bank_account || '',
-        ifscCode: emp.ifsc_code || '',
-        history: [],
-      }));
+      return json.data.map((emp: any) => {
+        const annualSal = Number(emp.annual_salary || emp.annual_ctc || (Number(emp.salary) >= 100000 ? emp.salary : Number(emp.salary) * 12)) || 0;
+        const monthlySal = Number(emp.salary) > 0 ? (Number(emp.salary) >= 100000 ? Math.round((Number(emp.salary) / 12) * 100) / 100 : Number(emp.salary)) : Math.round((annualSal / 12) * 100) / 100;
+
+        return {
+          id: emp.id || emp.emp_code,
+          empCode: emp.emp_code || emp.id,
+          name: emp.name,
+          email: emp.email,
+          phone: emp.phone || '',
+          department: emp.department,
+          designation: emp.designation,
+          status: emp.status ? 
+            (emp.status.charAt(0).toUpperCase() + emp.status.slice(1).toLowerCase()) : 
+            (emp.onboarding_stage ? (emp.onboarding_stage.charAt(0).toUpperCase() + emp.onboarding_stage.slice(1).toLowerCase()) : 'Joined'),
+          annualSalary: annualSal,
+          annualCtc: annualSal,
+          salary: monthlySal,
+          basicSalary: Number(emp.basic_salary) || Math.round(monthlySal * 0.6),
+          allowances: Number(emp.allowances) || Math.round(monthlySal * 0.4),
+          reportingManagerId: emp.reporting_manager_id || 'EMP-001',
+          reportingManagerName: emp.reporting_manager_name || 'Sarah Jenkins',
+          panNumber: emp.pan_number || '',
+          uanNumber: emp.uan_number || '',
+          bankAccount: emp.bank_account || '',
+          ifscCode: emp.ifsc_code || '',
+          history: [],
+        };
+      });
     }
   } catch (e) {
     console.warn('Failed to fetch employees from DB:', e);

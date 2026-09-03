@@ -41,23 +41,7 @@ export class AttendanceEngineService {
     const todayStr = now.toISOString().split('T')[0];
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    // 4. Log raw event into attendance_events table
-    const eventId = `EVT-${Date.now()}`;
-    await pool.query(
-      `INSERT INTO attendance_events (id, employee_id, timestamp, event_type, source, device_id)
-       VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5)`,
-      [eventId, employee.emp_code, 'PUNCH', source, deviceId]
-    );
-
-    let shift = {
-      id: 'shift-gen',
-      name: 'General Day Shift',
-      start_time: '09:00',
-      end_time: '18:00',
-      grace_period_mins: 15
-    };
-
-    // 8. Check existing attendance record for today
+    // 4. Check existing attendance record for today to determine if CHECK_IN or CHECK_OUT
     const recordRes = await pool.query(
       'SELECT * FROM attendance_records WHERE employee_id = $1 AND date = $2',
       [employee.emp_code, todayStr]
@@ -72,8 +56,27 @@ export class AttendanceEngineService {
       recordRes.rows[0].check_in !== '-' && 
       recordRes.rows[0].check_in !== 'OFF'
     ) {
-      // Employee has already checked in ➔ Perform CHECK_OUT
       punchType = 'CHECK_OUT';
+    }
+
+    // 5. Log raw event into attendance_events table with exact punchType (CHECK_IN vs CHECK_OUT)
+    const eventId = `EVT-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO attendance_events (id, employee_id, timestamp, event_type, source, device_id)
+       VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4, $5)`,
+      [eventId, employee.emp_code, punchType, source, deviceId]
+    );
+
+    let shift = {
+      id: 'shift-gen',
+      name: 'General Day Shift (10:00 AM - 05:00 PM)',
+      start_time: '10:00',
+      end_time: '17:00',
+      grace_period_mins: 0
+    };
+
+    if (punchType === 'CHECK_OUT') {
+      // Employee has already checked in ➔ Perform CHECK_OUT
       const checkInTimeStr = recordRes.rows[0].check_in;
 
       // Calculate Worked Hours
@@ -89,7 +92,6 @@ export class AttendanceEngineService {
       record = updatedRes.rows[0];
     } else {
       // Perform CHECK_IN
-      punchType = 'CHECK_IN';
       const lateMins = this.calculateLateMinutes(timeStr, shift.start_time, shift.grace_period_mins);
       const status = lateMins > 0 ? 'Late In' : 'Present';
 
@@ -136,13 +138,29 @@ export class AttendanceEngineService {
     return resultPayload;
   }
 
-  static calculateLateMinutes(checkInTime, shiftStartTime, gracePeriodMins = 15) {
+  static calculateLateMinutes(checkInTime, shiftStartTime = '10:00 AM', gracePeriodMins = 0) {
     try {
-      const [cHours, cMins] = checkInTime.split(':').map(Number);
-      const [sHours, sMins] = shiftStartTime.split(':').map(Number);
-      const checkInMinutes = cHours * 60 + cMins;
-      const startMinutes = sHours * 60 + sMins + gracePeriodMins;
-      return checkInMinutes > startMinutes ? checkInMinutes - startMinutes : 0;
+      const parseMins = (str) => {
+        if (!str) return null;
+        const upper = str.trim().toUpperCase();
+        const isPM = upper.includes('PM');
+        const isAM = upper.includes('AM');
+        const clean = upper.replace(/(AM|PM)/g, '').trim();
+        const parts = clean.split(':');
+        let h = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (isNaN(h) || isNaN(m)) return null;
+        if (isPM && h < 12) h += 12;
+        if (isAM && h === 12) h = 0;
+        return h * 60 + m;
+      };
+
+      const inMins = parseMins(checkInTime);
+      const startMins = parseMins(shiftStartTime) || (10 * 60);
+
+      if (inMins === null) return 0;
+      const threshold = startMins + gracePeriodMins;
+      return inMins > threshold ? inMins - threshold : 0;
     } catch (e) {
       return 0;
     }

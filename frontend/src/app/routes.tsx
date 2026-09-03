@@ -100,7 +100,6 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'daily', path: '/attendance/daily', label: 'Daily Logs' },
       { id: 'live', path: '/attendance/live', label: 'Live Kiosk Feed' },
       { id: 'regularizations', path: '/attendance/regularizations', label: 'Regularizations' },
-      { id: 'shifts', path: '/attendance/shifts', label: 'Shift Master' },
       { id: 'calendar', path: '/attendance/calendar', label: 'Attendance Calendar' },
       { id: 'overtime', path: '/attendance/overtime', label: 'Overtime Manager' },
     ]
@@ -127,6 +126,7 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'structures', path: '/payroll/structures', label: 'Salary Structures' },
       { id: 'loans', path: '/payroll/loans', label: 'Loans & Advances' },
       { id: 'reports', path: '/payroll/reports', label: 'Department Reports' },
+      { id: 'fnf', path: '/payroll/fnf', label: 'Full & Final Settlement' },
     ]
   },
   {
@@ -187,6 +187,30 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'numbering', path: '/settings/numbering', label: 'Document Numbering' },
       { id: 'general', path: '/settings/general', label: 'General & Profile Settings' },
     ]
+  },
+  {
+    id: 'employee',
+    path: '/employee',
+    label: 'Employee Self-Service (ESS)',
+    defaultSubSection: 'dashboard',
+    subSections: [
+      { id: 'dashboard', path: '/employee/dashboard', label: 'ESS Dashboard' },
+      { id: 'profile', path: '/employee/profile', label: 'My Profile' },
+      { id: 'attendance', path: '/employee/attendance', label: 'My Attendance' },
+      { id: 'leave', path: '/employee/leave', label: 'My Leave' },
+      { id: 'payroll', path: '/employee/payroll', label: 'My Salary' },
+      { id: 'payslips', path: '/employee/payslips', label: 'My Payslips' },
+      { id: 'performance', path: '/employee/performance', label: 'My Performance' },
+      { id: 'expenses', path: '/employee/expenses', label: 'My Expenses' },
+      { id: 'loans', path: '/employee/loans', label: 'My Loans' },
+      { id: 'transfers', path: '/employee/transfers', label: 'My Transfer Requests' },
+      { id: 'tasks', path: '/employee/tasks', label: 'My Tasks & Work Orders' },
+      { id: 'hr-requests', path: '/employee/hr-requests', label: 'My HR Requests' },
+      { id: 'documents', path: '/employee/documents', label: 'My Documents' },
+      { id: 'timesheets', path: '/employee/timesheets', label: 'My Timesheets' },
+      { id: 'notifications', path: '/employee/notifications', label: 'Notifications & Announcements' },
+      { id: 'settings', path: '/employee/settings', label: 'Settings & Security' },
+    ]
   }
 ];
 
@@ -197,6 +221,11 @@ export function parseRouteFromPath(pathname: string): { module: ModuleId; subSec
   }
   const moduleSlug = parts[0].toLowerCase();
   const subSlug = parts[1] ? parts[1].toLowerCase() : '';
+
+  // Special check for dynamic employee detail route: /hrms/employees/EMP-006 or /hrms/employee/EMP-006
+  if (moduleSlug === 'hrms' && parts.length >= 3 && (subSlug === 'employees' || subSlug === 'employee')) {
+    return { module: 'hrms', subSection: `employees/${parts[2]}` };
+  }
 
   const routeConfig = MODULE_ROUTES.find(r => r.id === moduleSlug || r.path === `/${moduleSlug}`);
   if (!routeConfig) {

@@ -34,12 +34,48 @@ export const LeavePage: React.FC = () => {
   ]);
 
   // LEAVE REQUESTS STATE
-  const [leaveRequests, setLeaveRequests] = useState<ExtendedLeaveRequest[]>([
-    { id: 'lv-3513', empId: 'EMP-006', empName: 'vishnu', leaveType: 'Sick Leave (SL)', startDate: '2026-08-20', endDate: '2026-08-20', days: 0.5, isHalfDay: true, halfDaySession: 'First Half', reason: 'FEVER', status: 'Approved', appliedDate: '2026-08-13' },
-    { id: 'lv-101', empId: 'EMP-001', empName: 'Emma Watson', leaveType: 'Casual Leave (CL)', startDate: '2026-08-15', endDate: '2026-08-16', days: 2, isHalfDay: false, reason: 'Family Function in native place', status: 'Pending', appliedDate: '2026-08-10' },
-    { id: 'lv-102', empId: 'EMP-002', empName: 'Robert Vance', leaveType: 'Sick Leave (SL)', startDate: '2026-08-05', endDate: '2026-08-05', days: 0.5, isHalfDay: true, halfDaySession: 'Second Half', reason: 'Medical Checkup & Blood Test', status: 'Approved', appliedDate: '2026-08-04', managerComment: 'Approved. Get well soon!' },
-    { id: 'lv-103', empId: 'EMP-003', empName: 'James Smith', leaveType: 'Earned Leave (EL)', startDate: '2026-07-20', endDate: '2026-07-25', days: 5, isHalfDay: false, reason: 'Annual Family Vacation', status: 'Approved', appliedDate: '2026-07-10' }
-  ]);
+  const [leaveRequests, setLeaveRequests] = useState<ExtendedLeaveRequest[]>([]);
+
+  React.useEffect(() => {
+    fetchLeaveRequestsFromDB();
+  }, []);
+
+  const fetchLeaveRequestsFromDB = async () => {
+    try {
+      const res = await fetch('/api/leave/requests');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const formatted: ExtendedLeaveRequest[] = json.data.map((r: any) => {
+          const rawStatus = (r.status || 'Pending').toUpperCase();
+          let parsedStatus: LeaveRequestStatus = 'Pending';
+          if (rawStatus === 'APPROVED' || rawStatus === 'ACCEPT' || rawStatus === 'ACCEPTED') parsedStatus = 'Approved';
+          else if (rawStatus === 'REJECTED' || rawStatus === 'REJECT') parsedStatus = 'Rejected';
+          else if (rawStatus === 'CANCELLED' || rawStatus === 'CANCEL') parsedStatus = 'Cancelled';
+
+          return {
+            id: r.id,
+            empId: r.employee_id,
+            empName: r.employee_name || r.name || r.employee_id,
+            leaveType: r.leave_type || r.leaveType || 'Casual Leave (CL)',
+            startDate: r.start_date ? String(r.start_date).split('T')[0] : (r.from_date ? String(r.from_date).split('T')[0] : String(r.created_at || '').split('T')[0]),
+            endDate: r.end_date ? String(r.end_date).split('T')[0] : (r.to_date ? String(r.to_date).split('T')[0] : String(r.created_at || '').split('T')[0]),
+            days: Number(r.days || r.total_days || 1),
+            isHalfDay: Boolean(r.is_half_day),
+            halfDaySession: r.half_day_session,
+            reason: r.reason || 'Personal Leave',
+            status: parsedStatus,
+            appliedDate: r.created_at ? String(r.created_at).split('T')[0] : new Date().toISOString().split('T')[0],
+            managerComment: r.manager_comment || r.manager_name
+          };
+        });
+        
+        // Merge DB records with any existing ones, keeping DB records latest
+        setLeaveRequests(formatted);
+      }
+    } catch (err) {
+      console.warn('Leave requests DB fetch warning:', err);
+    }
+  };
 
   // Filters State
   const [typeFilter, setTypeFilter] = useState<string>('All');
@@ -129,9 +165,11 @@ export const LeavePage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employeeId: selectedEmpObj.id,
-          startDate: applyForm.startDate,
-          endDate: applyForm.endDate,
-          totalDays: daysVal,
+          employeeName: selectedEmpObj.name,
+          leaveType: applyForm.leaveType,
+          fromDate: applyForm.startDate,
+          toDate: applyForm.endDate,
+          days: daysVal,
           reason: applyForm.reason || 'Personal Leave'
         })
       });
@@ -149,39 +187,70 @@ export const LeavePage: React.FC = () => {
     ));
 
     setIsApplyModalOpen(false);
+    fetchLeaveRequestsFromDB();
   };
 
   const handleApproveLeave = async (reqId: string) => {
     try {
-      await fetch(`/api/leave/requests/${reqId}/approve`, {
+      const res = await fetch(`/api/leave/requests/${reqId}/approve`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approvedBy: 'HR Admin', comments: managerCommentInput || 'Approved' })
       });
-    } catch (e) {
+      const json = await res.json();
+      if (json.success) {
+        setLeaveRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'Approved', managerComment: managerCommentInput || 'Approved' } : r));
+        setSelectedReqForAction(null);
+        setManagerCommentInput('');
+      } else {
+        alert(json.message || 'Failed to approve leave.');
+        setSelectedReqForAction(null);
+      }
+    } catch (e: any) {
       console.warn('Backend API note:', e);
+      setSelectedReqForAction(null);
     }
-    setLeaveRequests(leaveRequests.map(r => r.id === reqId ? { ...r, status: 'Approved', managerComment: managerCommentInput || 'Approved' } : r));
-    setSelectedReqForAction(null);
-    setManagerCommentInput('');
+    fetchLeaveRequestsFromDB();
   };
 
   const handleRejectLeave = async (reqId: string) => {
     try {
-      await fetch(`/api/leave/requests/${reqId}/reject`, {
+      const res = await fetch(`/api/leave/requests/${reqId}/reject`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: managerCommentInput || 'Rejected' })
+        body: JSON.stringify({ rejectedBy: 'HR Admin', reason: managerCommentInput || 'Rejected' })
       });
-    } catch (e) {
+      const json = await res.json();
+      if (json.success) {
+        setLeaveRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'Rejected', managerComment: managerCommentInput || 'Rejected' } : r));
+        setSelectedReqForAction(null);
+        setManagerCommentInput('');
+      } else {
+        alert(json.message || 'Failed to reject leave.');
+        setSelectedReqForAction(null);
+      }
+    } catch (e: any) {
       console.warn('Backend API note:', e);
+      setSelectedReqForAction(null);
     }
-    setLeaveRequests(leaveRequests.map(r => r.id === reqId ? { ...r, status: 'Rejected', managerComment: managerCommentInput || 'Rejected' } : r));
-    setSelectedReqForAction(null);
-    setManagerCommentInput('');
+    fetchLeaveRequestsFromDB();
   };
 
-  const handleCancelLeave = (reqId: string) => {
-    setLeaveRequests(leaveRequests.map(r => r.id === reqId ? { ...r, status: 'Cancelled' } : r));
+  const handleCancelLeave = async (reqId: string, reasonInput?: string) => {
+    try {
+      const res = await fetch(`/api/leave/requests/${reqId}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancelledBy: 'HR Admin', reason: reasonInput || 'Cancelled by HR Admin' })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setLeaveRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'Cancelled', managerComment: reasonInput || 'Cancelled by HR Admin' } : r));
+      }
+    } catch (e: any) {
+      console.warn('Backend API note:', e);
+    }
+    fetchLeaveRequestsFromDB();
   };
 
   const holidays = [
@@ -223,9 +292,6 @@ export const LeavePage: React.FC = () => {
         </div>
       </div>
 
-      {/* DYNAMIC LEAVE BALANCES CARDS SECTION */}
-      <DynamicLeaveBalanceCards balances={currentBalances} selectedEmpName={selectedEmpObj.name} />
-
       {/* Main Tab Navigation */}
       <div className="flex space-x-1 border-b border-slate-200 overflow-x-auto">
         <button
@@ -237,22 +303,6 @@ export const LeavePage: React.FC = () => {
           <CalendarDays size={14} /> Leave Requests Portal
         </button>
         <button
-          onClick={() => setMainTab('master')}
-          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-            mainTab === 'master' ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Umbrella size={14} /> Leave Type Master
-        </button>
-        <button
-          onClick={() => setMainTab('encashment')}
-          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-            mainTab === 'encashment' ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <DollarSign size={14} /> Encashment & Comp-Off
-        </button>
-        <button
           onClick={() => setMainTab('holidays')}
           className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             mainTab === 'holidays' ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -261,12 +311,6 @@ export const LeavePage: React.FC = () => {
           <CalendarIcon size={14} /> Public Holidays 2026
         </button>
       </div>
-
-      {/* TAB: LEAVE TYPE MASTER */}
-      {mainTab === 'master' && <LeaveTypeMasterManager />}
-
-      {/* TAB: ENCASHMENT & COMP-OFF */}
-      {mainTab === 'encashment' && <EncashmentCompOffView />}
 
       {/* TAB: PUBLIC HOLIDAYS */}
       {mainTab === 'holidays' && (
@@ -387,11 +431,22 @@ export const LeavePage: React.FC = () => {
                             <Check size={12} /> Approve / Reject
                           </button>
                           <button
-                            onClick={() => handleCancelLeave(lv.id)}
+                            onClick={() => handleCancelLeave(lv.id, 'Cancelled by Admin')}
                             className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold text-[10px]"
                             title="Cancel Leave"
                           >
                             <Ban size={12} />
+                          </button>
+                        </div>
+                      )}
+                      {lv.status === 'Approved' && (
+                        <div className="flex justify-end gap-1">
+                          <button
+                            onClick={() => handleCancelLeave(lv.id, 'Cancelled by Admin')}
+                            className="px-2.5 py-1 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded font-bold text-[10px] flex items-center gap-1"
+                            title="Revoke / Cancel Approved Leave"
+                          >
+                            <Ban size={12} /> Cancel Approval
                           </button>
                         </div>
                       )}

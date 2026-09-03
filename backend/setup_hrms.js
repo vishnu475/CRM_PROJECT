@@ -4,10 +4,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-dotenv.config();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 export async function ensureDatabaseAndMigrate() {
   console.log('--- PostgreSQL HRMS Database Initialization ---');
@@ -55,6 +55,9 @@ export async function ensureDatabaseAndMigrate() {
       '003_automatic_database_triggers.sql',
       '004_db_first_complete.sql',
       '005_master_prompt_complete_schema.sql',
+      '006_central_payroll_engine.sql',
+      '007_ess_portal_engine.sql',
+      '008_ess_admin_two_way_integration.sql',
     ];
 
     for (const file of migrationFiles) {

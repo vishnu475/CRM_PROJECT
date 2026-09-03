@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Activity, Radio, Cpu, Clock, CheckCircle2, Filter } from 'lucide-react';
+import { Activity, Radio, Cpu, Clock, CheckCircle2, Filter, AlertTriangle } from 'lucide-react';
 import { AttendanceEvent } from '../types';
 import { Badge } from '../../../components/common/Badge';
+import { calculateLateMinutes } from '../utils/attendanceCalculator';
 
 export interface LiveAttendanceFeedProps {
   events: AttendanceEvent[];
@@ -55,7 +56,10 @@ export const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({ events }
               Check-Outs
             </button>
           </div>
-          <Badge variant="info">{filteredEvents.length} Captured</Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="info">{filteredEvents.length} Events Captured</Badge>
+            <Badge variant="success">{new Set(filteredEvents.map(e => e.employeeId)).size} Unique Staff Present</Badge>
+          </div>
         </div>
       </div>
 
@@ -78,34 +82,50 @@ export const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({ events }
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredEvents.map((evt) => (
-                <tr key={evt.eventId || `EVT-${evt.employeeId}-${evt.timeString}`} className="hover:bg-slate-50">
-                  <td className="p-3 font-mono font-bold text-slate-900 flex items-center gap-1.5">
-                    <Clock size={13} className="text-emerald-500" />
-                    {evt.timeString || '09:00 AM'}
-                  </td>
-                  <td className="p-3 font-bold text-slate-900">{evt.empName}</td>
-                  <td className="p-3 font-mono text-slate-500">{evt.employeeId}</td>
-                  <td className="p-3">
-                    <Badge variant={evt.eventType === 'CHECK_IN' || (evt as any).punchType === 'CHECK_IN' ? 'success' : 'info'}>
-                      {evt.eventType || (evt as any).punchType || 'CHECK_IN'}
-                    </Badge>
-                  </td>
-                  <td className="p-3">
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        evt.statusCalculated === 'Late In' || evt.statusCalculated === 'LATE_IN'
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-emerald-50 text-emerald-700'
-                      }`}
-                    >
-                      {evt.statusCalculated || 'Present'}
-                    </span>
-                  </td>
-                  <td className="p-3 font-semibold text-blue-600 uppercase text-[10px]">{evt.source || 'WEB_KIOSK'}</td>
-                  <td className="p-3 text-right font-mono text-slate-500">{evt.deviceId || 'WEB-KIOSK-01'}</td>
-                </tr>
-              ))}
+              {filteredEvents.map((evt) => {
+                const isCheckOut = evt.eventType === 'CHECK_OUT' || (evt as any).punchType === 'CHECK_OUT';
+                const isCheckIn = !isCheckOut;
+                const timeStr = evt.timeString || '09:00 AM';
+                const lateMins = calculateLateMinutes(timeStr, '09:00 AM', 15);
+                const isLate = isCheckIn && lateMins > 0;
+
+                return (
+                  <tr key={evt.eventId || `EVT-${evt.employeeId}-${evt.timeString}`} className="hover:bg-slate-50">
+                    <td className="p-3 font-mono font-bold text-slate-900 flex items-center gap-1.5">
+                      <Clock size={13} className="text-emerald-500" />
+                      {timeStr}
+                    </td>
+                    <td className="p-3 font-bold text-slate-900">{evt.empName}</td>
+                    <td className="p-3 font-mono text-slate-500">{evt.employeeId}</td>
+                    <td className="p-3">
+                      <Badge variant={isCheckIn ? 'success' : 'info'}>
+                        {isCheckIn ? 'CHECK_IN' : 'CHECK_OUT'}
+                      </Badge>
+                    </td>
+                    <td className="p-3">
+                      {isCheckIn ? (
+                        isLate ? (
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-sm">
+                            <AlertTriangle size={11} className="text-amber-600 shrink-0" />
+                            Late In (+{lateMins > 60 ? `${Math.floor(lateMins/60)}h ${lateMins%60}m` : `${lateMins}m`})
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1 shadow-sm">
+                            <CheckCircle2 size={11} className="text-emerald-600 shrink-0" />
+                            On Time
+                          </span>
+                        )
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                          Check Out
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 font-semibold text-blue-600 uppercase text-[10px]">{evt.source || 'WEB_KIOSK'}</td>
+                    <td className="p-3 text-right font-mono text-slate-500">{evt.deviceId || 'WEB-KIOSK-01'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

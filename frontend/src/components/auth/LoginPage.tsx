@@ -1,30 +1,185 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Hexagon, Mail, Lock, LogIn, CheckCircle2, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Hexagon, Mail, Lock, LogIn, CheckCircle2, ArrowRight, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
   onNavigate: (view: 'landing' | 'register') => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
-  const { setIsAuthenticated, setUserRole } = useApp();
+  const { setIsAuthenticated, setUserRole, setUserProfile, setActiveModule } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('Executive');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const knownEmployees: Record<string, { empCode: string; name: string; email: string; department: string; designation: string }> = {
+    '23341a4219@gmrit.edu.in': { empCode: 'EMP-008', name: 'Ramesh', email: '23341a4219@gmrit.edu.in', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
+    'emp-008': { empCode: 'EMP-008', name: 'Ramesh', email: '23341a4219@gmrit.edu.in', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
+    'ramesh': { empCode: 'EMP-008', name: 'Ramesh', email: '23341a4219@gmrit.edu.in', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
+    
+    'ashok@company.com': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
+    'vvardhan1235@gmail.com': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
+    'emp-006': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
+    'ashok': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
+
+    'sarah.jenkins@company.com': { empCode: 'EMP-001', name: 'Sarah Jenkins', email: 'sarah.jenkins@company.com', department: 'Engineering', designation: 'VP of Engineering' },
+    'emp-001': { empCode: 'EMP-001', name: 'Sarah Jenkins', email: 'sarah.jenkins@company.com', department: 'Engineering', designation: 'VP of Engineering' },
+    'sarah': { empCode: 'EMP-001', name: 'Sarah Jenkins', email: 'sarah.jenkins@company.com', department: 'Engineering', designation: 'VP of Engineering' },
+
+    'michael.vance@company.com': { empCode: 'EMP-002', name: 'Michael Vance', email: 'michael.vance@company.com', department: 'Sales', designation: 'Sales Director' },
+    'emp-002': { empCode: 'EMP-002', name: 'Michael Vance', email: 'michael.vance@company.com', department: 'Sales', designation: 'Sales Director' },
+    
+    'priya.sharma@company.com': { empCode: 'EMP-003', name: 'Priya Sharma', email: 'priya.sharma@company.com', department: 'HR', designation: 'HR Operations Lead' },
+    'emp-003': { empCode: 'EMP-003', name: 'Priya Sharma', email: 'priya.sharma@company.com', department: 'HR', designation: 'HR Operations Lead' },
+    
+    'rahul.verma@company.com': { empCode: 'EMP-004', name: 'Rahul Verma', email: 'rahul.verma@company.com', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
+    'emp-004': { empCode: 'EMP-004', name: 'Rahul Verma', email: 'rahul.verma@company.com', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
+
+    'vishnu.vardhan@company.com': { empCode: 'EMP-005', name: 'Vishnu Vardhan', email: 'vishnu.vardhan@company.com', department: 'Engineering', designation: 'Lead Backend Architect' },
+    'emp-005': { empCode: 'EMP-005', name: 'Vishnu Vardhan', email: 'vishnu.vardhan@company.com', department: 'Engineering', designation: 'Lead Backend Architect' }
+  };
+
+  const handleRoleChange = (selectedRole: string) => {
+    setRole(selectedRole);
+    if (selectedRole === 'Employee') {
+      setEmail('ashok@company.com');
+      setPassword('123456');
+    } else if (selectedRole === 'HRAdmin') {
+      setEmail('hr@company.com');
+      setPassword('123456');
+    } else if (selectedRole === 'FinanceAccountant') {
+      setEmail('finance@company.com');
+      setPassword('123456');
+    }
+  };
+
+  const [error, setError] = useState<string | null>(null);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setUserRole(role as any);
+    setError(null);
+    const inputKey = (email || '').toLowerCase().trim();
+
+    const isAdminLogin = role !== 'Employee';
+    const isEmployeeInput =
+      role === 'Employee' ||
+      inputKey.includes('@gmrit') ||
+      inputKey.includes('ashok') ||
+      inputKey.includes('ramesh') ||
+      (inputKey.startsWith('emp-') && inputKey !== 'emp-001' && inputKey !== 'emp-002');
+
+    try {
+      // 1. Attempt Real Backend API Authentication
+      const apiRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: email, pin: password })
+      });
+      const data = await apiRes.json();
+
+      if (data.success && data.employee) {
+        const emp = data.employee;
+        if (data.token) {
+          localStorage.setItem('crm_token', data.token);
+        }
+        
+        const effectiveRole = isAdminLogin ? (role as any) : (emp.role || 'Employee');
+
+        if (setUserProfile) {
+          setUserProfile({
+            id: emp.empCode || emp.id,
+            empCode: emp.empCode || emp.id,
+            name: emp.name,
+            email: emp.email,
+            role: effectiveRole,
+            roleTitle: emp.designation || (isAdminLogin ? 'Administrator' : 'Employee'),
+            department: emp.department || 'General'
+          });
+        }
+        
+        if (effectiveRole === 'Employee') {
+          setUserRole('Employee');
+          if (setActiveModule) setActiveModule('employee', 'dashboard');
+          window.history.pushState({}, '', '/employee/dashboard');
+        } else {
+          setUserRole(effectiveRole);
+          if (setActiveModule) setActiveModule('dashboard');
+          window.history.pushState({}, '', '/dashboard');
+        }
+        setIsAuthenticated(true);
+        window.dispatchEvent(new Event('popstate'));
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn('[LOGIN] Backend Auth Fallback:', err);
+    }
+
+    // 2. Fallback to Local Employee Record Resolution if offline / demo
+    try {
+      let matched = knownEmployees[inputKey];
+      
+      // Fuzzy fallbacks for Vishnu Vardhan (EMP-005)
+      if (!matched && (inputKey.includes('vishnu') || inputKey === 'emp-005' || inputKey === 'emp005')) {
+        matched = knownEmployees['vishnu.vardhan@company.com'];
+      }
+      // Fuzzy fallbacks for Ashok (EMP-006)
+      if (!matched && (inputKey.includes('ashok') || inputKey.includes('vvardhan1235') || inputKey === 'emp-006' || inputKey === 'emp006')) {
+        matched = knownEmployees['ashok@company.com'];
+      }
+      // Fuzzy fallbacks for Ramesh (EMP-008)
+      if (!matched && (inputKey.includes('ramesh') || inputKey === 'emp-008' || inputKey === 'emp008')) {
+        matched = knownEmployees['23341a4219@gmrit.edu.in'];
+      }
+      // Fuzzy fallbacks for Sarah (EMP-001)
+      if (!matched && (inputKey.includes('sarah') || inputKey === 'emp-001' || inputKey === 'emp001')) {
+        matched = knownEmployees['sarah.jenkins@company.com'];
+      }
+      // Fuzzy fallbacks for Michael (EMP-002)
+      if (!matched && (inputKey.includes('michael') || inputKey === 'emp-002' || inputKey === 'emp002')) {
+        matched = knownEmployees['michael.vance@company.com'];
+      }
+      // Fuzzy fallbacks for Priya (EMP-003)
+      if (!matched && (inputKey.includes('priya') || inputKey === 'emp-003' || inputKey === 'emp003')) {
+        matched = knownEmployees['priya.sharma@company.com'];
+      }
+      // Fuzzy fallbacks for Rahul (EMP-004)
+      if (!matched && (inputKey.includes('rahul') || inputKey === 'emp-004' || inputKey === 'emp004')) {
+        matched = knownEmployees['rahul.verma@company.com'];
+      }
+
+      if (!isAdminLogin && (matched || isEmployeeInput)) {
+        const target = matched || knownEmployees['ashok@company.com'];
+        if (setUserProfile) {
+          setUserProfile({
+            id: target.empCode,
+            empCode: target.empCode,
+            name: target.name,
+            email: target.email,
+            role: 'Employee',
+            roleTitle: target.designation,
+            department: target.department
+          });
+        }
+        setUserRole('Employee');
+        if (setActiveModule) setActiveModule('employee', 'dashboard');
+        window.history.pushState({}, '', '/employee/dashboard');
+      } else {
+        setUserRole(role as any);
+        if (setActiveModule) setActiveModule('dashboard');
+        window.history.pushState({}, '', '/dashboard');
+      }
+
       setIsAuthenticated(true);
-      setIsLoading(false);
-      window.history.pushState({}, '', '/dashboard');
       window.dispatchEvent(new Event('popstate'));
-    }, 600);
+    } catch (err: any) {
+      setError(err.message || 'Unable to sign in. Please try again.');
+    } finally {
+      setIsLoading(false); // MANDATORY - Spinner MUST stop whether login succeeds or fails!
+    }
   };
 
   return (
@@ -118,18 +273,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               <p className="text-sm text-slate-500 font-medium">Enter your credentials to access your ERP workspace.</p>
             </div>
 
+            {error && (
+              <div className="mb-4 p-3 bg-rose-50 text-rose-600 rounded-xl border border-rose-200 text-xs font-bold flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span>{error}</span>
+              </div>
+            )}
+
             <form onSubmit={handleLogin} className="space-y-6">
               
               <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 ml-1">Email Address</label>
+                <label className="text-sm font-bold text-slate-700 ml-1">Email Address or Employee ID</label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-3.5 text-slate-400" size={20} />
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com"
+                    placeholder="you@company.com or EMP-006"
                     className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm"
                   />
                 </div>
@@ -165,10 +327,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                 <div className="relative">
                   <select
                     value={role}
-                    onChange={(e) => setRole(e.target.value)}
+                    onChange={(e) => handleRoleChange(e.target.value)}
                     className="w-full pl-4 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm appearance-none cursor-pointer"
                   >
                     <option value="Executive">Executive / Super Admin</option>
+                    <option value="Employee">Employee Self-Service (ESS)</option>
                     <option value="SalesManager">Sales Manager</option>
                     <option value="HRAdmin">HR Admin</option>
                     <option value="FinanceAccountant">Finance Accountant</option>

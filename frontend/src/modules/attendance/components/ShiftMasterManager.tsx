@@ -82,7 +82,7 @@ export const ShiftMasterManager: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {shifts.map((sh) => (
+        {shifts.map((sh: any) => (
           <div key={sh.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3 hover:border-blue-200 transition-all">
             <div className="flex justify-between items-center">
               <span className="text-xs font-mono text-blue-600 font-bold">{sh.code}</span>

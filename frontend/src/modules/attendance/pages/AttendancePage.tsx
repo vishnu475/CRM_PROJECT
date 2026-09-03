@@ -13,9 +13,18 @@ import {
   Monitor,
   LayoutDashboard,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  LogIn,
+  LogOut,
+  AlertTriangle,
+  XCircle,
+  MapPin,
+  TrendingUp,
+  Bot,
+  CheckSquare
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
+import { AssignTaskModal } from '../../../components/common/AssignTaskModal';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
 import { Modal } from '../../../components/common/Modal';
@@ -39,14 +48,21 @@ export const AttendancePage: React.FC = () => {
     submitRegularization,
     approveRegularization,
     rejectRegularization,
+    reloadAttendanceFromDB,
     getDailyAttendanceRecords,
     getSummaryMetrics
   } = useAttendance();
 
+  React.useEffect(() => {
+    if (reloadAttendanceFromDB) {
+      reloadAttendanceFromDB();
+    }
+  }, [reloadAttendanceFromDB]);
+
   const { activeSubSection, setActiveSubSection } = useApp();
-  const validAttendanceTabs = ['daily', 'live', 'regularizations', 'shifts', 'calendar', 'overtime'];
-  const mainTab = (validAttendanceTabs.includes(activeSubSection) ? activeSubSection : 'daily') as 'daily' | 'live' | 'regularizations' | 'shifts' | 'calendar' | 'overtime';
-  const setMainTab = (tab: 'daily' | 'live' | 'regularizations' | 'shifts' | 'calendar' | 'overtime') => setActiveSubSection(tab);
+  const validAttendanceTabs = ['daily', 'live', 'regularizations', 'calendar', 'overtime'];
+  const mainTab = (validAttendanceTabs.includes(activeSubSection) ? activeSubSection : 'daily') as 'daily' | 'live' | 'regularizations' | 'calendar' | 'overtime';
+  const setMainTab = (tab: 'daily' | 'live' | 'regularizations' | 'calendar' | 'overtime') => setActiveSubSection(tab);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
@@ -54,6 +70,7 @@ export const AttendancePage: React.FC = () => {
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     try {
+      if (reloadAttendanceFromDB) await reloadAttendanceFromDB();
       await fetch('/api/employees');
       await fetch('/api/attendance/today');
     } catch (_) {}
@@ -79,6 +96,91 @@ export const AttendancePage: React.FC = () => {
   // Selected Punch Detail Modal Record State
   const [selectedPunchDetailRecord, setSelectedPunchDetailRecord] = useState<DetailedAttendanceRecord | null>(null);
 
+  // Assign Task Modal State
+  const [isAssignTaskOpen, setIsAssignTaskOpen] = useState(false);
+  const [assignTaskTargetEmp, setAssignTaskTargetEmp] = useState({ id: 'EMP-006', name: 'Ashok' });
+
+  const parseTimeToMinutes = (timeStr: string): number | null => {
+    if (!timeStr || timeStr === '-' || timeStr === 'OFF' || timeStr.trim() === '') return null;
+    const str = timeStr.trim().toUpperCase();
+    const isPM = str.includes('PM');
+    const isAM = str.includes('AM');
+    const cleanStr = str.replace(/(AM|PM)/g, '').trim();
+    const parts = cleanStr.split(':');
+    if (parts.length < 2) return null;
+    let hours = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    if (isNaN(hours) || isNaN(minutes)) return null;
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  };
+
+  const renderAttendanceStatusBadge = (att: DetailedAttendanceRecord) => {
+    const isCheckedIn = att.checkIn && att.checkIn !== '-' && att.checkIn !== 'OFF';
+    
+    if (att.status === 'Weekly Off' || att.status === 'WEEKLY_OFF') {
+      return (
+        <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-bold rounded-lg text-[10px] inline-flex items-center gap-1">
+          <Calendar size={12} /> Weekly Off
+        </span>
+      );
+    }
+
+    if (att.status === 'On Leave' || att.status === 'ON_LEAVE') {
+      return (
+        <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 font-bold rounded-lg text-[10px] inline-flex items-center gap-1">
+          <Calendar size={12} /> On Leave
+        </span>
+      );
+    }
+
+    if (att.status === 'Half Day' || att.status === 'HALF_DAY') {
+      return (
+        <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 font-bold rounded-lg text-[10px] inline-flex items-center gap-1">
+          <Clock size={12} /> Half Day
+        </span>
+      );
+    }
+
+    if (att.status === 'Holiday' || att.status === 'HOLIDAY') {
+      return (
+        <span className="px-2.5 py-1 bg-purple-50 text-purple-700 border border-purple-200 font-bold rounded-lg text-[10px] inline-flex items-center gap-1">
+          <Sparkles size={12} /> Holiday
+        </span>
+      );
+    }
+
+    if (isCheckedIn) {
+      const inMins = parseTimeToMinutes(att.checkIn);
+      const shiftStartMins = 10 * 60; // Office Shift Start: 10:00 AM (600 mins)
+      const lateMins = inMins !== null ? Math.max(0, inMins - shiftStartMins) : 0;
+
+      if (lateMins > 0) {
+        const lateStr = lateMins >= 60 ? `${Math.floor(lateMins / 60)}h ${lateMins % 60}m` : `${lateMins}m`;
+        return (
+          <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 font-bold rounded-lg text-[10px] inline-flex items-center gap-1 shadow-sm">
+            <AlertTriangle size={12} className="text-amber-600 shrink-0" />
+            Late In (+{lateStr})
+          </span>
+        );
+      }
+
+      return (
+        <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold rounded-lg text-[10px] inline-flex items-center gap-1 shadow-sm">
+          <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />
+          On Time
+        </span>
+      );
+    }
+
+    return (
+      <span className="px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 font-bold rounded-lg text-[10px] inline-flex items-center gap-1">
+        <XCircle size={12} /> Absent
+      </span>
+    );
+  };
+
   // Feedback banner state
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -94,7 +196,7 @@ export const AttendancePage: React.FC = () => {
   });
 
   const handleRegularizationSubmit = () => {
-    const targetEmp = employees.find(e => e.id === regForm.employeeId || e.empCode === regForm.employeeId);
+    const targetEmp = employees.find((e: any) => e.id === regForm.employeeId || e.empCode === regForm.employeeId);
     const res = submitRegularization({
       employeeId: regForm.employeeId,
       empName: targetEmp ? targetEmp.name : regForm.employeeId,
@@ -135,9 +237,9 @@ export const AttendancePage: React.FC = () => {
 
   // Manager-Scoped Regularization List Filter
   const isManagerRole = userProfile?.role === 'SalesManager' || userProfile?.role === 'OperationsManager';
-  const managerScopedRegularizations = regularizationRequests.filter(req => {
+  const managerScopedRegularizations = regularizationRequests.filter((req: any) => {
     if (!isManagerRole) return true; // HR/Exec sees all
-    const emp = employees.find(e => e.id === req.employeeId || e.empCode === req.employeeId);
+    const emp = employees.find((e: any) => e.id === req.employeeId || e.empCode === req.employeeId);
     return emp?.manager === userProfile.name || emp?.reportingManagerName === userProfile.name;
   });
 
@@ -201,6 +303,17 @@ export const AttendancePage: React.FC = () => {
             </Button>
             <Button variant="outline" size="sm" onClick={() => setIsRegularizeOpen(true)}>
               <Clock size={14} /> Regularization Request
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAssignTaskTargetEmp({ id: 'EMP-006', name: 'Ashok' });
+                setIsAssignTaskOpen(true);
+              }}
+              className="border-purple-200 text-purple-700 hover:bg-purple-50 font-bold"
+            >
+              <CheckSquare size={14} /> Assign Task
             </Button>
           </div>
         </div>
@@ -289,28 +402,12 @@ export const AttendancePage: React.FC = () => {
               Daily Logs & Employee History
             </button>
             <button
-              onClick={() => setMainTab('live')}
-              className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-                mainTab === 'live' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <Radio size={14} className="text-emerald-500" /> Live Feed ({attendanceEvents.length})
-            </button>
-            <button
               onClick={() => setMainTab('regularizations')}
               className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
                 mainTab === 'regularizations' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
-              Regularization Desk ({managerScopedRegularizations.filter(r => r.status === 'PENDING').length})
-            </button>
-            <button
-              onClick={() => setMainTab('shifts')}
-              className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-                mainTab === 'shifts' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Shift Master & Roster
+              Regularization Desk ({managerScopedRegularizations.filter((r: any) => r.status === 'PENDING').length})
             </button>
             <button
               onClick={() => setMainTab('calendar')}
@@ -329,12 +426,6 @@ export const AttendancePage: React.FC = () => {
               Overtime (OT) View
             </button>
           </div>
-
-          {/* TAB: LIVE ACTIVITY STREAM */}
-          {mainTab === 'live' && <LiveAttendanceFeed events={attendanceEvents} />}
-
-          {/* TAB: SHIFT MASTER */}
-          {mainTab === 'shifts' && <ShiftMasterManager />}
 
           {/* TAB: CALENDAR */}
           {mainTab === 'calendar' && <AttendanceCalendarView records={detailedRecords} />}
@@ -380,7 +471,7 @@ export const AttendancePage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {managerScopedRegularizations.map((req) => (
+                      {managerScopedRegularizations.map((req: any) => (
                         <tr key={req.id} className="hover:bg-slate-50">
                           <td className="p-3 font-bold text-slate-900">{req.empName}</td>
                           <td className="p-3 font-mono text-slate-500">{req.employeeId}</td>
@@ -522,60 +613,99 @@ export const AttendancePage: React.FC = () => {
               </div>
 
               {/* Detailed Attendance Records Table */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left text-xs text-slate-600">
-                  <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold">
+                  <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
                     <tr>
                       <th className="p-3.5">Employee</th>
                       <th className="p-3.5">Emp ID</th>
                       <th className="p-3.5">Department</th>
                       <th className="p-3.5">Date</th>
-                      <th className="p-3.5">Shift</th>
                       <th className="p-3.5">Check In</th>
                       <th className="p-3.5">Check Out</th>
-                      <th className="p-3.5">Work Hours</th>
-                      <th className="p-3.5">Late / Early Status</th>
-                      <th className="p-3.5 text-right">Actions</th>
+                      <th className="p-3.5">Attendance & Punch Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredRecords.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="p-8 text-center text-xs text-slate-400">
+                        <td colSpan={7} className="p-8 text-center text-xs text-slate-400">
                           No attendance records matching filter criteria for {selectedDate}.
                         </td>
                       </tr>
                     ) : (
-                      filteredRecords.map((att: DetailedAttendanceRecord) => (
-                        <tr key={att.id} className="hover:bg-slate-50">
-                          <td className="p-3.5 font-bold text-slate-900">{att.empName}</td>
-                          <td className="p-3.5 font-mono text-slate-500">{att.employeeId || att.empId}</td>
-                          <td className="p-3.5 font-semibold text-slate-700">{att.department}</td>
-                          <td className="p-3.5 text-slate-400">{att.date}</td>
-                          <td className="p-3.5 font-semibold text-slate-600">{att.shiftName}</td>
-                          <td className="p-3.5 font-mono text-emerald-600 font-bold">{att.checkIn}</td>
-                          <td className="p-3.5 font-mono text-blue-600 font-bold">{att.checkOut}</td>
-                          <td className="p-3.5 font-bold">{att.workHours} hrs</td>
-                          <td className="p-3.5 space-x-1">
-                            {att.status === 'Absent' && <Badge variant="danger">Absent</Badge>}
-                            {att.status === 'On Leave' && <Badge variant="info">On Leave</Badge>}
-                            {att.status === 'Half Day' && <Badge variant="warning">Half Day</Badge>}
-                            {att.status === 'Holiday' && <Badge variant="info">Holiday</Badge>}
-                            {att.status === 'Weekly Off' && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 font-bold rounded text-[10px]">Weekly Off</span>}
-                            {att.isLateIn && <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-bold rounded text-[10px]">Late In (+{att.lateMinutes}m)</span>}
-                            {att.isEarlyOut && <span className="px-2 py-0.5 bg-orange-50 text-orange-700 font-bold rounded text-[10px]">Early Out</span>}
-                            {!att.isLateIn && !att.isEarlyOut && (att.status === 'Present' || att.status === 'PRESENT') && <Badge variant="success">On Time</Badge>}
-                          </td>
-                          <td className="p-3.5 text-right">
-                            <button
-                              onClick={() => setSelectedPunchDetailRecord(att)}
-                              className="text-blue-600 font-bold hover:underline"
-                            >
-                              Punch Details &rarr;
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      filteredRecords.map((att: DetailedAttendanceRecord) => {
+                        const isCheckedIn = att.checkIn && att.checkIn !== '-';
+                        const isCheckedOut = att.checkOut && att.checkOut !== '-';
+                        const workPct = Math.min(100, Math.round(((att.workHours || 0) / 9) * 100));
+
+                        return (
+                          <tr key={att.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="p-3.5">
+                              <div className="flex items-center space-x-2.5">
+                                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs shrink-0">
+                                  {att.empName.charAt(0)}
+                                </div>
+                                <div>
+                                  <p className="font-bold text-slate-900 leading-tight">{att.empName}</p>
+                                  <p className="text-[10px] text-slate-400 font-medium">{att.designation || 'Employee'}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3.5 font-mono font-bold text-slate-600">{att.employeeId || att.empId}</td>
+                            <td className="p-3.5 font-semibold text-slate-700">{att.department}</td>
+                            <td className="p-3.5 text-slate-500 font-medium">{att.date}</td>
+
+                            {/* Check In Column */}
+                            <td className="p-3.5">
+                              {isCheckedIn ? (
+                                <div className="space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                    <LogIn size={12} />
+                                    {att.checkIn}
+                                  </span>
+                                  {att.isLateIn && (
+                                    <p className="text-[10px] text-amber-600 font-semibold flex items-center gap-0.5 ml-0.5">
+                                      <span>+{att.lateMinutes > 60 ? `${Math.floor(att.lateMinutes/60)}h ${att.lateMinutes%60}m` : `${att.lateMinutes}m`} late</span>
+                                    </p>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 font-mono text-xs">—</span>
+                              )}
+                            </td>
+
+                            {/* Check Out Column */}
+                            <td className="p-3.5">
+                              {isCheckedOut ? (
+                                <div className="space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                                    <LogOut size={12} />
+                                    {att.checkOut}
+                                  </span>
+                                  {att.isEarlyOut && (
+                                    <p className="text-[10px] text-orange-600 font-semibold flex items-center gap-0.5 ml-0.5">
+                                      <span>{att.earlyOutMinutes > 60 ? `${Math.floor(att.earlyOutMinutes/60)}h ${att.earlyOutMinutes%60}m` : `${att.earlyOutMinutes}m`} early</span>
+                                    </p>
+                                  )}
+                                </div>
+                              ) : isCheckedIn ? (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[11px] font-bold">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0"></span>
+                                  Working
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-mono text-xs">—</span>
+                              )}
+                            </td>
+
+                            {/* Attendance & Punch Status Badge */}
+                            <td className="p-3.5">
+                              {renderAttendanceStatusBadge(att)}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -586,13 +716,22 @@ export const AttendancePage: React.FC = () => {
       )}
 
       {/* Attendance Regularization Request Modal */}
+      <AssignTaskModal
+        isOpen={isAssignTaskOpen}
+        onClose={() => setIsAssignTaskOpen(false)}
+        targetEmployeeId={assignTaskTargetEmp.id}
+        targetEmployeeName={assignTaskTargetEmp.name}
+        onTaskAssigned={handleManualRefresh}
+      />
+
+      {/* Attendance Regularization Request Modal */}
       <Modal isOpen={isRegularizeOpen} onClose={() => setIsRegularizeOpen(false)} title="Attendance Regularization Request">
         <div className="space-y-4 text-xs">
           <Select
             label="Select Employee"
             value={regForm.employeeId}
             onChange={(e) => setRegForm({ ...regForm, employeeId: e.target.value })}
-            options={employees.filter(e => e.status !== 'Exited').map(e => ({ label: `${e.name} (${e.empCode || e.id})`, value: e.empCode || e.id }))}
+            options={employees.filter((e: any) => e.status !== 'Exited').map((e: any) => ({ label: `${e.name} (${e.empCode || e.id})`, value: e.empCode || e.id }))}
           />
           <Input
             label="Date"
@@ -646,110 +785,150 @@ export const AttendancePage: React.FC = () => {
           title={`Punch Logs & Biometric Verification - ${selectedPunchDetailRecord.empName}`}
         >
           <div className="space-y-4 text-xs">
-            {/* Employee Profile Header Summary */}
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+            {/* Header Summary */}
+            <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-4 rounded-2xl flex items-center justify-between shadow-md">
               <div className="flex items-center space-x-3">
-                <div className="w-9 h-9 rounded-full bg-blue-600 font-bold text-white flex items-center justify-center text-sm">
+                <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 font-bold text-white flex items-center justify-center text-lg shadow-sm shrink-0">
                   {selectedPunchDetailRecord.empName.charAt(0)}
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-900 text-sm">{selectedPunchDetailRecord.empName}</h4>
-                  <p className="text-[11px] text-slate-500">
-                    ID: <span className="font-mono font-semibold text-slate-700">{selectedPunchDetailRecord.employeeId || selectedPunchDetailRecord.empId}</span> • Dept: <span className="font-semibold text-slate-700">{selectedPunchDetailRecord.department}</span>
+                  <h4 className="font-extrabold text-white text-base leading-tight">{selectedPunchDetailRecord.empName}</h4>
+                  <p className="text-xs text-blue-200 font-medium">
+                    ID: <span className="font-mono font-bold text-white">{selectedPunchDetailRecord.employeeId || selectedPunchDetailRecord.empId}</span> • Dept: <span className="font-bold text-white">{selectedPunchDetailRecord.department}</span>
                   </p>
                 </div>
               </div>
-              <Badge
-                variant={
+              <div className="text-right">
+                <span className={`px-3 py-1.5 rounded-xl font-extrabold text-xs inline-flex items-center gap-1.5 shadow-md ${
                   selectedPunchDetailRecord.status === 'Present' || selectedPunchDetailRecord.status === 'PRESENT'
-                    ? 'success'
+                    ? 'bg-emerald-500 text-white'
                     : selectedPunchDetailRecord.status === 'Late In' || selectedPunchDetailRecord.status === 'LATE_IN'
-                    ? 'warning'
-                    : selectedPunchDetailRecord.status === 'Absent' || selectedPunchDetailRecord.status === 'ABSENT'
-                    ? 'danger'
-                    : 'info'
-                }
-              >
-                {selectedPunchDetailRecord.status}
-              </Badge>
-            </div>
-
-            {/* Shift & Date Info */}
-            <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-slate-200">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Log Date</span>
-                <span className="font-semibold text-slate-800 text-xs">{selectedPunchDetailRecord.date}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Assigned Shift</span>
-                <span className="font-semibold text-slate-800 text-xs">{selectedPunchDetailRecord.shiftName || 'General Shift (GS)'}</span>
+                    ? 'bg-amber-500 text-white'
+                    : selectedPunchDetailRecord.status === 'Early Out' || selectedPunchDetailRecord.status === 'EARLY_OUT'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-rose-500 text-white'
+                }`}>
+                  {selectedPunchDetailRecord.status}
+                </span>
+                <p className="text-[10px] text-blue-200 mt-1 font-semibold">{selectedPunchDetailRecord.date}</p>
               </div>
             </div>
 
-            {/* Punch In / Out Detailed Grid */}
+            {/* Shift & Punch Comparison Grid */}
             <div className="grid grid-cols-2 gap-3">
-              {/* Check In Log Card */}
-              <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-xl space-y-1.5">
+              {/* Check In Card */}
+              <div className="bg-emerald-50/60 border border-emerald-200 p-3.5 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-emerald-800 text-[11px] uppercase tracking-wide">Check In Log</span>
-                  <span className="font-mono text-emerald-700 font-bold">{selectedPunchDetailRecord.checkIn}</span>
+                  <span className="font-extrabold text-emerald-900 text-xs uppercase tracking-wide flex items-center gap-1">
+                    <LogIn size={14} className="text-emerald-600" /> Check In Punch
+                  </span>
+                  <span className="font-mono text-emerald-800 font-bold text-sm bg-white px-2 py-0.5 rounded-md border border-emerald-200 shadow-sm">
+                    {selectedPunchDetailRecord.checkIn}
+                  </span>
                 </div>
-                <div className="text-[11px] text-slate-600 space-y-0.5 border-t border-emerald-100 pt-1.5">
+                <div className="text-[11px] text-slate-700 space-y-1 border-t border-emerald-100 pt-2 font-medium">
                   <div className="flex justify-between">
-                    <span>Location:</span>
-                    <span className="font-semibold">{selectedPunchDetailRecord.location || 'HQ Office'}</span>
+                    <span className="text-slate-500">Scheduled Start:</span>
+                    <span className="font-semibold text-slate-900">09:00 AM (15m Grace)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>IP Address:</span>
-                    <span className="font-mono font-semibold">{selectedPunchDetailRecord.ipAddress || '192.168.1.50'}</span>
+                    <span className="text-slate-500">Late Status:</span>
+                    {selectedPunchDetailRecord.isLateIn ? (
+                      <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        Late (+{selectedPunchDetailRecord.lateMinutes > 60 ? `${Math.floor(selectedPunchDetailRecord.lateMinutes/60)}h ${selectedPunchDetailRecord.lateMinutes%60}m` : `${selectedPunchDetailRecord.lateMinutes}m`})
+                      </span>
+                    ) : (
+                      <span className="font-bold text-emerald-700">On Time</span>
+                    )}
                   </div>
                   <div className="flex justify-between">
-                    <span>Late Status:</span>
-                    <span className="font-semibold text-amber-700">
-                      {selectedPunchDetailRecord.isLateIn ? `Late In (+${selectedPunchDetailRecord.lateMinutes}m)` : 'On Time'}
-                    </span>
+                    <span className="text-slate-500 font-semibold flex items-center gap-1"><MapPin size={11}/> Location:</span>
+                    <span className="font-semibold text-slate-900">{selectedPunchDetailRecord.location || 'HQ Kiosk'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Check Out Log Card */}
-              <div className="bg-blue-50/50 border border-blue-100 p-3 rounded-xl space-y-1.5">
+              {/* Check Out Card */}
+              <div className="bg-blue-50/60 border border-blue-200 p-3.5 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-blue-800 text-[11px] uppercase tracking-wide">Check Out Log</span>
-                  <span className="font-mono text-blue-700 font-bold">{selectedPunchDetailRecord.checkOut}</span>
+                  <span className="font-extrabold text-blue-900 text-xs uppercase tracking-wide flex items-center gap-1">
+                    <LogOut size={14} className="text-blue-600" /> Check Out Punch
+                  </span>
+                  <span className="font-mono text-blue-800 font-bold text-sm bg-white px-2 py-0.5 rounded-md border border-blue-200 shadow-sm">
+                    {selectedPunchDetailRecord.checkOut}
+                  </span>
                 </div>
-                <div className="text-[11px] text-slate-600 space-y-0.5 border-t border-blue-100 pt-1.5">
+                <div className="text-[11px] text-slate-700 space-y-1 border-t border-blue-100 pt-2 font-medium">
                   <div className="flex justify-between">
-                    <span>Location:</span>
-                    <span className="font-semibold">{selectedPunchDetailRecord.location || 'HQ Office'}</span>
+                    <span className="text-slate-500">Scheduled End:</span>
+                    <span className="font-semibold text-slate-900">06:00 PM</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>IP Address:</span>
-                    <span className="font-mono font-semibold">{selectedPunchDetailRecord.ipAddress || '192.168.1.50'}</span>
+                    <span className="text-slate-500">Early Out Status:</span>
+                    {selectedPunchDetailRecord.isEarlyOut ? (
+                      <span className="font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200">
+                        Early Out ({selectedPunchDetailRecord.earlyOutMinutes > 60 ? `${Math.floor(selectedPunchDetailRecord.earlyOutMinutes/60)}h ${selectedPunchDetailRecord.earlyOutMinutes%60}m` : `${selectedPunchDetailRecord.earlyOutMinutes}m`} Early)
+                      </span>
+                    ) : (
+                      <span className="font-bold text-blue-700">Normal Exit</span>
+                    )}
                   </div>
                   <div className="flex justify-between">
-                    <span>Early Out:</span>
-                    <span className="font-semibold text-orange-700">
-                      {selectedPunchDetailRecord.isEarlyOut ? 'Yes (Early Departure)' : 'No'}
-                    </span>
+                    <span className="text-slate-500 font-semibold flex items-center gap-1"><ShieldCheck size={11}/> Device:</span>
+                    <span className="font-mono font-semibold text-slate-900">WEB-KIOSK-HQ</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Hours & Overtime Breakdown */}
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-center">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Worked Hours</span>
-                <span className="font-bold text-slate-900">{selectedPunchDetailRecord.workHours} hrs</span>
+            {/* Hours & Overtime Meter */}
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="font-extrabold text-slate-800 text-xs">Effective Work Hours & Overtime Meter</span>
+                <span className="font-mono font-bold text-blue-700">{selectedPunchDetailRecord.workHours} / 9.0 hrs</span>
               </div>
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Standard Hours</span>
-                <span className="font-bold text-slate-700">9.0 hrs</span>
+              <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    selectedPunchDetailRecord.workHours >= 8 ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.round((selectedPunchDetailRecord.workHours / 9) * 100))}%` }}
+                ></div>
               </div>
-              <div>
-                <span className="text-[10px] text-purple-600 font-bold uppercase tracking-wider block">Overtime Hours</span>
-                <span className="font-bold text-purple-600">+{selectedPunchDetailRecord.overtimeHours} hrs OT</span>
+              <div className="grid grid-cols-3 gap-2 pt-2 text-center text-[11px]">
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] font-bold">WORKED</span>
+                  <span className="font-bold text-slate-900">{selectedPunchDetailRecord.workHours} hrs</span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-slate-400 block text-[10px] font-bold">TARGET</span>
+                  <span className="font-bold text-slate-700">9.0 hrs</span>
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-purple-200 bg-purple-50/50">
+                  <span className="text-purple-600 block text-[10px] font-bold">OVERTIME</span>
+                  <span className="font-bold text-purple-700">+{selectedPunchDetailRecord.overtimeHours} hrs</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Smart AI Shift Analysis Card */}
+            <div className="bg-indigo-50/80 border border-indigo-200 p-3.5 rounded-2xl flex items-start gap-3">
+              <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                <Bot size={18} />
+              </div>
+              <div className="space-y-1">
+                <h5 className="font-extrabold text-indigo-900 text-xs flex items-center gap-1">
+                  AI Shift & Attendance Insights
+                </h5>
+                <p className="text-indigo-950 leading-relaxed text-[11px] font-medium">
+                  {selectedPunchDetailRecord.isLateIn ? (
+                    `Employee checked in ${selectedPunchDetailRecord.lateMinutes > 60 ? `${Math.floor(selectedPunchDetailRecord.lateMinutes/60)} hours and ${selectedPunchDetailRecord.lateMinutes%60} minutes` : `${selectedPunchDetailRecord.lateMinutes} minutes`} after scheduled shift start (${selectedPunchDetailRecord.shiftName || 'General Shift'}). Regularization request recommended if shift adjustment is required.`
+                  ) : selectedPunchDetailRecord.isEarlyOut ? (
+                    `Employee checked out ${selectedPunchDetailRecord.earlyOutMinutes} minutes early before shift end time. Standard work duration achieved: ${selectedPunchDetailRecord.workHours} hours.`
+                  ) : (
+                    `Punctual attendance record. Check in at ${selectedPunchDetailRecord.checkIn} and check out at ${selectedPunchDetailRecord.checkOut} within standard shift thresholds.`
+                  )}
+                </p>
               </div>
             </div>
 

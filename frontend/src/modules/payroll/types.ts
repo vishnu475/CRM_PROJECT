@@ -1,4 +1,4 @@
-export type PayrollRunStatus = 'Draft' | 'Calculated' | 'Approved' | 'Locked';
+export type PayrollRunStatus = 'Draft' | 'Calculated' | 'Approved' | 'Locked' | 'Paid' | 'Posted';
 
 export interface SalaryStructureConfig {
   id: string;

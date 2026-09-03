@@ -25,24 +25,51 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const nextEmpNum = employees.length + 1;
+  const nextEmpNum = (employees?.length || 0) + 1;
   const defaultEmpCode = `EMP-${String(nextEmpNum).padStart(3, '0')}`;
 
-  const candidateMonthlySalary = candidate?.expectedSalary 
-    ? (candidate.expectedSalary > 500000 ? Math.round(candidate.expectedSalary / 12) : candidate.expectedSalary)
-    : 95000;
+  const getCandidateAnnualSalary = (c: any) => {
+    if (!c) return 400000;
+    const raw = c.expectedSalary ?? c.expected_salary ?? c.offeredSalary ?? c.offered_salary ?? c.salary ?? c.currentSalary ?? c.current_salary;
+    if (raw !== undefined && raw !== null && Number(raw) > 0) {
+      const val = Number(raw);
+      return val < 100000 ? Math.round(val * 12) : val;
+    }
+    return 400000;
+  };
 
   const [form, setForm] = useState({
     empCode: defaultEmpCode,
     department: candidate?.department || 'Engineering',
     designation: candidate?.appliedPosition || 'Senior Software Engineer',
-    salary: candidateMonthlySalary,
+    annualSalary: getCandidateAnnualSalary(candidate),
     reportingManager: 'Sarah Jenkins',
     branch: 'Bengaluru HQ',
     pin: '1234'
   });
 
+  // Re-sync form state whenever candidate or modal opens
+  React.useEffect(() => {
+    if (candidate && isOpen) {
+      const nextNum = (employees?.length || 0) + 1;
+      setForm({
+        empCode: `EMP-${String(nextNum).padStart(3, '0')}`,
+        department: candidate.department || 'Engineering',
+        designation: candidate.appliedPosition || 'Senior Software Engineer',
+        annualSalary: getCandidateAnnualSalary(candidate),
+        reportingManager: 'Sarah Jenkins',
+        branch: 'Bengaluru HQ',
+        pin: '1234'
+      });
+      setError(null);
+    }
+  }, [candidate, isOpen, employees?.length]);
+
   if (!candidate) return null;
+
+  const calculatedMonthly = Math.round((Number(form.annualSalary) / 12) * 100) / 100;
+  const calculatedBasic = Math.round((calculatedMonthly * 0.6) * 100) / 100;
+  const calculatedAllowances = Math.round((calculatedMonthly * 0.4) * 100) / 100;
 
   const handleConvert = async () => {
     setIsSubmitting(true);
@@ -57,9 +84,11 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
         department: form.department,
         designation: form.designation,
         joiningDate: new Date().toISOString().split('T')[0],
-        salary: Number(form.salary),
-        basicSalary: Math.round(Number(form.salary) * 0.6),
-        allowances: Math.round(Number(form.salary) * 0.4),
+        annualSalary: Number(form.annualSalary),
+        annualCtc: Number(form.annualSalary),
+        salary: calculatedMonthly,
+        basicSalary: calculatedBasic,
+        allowances: calculatedAllowances,
         status: 'Joined',
         reportingManagerName: form.reportingManager,
         pin: form.pin,
@@ -79,9 +108,11 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
           designation: form.designation,
           joiningDate: new Date().toISOString().split('T')[0],
           status: 'Joined',
-          salary: Number(form.salary),
-          basicSalary: Math.round(Number(form.salary) * 0.6),
-          allowances: Math.round(Number(form.salary) * 0.4),
+          annualSalary: Number(form.annualSalary),
+          annualCtc: Number(form.annualSalary),
+          salary: calculatedMonthly,
+          basicSalary: calculatedBasic,
+          allowances: calculatedAllowances,
           manager: form.reportingManager,
           reportingManagerName: form.reportingManager,
         });
@@ -92,10 +123,17 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
         await fetch('/api/recruitment/convert', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ candidateId: candidate.id, customDetails: { empCode: assignedEmpCode } }),
+          body: JSON.stringify({ 
+            candidateId: candidate.id, 
+            customDetails: { 
+              empCode: assignedEmpCode,
+              annualSalary: Number(form.annualSalary),
+              salary: calculatedMonthly
+            } 
+          }),
         });
       } catch (_) {
-        // Non-fatal: candidate stage update is secondary, employee is already saved
+        // Non-fatal
       }
 
       setIsSubmitting(false);
@@ -173,12 +211,27 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase">Monthly Gross Salary (₹)</label>
+            <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
+              <span>Annual Salary / CTC (₹)</span>
+              <span className="text-[9px] text-purple-600 font-mono font-bold">
+                Source of Truth
+              </span>
+            </label>
             <Input
               type="number"
-              value={form.salary}
-              onChange={(e) => setForm({ ...form, salary: Number(e.target.value) })}
+              value={form.annualSalary}
+              onChange={(e) => setForm({ ...form, annualSalary: Number(e.target.value) })}
+              className="font-mono font-bold text-slate-900"
             />
+            <div className="mt-1.5 p-2 bg-emerald-50/80 border border-emerald-200/80 rounded-lg space-y-0.5 text-[10px]">
+              <div className="flex justify-between items-center text-emerald-900 font-bold">
+                <span>Monthly Gross (÷ 12):</span>
+                <span className="font-mono text-xs text-emerald-700">₹{calculatedMonthly.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <p className="text-slate-500 text-[9px]">
+                Basic (60%): <strong className="font-mono text-slate-800">₹{calculatedBasic.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> • Allowances: <strong className="font-mono text-slate-800">₹{calculatedAllowances.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              </p>
+            </div>
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase">Reporting Manager</label>
@@ -186,6 +239,7 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
               value={form.reportingManager}
               onChange={(e) => setForm({ ...form, reportingManager: e.target.value })}
             />
+            <p className="text-[10px] text-slate-400 mt-1">Direct supervisor for attendance & leave approvals</p>
           </div>
         </div>
 

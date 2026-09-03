@@ -4,7 +4,8 @@ import {
   DetailedAttendanceRecord,
   AttendanceLogStatus,
   AttendanceMonthlySummary,
-  AttendanceSummaryMetrics
+  AttendanceSummaryMetrics,
+  AttendanceEvent
 } from '../types';
 
 /**
@@ -83,8 +84,8 @@ export function calculateWorkedHours(
  */
 export function calculateLateMinutes(
   checkIn: string,
-  shiftStartTime: string = '09:00 AM',
-  gracePeriodMins: number = 15
+  shiftStartTime: string = '10:00 AM',
+  gracePeriodMins: number = 0
 ): number {
   const inMins = parseTimeToMinutes(checkIn);
   const startMins = parseTimeToMinutes(shiftStartTime);
@@ -101,7 +102,7 @@ export function calculateLateMinutes(
  */
 export function calculateEarlyOutMinutes(
   checkOut: string,
-  shiftEndTime: string = '06:00 PM'
+  shiftEndTime: string = '05:00 PM'
 ): number {
   const outMins = parseTimeToMinutes(checkOut);
   const endMins = parseTimeToMinutes(shiftEndTime);
@@ -260,11 +261,13 @@ export function calculateDailyAttendance(
   existingRecords: DetailedAttendanceRecord[],
   leaveRequests: LeaveRequest[] = [],
   holidaysList: { name: string; date: string }[] = DEFAULT_COMPANY_HOLIDAYS,
-  selectedDate: string = new Date().toISOString().split('T')[0]
+  selectedDate: string = new Date().toISOString().split('T')[0],
+  attendanceEvents: AttendanceEvent[] = []
 ): DetailedAttendanceRecord[] {
   const safeEmployees = Array.isArray(employees) ? employees : [];
   const safeShifts = Array.isArray(shifts) ? shifts : [];
   const safeRecords = Array.isArray(existingRecords) ? existingRecords : [];
+  const safeEvents = Array.isArray(attendanceEvents) ? attendanceEvents : [];
 
   const defaultShift = safeShifts.find(s => s.status === 'Active') || {
     id: 'sh-1',
@@ -279,36 +282,47 @@ export function calculateDailyAttendance(
     status: 'Active'
   };
 
-function isSameDateStr(date1: any, date2: string): boolean {
-  if (!date1 || !date2) return false;
-  const str1 = String(date1).split('T')[0];
-  const str2 = String(date2).split('T')[0];
-  if (str1 === str2) return true;
-  try {
-    const d1 = new Date(date1);
-    const d2 = new Date(date2);
-    return (
-      d1.getFullYear() === d2.getFullYear() &&
-      d1.getMonth() === d2.getMonth() &&
-      d1.getDate() === d2.getDate()
-    );
-  } catch (e) {
-    return false;
+  function isSameDateStr(date1: any, date2: string): boolean {
+    if (!date1 || !date2) return false;
+    const str1 = String(date1).split('T')[0];
+    const str2 = String(date2).split('T')[0];
+    if (str1 === str2) return true;
+    try {
+      const d1 = new Date(date1);
+      const d2 = new Date(date2);
+      return (
+        d1.getFullYear() === d2.getFullYear() &&
+        d1.getMonth() === d2.getMonth() &&
+        d1.getDate() === d2.getDate()
+      );
+    } catch (e) {
+      return false;
+    }
   }
-}
 
   return safeEmployees.map((emp) => {
     const empId = emp.empCode || emp.id;
     
     // Find existing logged attendance record for this employee and date
     const logged = safeRecords.find(
-      r =>
-        ((r as any).employeeId === empId ||
-          (r as any).empId === empId ||
-          (r as any).employee_id === empId ||
-          (r as any).employeeId === emp.id ||
-          (r as any).empId === emp.id) &&
-        isSameDateStr(r.date, selectedDate)
+      r => {
+        const rEmpId = (r as any).employee_id || (r as any).employeeId || (r as any).empId || (r as any).emp_code;
+        const rEmpName = (r as any).emp_name || (r as any).empName || (r as any).name;
+
+        const idMatches =
+          rEmpId === empId ||
+          rEmpId === emp.id ||
+          rEmpId === emp.empCode ||
+          (Boolean(rEmpId) && Boolean(empId) && String(rEmpId).toLowerCase() === String(empId).toLowerCase()) ||
+          (Boolean(rEmpId) && Boolean(emp.id) && String(rEmpId).toLowerCase() === String(emp.id).toLowerCase()) ||
+          (Boolean(rEmpId) && Boolean(emp.empCode) && String(rEmpId).toLowerCase() === String(emp.empCode).toLowerCase());
+
+        const nameMatches = Boolean(rEmpName) && Boolean(emp.name) && String(rEmpName).toLowerCase() === String(emp.name).toLowerCase();
+
+        const dateMatches = isSameDateStr(r.date, selectedDate);
+
+        return (idMatches || nameMatches) && dateMatches;
+      }
     );
 
     // Find shift config
@@ -331,7 +345,7 @@ function isSameDateStr(date1: any, date2: string): boolean {
     let isEarlyOut = false;
     let location = logged?.location || 'HQ Office';
     let ipAddress = logged?.ipAddress || '192.168.1.50';
-    let regStatus = logged?.regularizationStatus || 'NONE';
+    let regStatus = logged?.regularizationStatus || (logged as any)?.regularization_status || 'NONE';
 
     const rawCheckIn = (logged as any)?.checkIn || (logged as any)?.check_in;
     const rawCheckOut = (logged as any)?.checkOut || (logged as any)?.check_out;
@@ -339,28 +353,49 @@ function isSameDateStr(date1: any, date2: string): boolean {
     if (logged && rawCheckIn && rawCheckIn !== '-' && rawCheckIn !== 'OFF') {
       checkIn = rawCheckIn;
       checkOut = (rawCheckOut && rawCheckOut !== 'OFF') ? rawCheckOut : '-';
-      
+    }
+
+    // Fallback to Live Attendance Events if checkIn is still '-'
+    if (checkIn === '-' && safeEvents.length > 0) {
+      const empEvents = safeEvents.filter(evt => {
+        const matchesEmp = evt.employeeId === empId || evt.employeeId === emp.id || (evt.empName && emp.name && evt.empName.toLowerCase() === emp.name.toLowerCase());
+        const eventDateStr = evt.timestamp ? evt.timestamp.split('T')[0] : selectedDate;
+        return matchesEmp && isSameDateStr(eventDateStr, selectedDate);
+      });
+
+      const inEvent = empEvents.find(e => e.eventType === 'CHECK_IN' || (e as any).punchType === 'CHECK_IN');
+      if (inEvent && inEvent.timeString) {
+        checkIn = inEvent.timeString;
+      }
+
+      const outEvents = empEvents.filter(e => e.eventType === 'CHECK_OUT' || (e as any).punchType === 'CHECK_OUT');
+      if (outEvents.length > 0 && outEvents[outEvents.length - 1].timeString) {
+        checkOut = outEvents[outEvents.length - 1].timeString;
+      }
+    }
+
+    if (checkIn !== '-') {
       if (checkOut !== '-') {
         workHours = calculateWorkedHours(checkIn, checkOut, empShift.breakDurationMins);
       } else {
-        workHours = parseFloat((logged as any).workHours || (logged as any).worked_hours) || 0;
+        workHours = parseFloat((logged as any)?.workHours || (logged as any)?.worked_hours) || 0;
       }
 
-      lateMinutes = parseInt((logged as any).lateMinutes || (logged as any).late_minutes, 10) || calculateLateMinutes(checkIn, empShift.startTime, empShift.gracePeriodMins);
+      lateMinutes = calculateLateMinutes(checkIn, empShift.startTime, empShift.gracePeriodMins);
       isLateIn = lateMinutes > 0;
 
       if (checkOut !== '-') {
-        earlyOutMinutes = parseInt((logged as any).earlyOutMinutes || (logged as any).early_out_minutes, 10) || calculateEarlyOutMinutes(checkOut, empShift.endTime);
+        earlyOutMinutes = calculateEarlyOutMinutes(checkOut, empShift.endTime);
         isEarlyOut = earlyOutMinutes > 0;
       }
 
-      overtimeHours = parseFloat((logged as any).overtimeHours || (logged as any).overtime_hours) || calculateOvertimeHours(workHours, empShift.workHours);
+      overtimeHours = parseFloat((logged as any)?.overtimeHours || (logged as any)?.overtime_hours) || calculateOvertimeHours(workHours, empShift.workHours);
     }
 
     const hasCheckIn = checkIn !== '-';
     const hasCheckOut = checkOut !== '-';
 
-    const status = calculateAttendanceStatus({
+    let derivedStatus = calculateAttendanceStatus({
       employeeStatus: emp.status,
       isHoliday: holidayInfo.isHoliday,
       isWorkDay,
@@ -371,6 +406,16 @@ function isSameDateStr(date1: any, date2: string): boolean {
       isLateIn,
       isEarlyOut
     });
+
+    if (hasCheckIn && !leaveInfo.isOnLeave && !holidayInfo.isHoliday && isWorkDay) {
+      if (isLateIn) {
+        derivedStatus = 'Late In';
+      } else if (hasCheckOut && isEarlyOut) {
+        derivedStatus = 'Early Out';
+      } else {
+        derivedStatus = 'Present';
+      }
+    }
 
     return {
       id: logged?.id || `ATT-${empId}-${selectedDate}`,
@@ -392,7 +437,7 @@ function isSameDateStr(date1: any, date2: string): boolean {
       earlyOutMinutes: isExited ? 0 : earlyOutMinutes,
       isLateIn: isExited ? false : isLateIn,
       isEarlyOut: isExited ? false : isEarlyOut,
-      status: (checkIn !== '-' && status === 'Absent') ? 'Present' : ((logged as any)?.status || status),
+      status: isExited ? 'Absent' : derivedStatus,
       location,
       ipAddress,
       regularizationStatus: regStatus

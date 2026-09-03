@@ -8,18 +8,15 @@ import { SalaryStructureManager } from '../components/SalaryStructureManager';
 import { PayrollRegisterView } from '../components/PayrollRegisterView';
 import { LoanBonusManagerView } from '../components/LoanBonusManagerView';
 import { DeptPayrollReportView } from '../components/DeptPayrollReportView';
+import { FullAndFinalSettlementView } from '../components/FullAndFinalSettlementView';
 import { ExtendedPayrollRun, PayrollRunStatus } from '../types';
+import { UserX } from 'lucide-react';
 
 export const PayrollPage: React.FC = () => {
   const { activeSubSection, setActiveSubSection } = useApp();
-  const validPayrollTabs = ['register', 'structures', 'loans', 'reports'];
-  const mainTab = (validPayrollTabs.includes(activeSubSection) ? activeSubSection : 'register') as 'register' | 'structures' | 'loans' | 'reports';
-  const setMainTab = (tab: 'register' | 'structures' | 'loans' | 'reports') => setActiveSubSection(tab);
-
-  const payrollRuns: ExtendedPayrollRun[] = [
-    { id: 'pr-2026-08', month: 'August 2026', totalEmployees: 48, grossAmount: 630000, totalDeductions: 104531, netPay: 525469, status: 'Calculated', runDate: '2026-08-11' },
-    { id: 'pr-2026-07', month: 'July 2026', totalEmployees: 46, grossAmount: 590000, totalDeductions: 98000, netPay: 492000, status: 'Locked', runDate: '2026-07-31', approvedBy: 'John Doe (CEO)' }
-  ];
+  const validPayrollTabs = ['register', 'structures', 'loans', 'reports', 'fnf'];
+  const mainTab = (validPayrollTabs.includes(activeSubSection) ? activeSubSection : 'register') as 'register' | 'structures' | 'loans' | 'reports' | 'fnf';
+  const setMainTab = (tab: 'register' | 'structures' | 'loans' | 'reports' | 'fnf') => setActiveSubSection(tab);
 
   return (
     <div className="space-y-6">
@@ -28,13 +25,13 @@ export const PayrollPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
             <Banknote className="text-emerald-600" size={24} />
-            <span>AI & ML Dynamic Payroll Engine</span>
+            <span>Enterprise Central Payroll Engine</span>
             <span className="text-[10px] bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold px-2.5 py-1 rounded-full shadow-xs">
-              🤖 AI Confirmed Employees Mode
+              🏛️ PostgreSQL Authorized Engine
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Automated monthly payroll calculation, PF/ESI/TDS statutory deductions, AI anomaly risk audits, confirmed employees data integration, and direct PostgreSQL disbursal.
+            Automated monthly payroll run, attendance LOP & OT loss, statutory PF/ESI/TDS tax deductions, bank advice disbursal, and GL accounting posting.
           </p>
         </div>
       </div>
@@ -73,6 +70,14 @@ export const PayrollPage: React.FC = () => {
         >
           <BarChart3 size={14} /> Department Cost Reports
         </button>
+        <button
+          onClick={() => setMainTab('fnf')}
+          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+            mainTab === 'fnf' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <UserX size={14} /> Full & Final Settlement
+        </button>
       </div>
 
       {/* TAB: PAYROLL REGISTER & WORKFLOW */}
@@ -86,6 +91,9 @@ export const PayrollPage: React.FC = () => {
 
       {/* TAB: DEPT REPORTS */}
       {mainTab === 'reports' && <DeptPayrollReportView />}
+
+      {/* TAB: FULL & FINAL SETTLEMENT */}
+      {mainTab === 'fnf' && <FullAndFinalSettlementView />}
     </div>
   );
 };

@@ -25,7 +25,8 @@ export type ModuleId =
   | 'reports'
   | 'automation'
   | 'administration'
-  | 'settings';
+  | 'settings'
+  | 'employee';
 
 export type FlowCategory =
   | 'main'
@@ -63,11 +64,14 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   role: UserRole;
   roleTitle: string;
-  avatar: string;
-  company: string;
-  branch: string;
+  avatar?: string;
+  company?: string;
+  branch?: string;
+  empCode?: string;
+  department?: string;
 }
 
 export interface Lead {
@@ -222,6 +226,8 @@ export interface Employee {
   designation: string;
   joiningDate: string;
   employmentType?: 'Full-time' | 'Part-time' | 'Contract' | 'Intern';
+  annualSalary?: number;
+  annualCtc?: number;
   salary: number;
   basicSalary?: number;
   allowances?: number;

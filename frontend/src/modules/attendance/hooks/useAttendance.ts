@@ -18,9 +18,10 @@ export function useAttendance() {
     submitRegularization,
     approveRegularization,
     rejectRegularization,
+    attendanceEvents = [],
     saveShiftMaster,
     toggleShiftStatus
-  } = useApp();
+  } = useApp() as any;
 
   /**
    * Returns daily calculated attendance records dynamically for a selected date
@@ -32,7 +33,8 @@ export function useAttendance() {
       attendanceRecords,
       leaveRequests,
       undefined,
-      selectedDate
+      selectedDate,
+      attendanceEvents
     );
   };
 
@@ -41,7 +43,7 @@ export function useAttendance() {
    */
   const getSummaryMetrics = (selectedDate: string): AttendanceSummaryMetrics => {
     const dailyRecords = getDailyAttendanceRecords(selectedDate);
-    const activeEmps = employees.filter(e => e.status !== 'Exited');
+    const activeEmps = employees.filter((e: any) => e.status !== 'Exited');
 
     const presentCount = dailyRecords.filter(
       r => r.status === 'Present' || r.status === 'Late In' || r.status === 'Early Out' || r.status === 'PRESENT' || r.status === 'LATE_IN' || r.status === 'EARLY_OUT'
@@ -73,7 +75,7 @@ export function useAttendance() {
    * Returns monthly summary handoff for payroll calculation
    */
   const getMonthlyAttendanceSummary = (employeeId: string, yearMonth: string) => {
-    const emp = employees.find(e => e.id === employeeId || e.empCode === employeeId);
+    const emp = employees.find((e: any) => e.id === employeeId || e.empCode === employeeId);
     return calculateMonthlyAttendanceSummary(
       employeeId,
       emp ? emp.name : employeeId,
@@ -97,6 +99,7 @@ export function useAttendance() {
     rejectRegularization,
     saveShiftMaster,
     toggleShiftStatus,
+    reloadAttendanceFromDB: (useApp() as any).reloadAttendanceFromDB,
     getDailyAttendanceRecords,
     getSummaryMetrics,
     getMonthlyAttendanceSummary

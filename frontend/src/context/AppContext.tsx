@@ -57,6 +57,7 @@ interface AppContextType {
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
   userProfile: UserProfile;
+  setUserProfile: (profile: Partial<UserProfile>) => void;
   companyName: string;
   setCompanyName: (company: string) => void;
   branchName: string;
@@ -133,11 +134,12 @@ interface AppContextType {
 }
 
 const initialUserProfile: UserProfile = {
-  id: 'usr_1',
-  name: 'John Doe',
-  email: 'john.doe@democompany.com',
+  id: 'EMP-006',
+  empCode: 'EMP-006',
+  name: 'Ashok',
+  email: 'ashok@democompany.com',
   role: 'Executive',
-  roleTitle: 'Administrator',
+  roleTitle: 'Senior Full Stack Engineer',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   company: 'Demo Company Pvt. Ltd.',
   branch: 'Headquarters (HQ)',
@@ -369,7 +371,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const [userRole, setUserRoleState] = useState<UserRole>('Executive');
+  const [userRole, setUserRoleState] = useState<UserRole>(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path.startsWith('/employee')) return 'Employee';
+    const saved = localStorage.getItem('crm_user_role');
+    if (saved && saved !== 'Employee') return saved as UserRole;
+    return 'Executive';
+  });
+
   const [companyName, setCompanyName] = useState<string>('Demo Company Pvt. Ltd.');
   const [branchName, setBranchName] = useState<string>('Headquarters (HQ)');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
@@ -383,7 +392,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthenticatedState(auth);
   };
 
-  const [userProfile, setUserProfile] = useState<UserProfile>(initialUserProfile);
+  const [userProfile, setUserProfileState] = useState<UserProfile>(() => {
+    const saved = localStorage.getItem('crm_user_profile');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return initialUserProfile;
+  });
+
+  const setUserProfile = (updates: Partial<UserProfile>) => {
+    setUserProfileState((prev) => {
+      const updated = { ...prev, ...updates };
+      localStorage.setItem('crm_user_profile', JSON.stringify(updated));
+      return updated;
+    });
+  };
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
@@ -485,7 +508,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setAttendanceRecords(prev => {
             const merged = [...prev];
             fetchedRecords.forEach(fr => {
-              const idx = merged.findIndex(m => (m.employeeId === fr.employeeId || m.empId === fr.employeeId) && m.date === fr.date);
+              const idx = merged.findIndex(m => {
+                const sameDate = m.date === fr.date;
+                const rEmpId = fr.employeeId || fr.empId || (fr as any).empCode;
+                const mEmpId = m.employeeId || m.empId || (m as any).empCode;
+
+                const idMatches =
+                  rEmpId === mEmpId ||
+                  (Boolean(rEmpId) && Boolean(mEmpId) && String(rEmpId).toLowerCase() === String(mEmpId).toLowerCase());
+
+                const nameMatches = Boolean(fr.empName) && Boolean(m.empName) && fr.empName.toLowerCase() === m.empName.toLowerCase();
+
+                return sameDate && (idMatches || nameMatches);
+              });
+
               if (idx >= 0) {
                 merged[idx] = { ...merged[idx], ...fr };
               } else {
@@ -666,6 +702,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAttendanceRecords(prev => [newRecord, ...prev]);
     }
 
+    // POST TO POSTGRESQL BACKEND (SINGLE SOURCE OF TRUTH)
+    fetch('/api/attendance/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employeeId: emp.empCode || emp.id,
+        pin: (emp as any).pin || (emp as any).plain_pin || '1234',
+        deviceId: 'WEB-ADMIN-PANEL',
+        source: 'ADMIN_DESK'
+      })
+    }).then(() => {
+      reloadAttendanceFromDB();
+    }).catch(err => console.warn('Backend PostgreSQL checkIn sync warning:', err));
+
     return { success: true, message: `Checked in successfully at ${nowTime}` };
   };
 
@@ -700,12 +750,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isEarly = earlyOutMins > 0;
 
     let finalStatus: DetailedAttendanceRecord['status'] = existing.status;
-    if (existing.isLateIn) {
-      finalStatus = 'Late In';
-    } else if (isEarly) {
-      finalStatus = 'Early Out';
-    } else {
-      finalStatus = 'Present';
+    if (existing.status !== 'Late In') {
+      finalStatus = isEarly ? 'Early Out' : 'Present';
     }
 
     const updatedRecord: DetailedAttendanceRecord = {
@@ -720,7 +766,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setAttendanceRecords(prev => prev.map((r, idx) => (idx === existingIndex ? updatedRecord : r)));
-    return { success: true, message: `Checked out successfully at ${nowTime}. Worked: ${workedHours} hrs.` };
+
+    // POST TO POSTGRESQL BACKEND (SINGLE SOURCE OF TRUTH)
+    fetch('/api/attendance/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employeeId: emp.empCode || emp.id,
+        pin: (emp as any).pin || (emp as any).plain_pin || '1234',
+        deviceId: 'WEB-ADMIN-PANEL',
+        source: 'ADMIN_DESK'
+      })
+    }).then(() => {
+      reloadAttendanceFromDB();
+    }).catch(err => console.warn('Backend PostgreSQL checkOut sync warning:', err));
+
+    return { success: true, message: `Checked out successfully at ${nowTime}` };
   };
 
   const submitRegularization = (
@@ -856,6 +917,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync user profile when user role changes
   const setUserRole = (role: UserRole) => {
+    localStorage.setItem('crm_user_role', role);
     setUserRoleState(role);
     const roleTitles: Record<UserRole, { name: string; title: string }> = {
       Executive: { name: 'John Doe', title: 'Administrator' },
@@ -868,11 +930,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       Customer: { name: 'Globex Corp', title: 'Customer Admin' },
       Vendor: { name: 'Office Supplies Ltd', title: 'Vendor Portal' },
     };
-    setUserProfile((prev) => ({
+    setUserProfileState((prev) => ({
       ...prev,
       role,
-      name: roleTitles[role]?.name || 'John Doe',
-      roleTitle: roleTitles[role]?.title || role,
+      name: (prev.name && prev.name !== 'John Doe' && prev.name !== 'James Smith') ? prev.name : (roleTitles[role]?.name || 'John Doe'),
+      roleTitle: (prev.roleTitle && prev.roleTitle !== 'Senior Software Eng.') ? prev.roleTitle : (roleTitles[role]?.title || role),
     }));
   };
 
@@ -1053,6 +1115,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         history: [...(emp.history || []), changeRecord],
       };
     }));
+
+    fetch(`/api/employees/${id}/transfer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(transferData),
+    }).catch(err => console.warn('DB transfer error:', err));
   };
 
   const exitEmployee = (id: string, exitReason?: string) => {
@@ -1075,6 +1143,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         history: [...(emp.history || []), changeRecord],
       };
     }));
+
+    fetch(`/api/employees/${id}/exit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: exitReason }),
+    }).catch(err => console.warn('DB exit error:', err));
   };
 
   const confirmEmployee = (id: string, notes?: string) => {
@@ -1097,6 +1171,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         history: [...(emp.history || []), changeRecord],
       };
     }));
+
+    // Save permanently to PostgreSQL database
+    fetch(`/api/employees/${id}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes }),
+    }).catch(err => console.warn('DB confirm error:', err));
   };
 
   const convertCandidateToEmployee = (candidateId: string, customDetails?: Partial<Employee>): Employee => {
@@ -1153,6 +1234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userRole,
         setUserRole,
         userProfile,
+        setUserProfile,
         companyName,
         setCompanyName,
         branchName,

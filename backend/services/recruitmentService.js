@@ -175,9 +175,12 @@ export class RecruitmentService {
         const empPhone = candidate?.phone || '+91 98765 00000';
         if (!empEmail) empEmail = `${empId.toLowerCase()}@company.com`;
         const empManager = candidate?.recruiter || candidate?.hiring_manager || 'Sarah Jenkins';
-        const salary = 85000;
-        const basicSalary = Math.round(salary * 0.6);
-        const allowances = Math.round(salary * 0.4);
+        
+        // ANNUAL SALARY IS THE SOURCE OF TRUTH
+        const annualSalary = Number(candidate?.expected_salary || candidate?.annual_ctc || 400000);
+        const monthlySalary = Math.round((annualSalary / 12) * 100) / 100;
+        const basicSalary = Math.round((monthlySalary * 0.6) * 100) / 100;
+        const allowances = Math.round((monthlySalary * 0.4) * 100) / 100;
 
         // Update candidate with employee_id and status = 'CONVERTED'
         await client.query(
@@ -188,9 +191,10 @@ export class RecruitmentService {
         // 2. Upsert into employees table (status = 'Active')
         const empUpsert = await client.query(`
           INSERT INTO employees (
-            id, emp_code, name, email, phone, department, designation, joining_date, status, salary, basic_salary, allowances, reporting_manager_name, plain_pin
+            id, emp_code, name, email, phone, department, designation, joining_date, status,
+            annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_name, plain_pin
           )
-          VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Active', $7, $8, $9, $10, '1234')
+          VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Active', $7, $7, $8, $9, $10, $11, '1234')
           ON CONFLICT (id) DO UPDATE SET
             emp_code = EXCLUDED.emp_code,
             name = EXCLUDED.name,
@@ -198,11 +202,16 @@ export class RecruitmentService {
             phone = EXCLUDED.phone,
             department = EXCLUDED.department,
             designation = EXCLUDED.designation,
+            annual_salary = EXCLUDED.annual_salary,
+            annual_ctc = EXCLUDED.annual_ctc,
+            salary = EXCLUDED.salary,
+            basic_salary = EXCLUDED.basic_salary,
+            allowances = EXCLUDED.allowances,
             reporting_manager_name = EXCLUDED.reporting_manager_name,
             status = 'Active',
             updated_at = CURRENT_TIMESTAMP
           RETURNING *
-        `, [empId, empName, empEmail, empPhone, empDept, empDesig, salary, basicSalary, allowances, empManager]);
+        `, [empId, empName, empEmail, empPhone, empDept, empDesig, annualSalary, monthlySalary, basicSalary, allowances, empManager]);
 
         createdEmployee = empUpsert.rows[0];
 
@@ -311,9 +320,18 @@ export class RecruitmentService {
       const phone = customDetails.phone || (candidate ? candidate.phone : '+91 98765 00000');
       const department = customDetails.department || (candidate ? candidate.department : 'Engineering');
       const designation = customDetails.designation || (candidate ? candidate.applied_position : 'Software Engineer');
-      const salary = Number(customDetails.salary) || 85000;
-      const basicSalary = Math.round(salary * 0.6);
-      const allowances = Math.round(salary * 0.4);
+      
+      // ANNUAL SALARY IS THE SOURCE OF TRUTH
+      let annualSalary = Number(customDetails.annualSalary || customDetails.annualCtc || candidate?.expected_salary || 0);
+      if (!annualSalary) {
+        const rawSal = Number(customDetails.salary || 0);
+        annualSalary = rawSal >= 100000 ? rawSal : Math.round(rawSal * 12);
+      }
+      if (!annualSalary) annualSalary = 400000;
+      
+      const salary = Math.round((annualSalary / 12) * 100) / 100;
+      const basicSalary = Math.round((salary * 0.6) * 100) / 100;
+      const allowances = Math.round((salary * 0.4) * 100) / 100;
 
       // 3. Insert or Update employees table cleanly
       let newEmployee;
@@ -321,28 +339,34 @@ export class RecruitmentService {
         const targetId = existingCheck.rows[0].id;
         const updateRes = await client.query(
           `UPDATE employees 
-           SET name = $2, department = $3, designation = $4, salary = $5, basic_salary = $6, allowances = $7, status = 'Active', updated_at = CURRENT_TIMESTAMP 
+           SET name = $2, department = $3, designation = $4,
+               annual_salary = $5, annual_ctc = $5, salary = $6, basic_salary = $7, allowances = $8,
+               status = 'Active', updated_at = CURRENT_TIMESTAMP 
            WHERE id = $1 OR emp_code = $1 
            RETURNING *`,
-          [targetId, name, department, designation, salary, basicSalary, allowances]
+          [targetId, name, department, designation, annualSalary, salary, basicSalary, allowances]
         );
         newEmployee = updateRes.rows[0];
       } else {
         const insertRes = await client.query(
           `INSERT INTO employees 
-           (id, emp_code, name, email, phone, department, designation, joining_date, status, salary, basic_salary, allowances, reporting_manager_id, reporting_manager_name, pan_number, uan_number, bank_account, ifsc_code, pin_hash, plain_pin)
-           VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Joined', $7, $8, $9, 'EMP-001', 'Sarah Jenkins', 'ABCDE1234F', '100987654321', '98765432101', 'HDFC0001234', $10, $11)
+           (id, emp_code, name, email, phone, department, designation, joining_date, status,
+            annual_salary, annual_ctc, salary, basic_salary, allowances,
+            reporting_manager_id, reporting_manager_name, pan_number, uan_number, bank_account, ifsc_code, pin_hash, plain_pin)
+           VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Joined', $7, $7, $8, $9, $10, 'EMP-001', 'Sarah Jenkins', 'ABCDE1234F', '100987654321', '98765432101', 'HDFC0001234', $11, $12)
            ON CONFLICT (email) DO UPDATE SET
              name = EXCLUDED.name,
              department = EXCLUDED.department,
              designation = EXCLUDED.designation,
+             annual_salary = EXCLUDED.annual_salary,
+             annual_ctc = EXCLUDED.annual_ctc,
              salary = EXCLUDED.salary,
              basic_salary = EXCLUDED.basic_salary,
              allowances = EXCLUDED.allowances,
              status = 'Joined',
              updated_at = CURRENT_TIMESTAMP
            RETURNING *`,
-          [empCode, name, finalEmail, phone, department, designation, salary, basicSalary, allowances, pinHash, defaultPin]
+          [empCode, name, finalEmail, phone, department, designation, annualSalary, salary, basicSalary, allowances, pinHash, defaultPin]
         );
         newEmployee = insertRes.rows[0];
       }

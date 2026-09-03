@@ -46,6 +46,8 @@ import {
   ExpensesPage,
   SettingsPage
 } from '../../modules/friend_2_frontend_implementation';
+import { EmployeeWorkReportPage } from '../../modules/ess/pages/EmployeeWorkReportPage';
+import { TasksPage } from '../../modules/tasks';
 
 
 
@@ -330,26 +332,7 @@ export const ModuleViews: React.FC = () => {
       );
 
     case 'tasks':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <CheckSquare className="text-emerald-400" size={22} />
-            Task Management & Kanban
-          </h1>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {tasks.map((t) => (
-              <div key={t.id} className="bg-white shadow-sm border border-slate-200 p-4 rounded-2xl space-y-2">
-                <div className="flex justify-between items-center">
-                  <p className="font-bold text-[#0f172a] text-xs">{t.title}</p>
-                  <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 text-[10px] font-bold rounded">{t.priority}</span>
-                </div>
-                <p className="text-[10px] text-slate-500">{t.project} • Assignee: {t.assignee}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <TasksPage />;
 
     case 'helpdesk':
       return (
@@ -447,6 +430,9 @@ export const ModuleViews: React.FC = () => {
 
     case 'settings':
       return <SettingsPage />;
+
+    case 'employee':
+      return <EmployeeWorkReportPage />;
 
     default:
       return null;
