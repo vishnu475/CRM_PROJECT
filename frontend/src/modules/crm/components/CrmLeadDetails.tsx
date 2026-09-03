@@ -80,16 +80,25 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
   const handleAddActivity = () => {
     if (!activityForm.title) return;
+    const actStatus = activityForm.status || 'Completed';
+    const actType = activityForm.type || 'Call';
+
     addActivity({
       title: activityForm.title,
-      type: activityForm.type,
+      type: actType,
       relatedTo: leadId,
       assignedTo: lead.assignedTo,
       dueDate: activityForm.date || new Date().toISOString().split('T')[0],
       priority: 'Medium',
-      status: activityForm.status || 'Completed',
+      status: actStatus,
       outcome: activityForm.outcome
     });
+
+    // Auto-advance lead stage to 'Contacted' if in 'New' and completed interaction recorded
+    if (lead.stage === 'New' && actStatus === 'Completed' && (actType === 'Call' || actType === 'Email' || actType === 'Meeting')) {
+      updateLead(lead.id, { stage: 'Contacted' });
+    }
+
     setActivityForm({ type: 'Call', title: '', date: '', outcome: '', status: 'Completed' });
     setShowActivityForm(false);
     setValidationError(null);
@@ -701,7 +710,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   type="submit"
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
                 >
-                  <CheckCircle2 size={14} /> Save Interaction
+                  <CheckCircle2 size={14} /> {lead.stage === 'New' ? 'Save & Move to Contacted' : 'Save Interaction'}
                 </button>
               </div>
             </form>
