@@ -1,9 +1,10 @@
 version: '3.8'
 
 services:
-  postgres:
+  # HRMS PostgreSQL Database (Friend 2 — Employees, Payroll, Attendance)
+  postgres_hrms:
     image: postgres:18-alpine
-    container_name: crm_postgres
+    container_name: hrms_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -11,7 +12,20 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_hrms:/var/lib/postgresql/data
+
+  # CRM PostgreSQL Database (Friend 1 — Leads, Customers, Sales)
+  postgres_crm:
+    image: postgres:18-alpine
+    container_name: crm_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: crm
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_crm:/var/lib/postgresql/data
 
   backend:
     build:
@@ -21,13 +35,21 @@ services:
       - "5000:5000"
     environment:
       PORT: 5000
-      DB_HOST: postgres
+      # HRMS DB
+      DB_HOST: postgres_hrms
       DB_USER: postgres
       DB_PASSWORD: postgres
       DB_NAME: HRMS
       DB_PORT: 5432
+      # CRM DB
+      CRM_DB_HOST: postgres_crm
+      CRM_DB_USER: postgres
+      CRM_DB_PASSWORD: postgres
+      CRM_DB_NAME: crm
+      CRM_DB_PORT: 5432
     depends_on:
-      - postgres
+      - postgres_hrms
+      - postgres_crm
 
   frontend:
     build:
@@ -39,4 +61,5 @@ services:
       - backend
 
 volumes:
-  pgdata:
+  pgdata_hrms:
+  pgdata_crm:

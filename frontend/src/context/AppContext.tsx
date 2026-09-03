@@ -1,4 +1,20 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  LeadsAPI,
+  CustomersAPI,
+  ContactsAPI,
+  OpportunitiesAPI,
+  CRMActivitiesAPI,
+  QuotationsAPI,
+  SalesOrdersAPI,
+  CRMInvoicesAPI,
+  CRMProductsAPI,
+  VendorsAPI,
+  PurchaseOrdersAPI,
+  AccountsAPI,
+  BankingAPI,
+  ExpensesAPI,
+} from '../services/apiService';
 import { parseRouteFromPath, buildRoutePath } from '../app/routes';
 import {
   ModuleId,
@@ -143,99 +159,35 @@ const initialUserProfile: UserProfile = {
   branch: 'Headquarters (HQ)',
 };
 
-// Generate large mock datasets dynamically for CRM
-const generateMockLeads = (): Lead[] => {
-  const sources = ['Website', 'Referral', 'Campaign', 'Social Media', 'Manual/Other'];
-  const stages: Lead['stage'][] = ['New', 'Contacted', 'Qualified', 'Proposal', 'Won', 'Lost'];
-  const leads: Lead[] = [];
-  for (let i = 1; i <= 248; i++) {
-    // Distribution to match mock data
-    const stage = i <= 15 ? 'Lost' : i <= 36 ? 'Won' : i <= 81 ? 'Proposal' : i <= 163 ? 'Qualified' : i <= 210 ? 'Contacted' : 'New';
-    const source = i % 100 < 40 ? 'Website' : i % 100 < 65 ? 'Referral' : i % 100 < 80 ? 'Campaign' : i % 100 < 90 ? 'Social Media' : 'Manual/Other';
-    leads.push({
-      id: `LD-${1000 + i}`,
-      name: `Lead Person ${i}`,
-      company: `Company ${i}`,
-      email: `lead${i}@example.com`,
-      phone: `555-01${i.toString().padStart(2, '0')}`,
-      value: 10000 + (i * 1000),
-      stage,
-      score: 50 + (i % 50),
-      source,
-      assignedTo: 'Sarah Connor',
-      createdAt: '2025-05-01'
-    });
-  }
-  return leads;
-};
-
-const initialLeads: Lead[] = generateMockLeads();
-const initialCustomers: Customer[] = Array.from({ length: 128 }).map((_, i) => {
-  const now = new Date().toISOString();
-  return {
-    id: `CUST-${1000 + i}`,
-    customerCode: `C${1000 + i}`,
-    customerName: `Customer ${i}`,
-    customerType: i % 3 === 0 ? 'Individual' : 'Company',
-    industry: ['Technology', 'Manufacturing', 'Retail', 'Healthcare'][i % 4],
-    ownerId: ['John Doe', 'Sarah Connor', 'Mike Ross'][i % 3],
-    status: i % 10 === 0 ? 'Inactive' : (i % 7 === 0 ? 'At Risk' : 'Active'),
-    primaryContact: {
-      name: `Contact ${i}`,
-      email: `cust${i}@example.com`,
-      phone: '555-0000'
-    },
-    billingAddress: {
-      city: 'City ' + i,
-      country: 'USA'
-    },
-    creditLimit: 100000,
-    createdAt: now,
-    updatedAt: now
-  };
-});
+// ============================================================
+// CRM DB-FIRST: All CRM entities start EMPTY.
+// Loaded from the crm PostgreSQL database via APIs on mount.
+// ============================================================
+const initialLeads: Lead[] = [];
+const initialCustomers: Customer[] = [];
 const initialContacts: Contact[] = [];
-const initialOpportunities: Opportunity[] = [
-  { id: 'OPP-1', name: 'Enterprise Expansion', customerId: 'CUST-1000', customerName: 'Globex', value: 450000, probability: 20, expectedClose: '2025-06-01', owner: 'Mike Ross', stage: 'New' },
-  { id: 'OPP-2', name: 'Cloud Migration', customerId: 'CUST-1001', customerName: 'Initech', value: 820000, probability: 50, expectedClose: '2025-06-15', owner: 'Sarah Connor', stage: 'Qualified' },
-  { id: 'OPP-3', name: 'Software License', customerId: 'CUST-1002', customerName: 'Acme', value: 980000, probability: 70, expectedClose: '2025-06-20', owner: 'David Miller', stage: 'Proposal' },
-  { id: 'OPP-4', name: 'Consulting Retainer', customerId: 'CUST-1003', customerName: 'Stark Ind', value: 750000, probability: 90, expectedClose: '2025-05-30', owner: 'Mike Ross', stage: 'Negotiation' }
-];
-const initialActivities: Activity[] = [
-  { id: 'ACT-1', title: 'Initial Demo', type: 'Meeting', relatedTo: 'Acme Corp', assignedTo: 'Sarah Connor', dueDate: 'Today, 10:30 AM', priority: 'High', status: 'Completed', outcome: 'Positive' },
-  { id: 'ACT-2', title: 'Follow-up Call', type: 'Call', relatedTo: 'John Smith', assignedTo: 'Mike Ross', dueDate: 'Today, 09:15 AM', priority: 'Medium', status: 'Completed', outcome: 'Sent proposal' },
-  { id: 'ACT-3', title: 'Send MSA', type: 'Email', relatedTo: 'TechFlow Inc', assignedTo: 'Sarah Connor', dueDate: 'Yesterday, 04:45 PM', priority: 'High', status: 'Completed' },
-  { id: 'ACT-4', title: 'Prepare Timeline', type: 'Task', relatedTo: 'Global Systems', assignedTo: 'David Miller', dueDate: 'Yesterday, 02:00 PM', priority: 'Medium', status: 'Completed' }
-];
-const initialFollowUps: FollowUp[] = [
-  { id: 'FU-1', relatedEntity: 'Jane Doe', activityType: 'Call', dueDate: 'Yesterday, 05:00 PM', owner: 'Mike Ross', status: 'Overdue' },
-  { id: 'FU-2', relatedEntity: 'Innovate LLC', opportunityId: 'Enterprise License', activityType: 'Meeting', dueDate: 'Today, 02:30 PM', owner: 'Sarah Connor', status: 'Today' },
-  { id: 'FU-3', relatedEntity: 'Michael Scott', activityType: 'Email', dueDate: 'Today, 04:00 PM', owner: 'David Miller', status: 'Today' },
-  { id: 'FU-4', relatedEntity: 'Future Tech', opportunityId: 'Q4 Consulting', activityType: 'Call', dueDate: 'Tomorrow, 10:00 AM', owner: 'Mike Ross', status: 'Upcoming' }
-];
+const initialOpportunities: Opportunity[] = [];
+const initialActivities: Activity[] = [];
+const initialFollowUps: FollowUp[] = [];
 const initialNotes: Note[] = [];
 
-const initialProducts: Product[] = [
-  { id: 'PROD-A', sku: 'SKU-ENT-01', name: 'Product A - Enterprise CRM Suite', category: 'Software License', price: 6540000, stock: 120, uom: 'Licenses', hsnCode: '998313', taxRate: 18 },
-  { id: 'PROD-B', sku: 'SKU-ENT-02', name: 'Product B - HRMS & Payroll System', category: 'Software License', price: 4520000, stock: 85, uom: 'Licenses', hsnCode: '998313', taxRate: 18 },
-  { id: 'PROD-C', sku: 'SKU-ENT-03', name: 'Product C - ERP Accounting Module', category: 'Software License', price: 3210000, stock: 50, uom: 'Licenses', hsnCode: '998313', taxRate: 18 },
-  { id: 'PROD-D', sku: 'SKU-ENT-04', name: 'Product D - Cloud Hosting Setup', category: 'Infrastructure', price: 2875000, stock: 200, uom: 'Units', hsnCode: '998315', taxRate: 18 },
-];
+// CRM Sales pipeline modules — also loaded from crm DB
+const initialProducts: Product[] = [];
+const initialQuotations: Quotation[] = [];
+const initialSalesOrders: SalesOrder[] = [];
+const initialInvoices: Invoice[] = [];
+const initialVendors: Vendor[] = [];
+const initialPurchaseOrders: PurchaseOrder[] = [];
 
-const initialQuotations: Quotation[] = [
-  { id: 'QT-2025-01', quoteNumber: 'QT-2025-001', customerId: 'CUST-001', customerName: 'Globex Corporation', date: '2025-05-18', validUntil: '2025-06-18', amount: 850000, status: 'Approved', itemsCount: 3 },
-  { id: 'QT-2025-02', quoteNumber: 'QT-2025-002', customerId: 'CUST-002', customerName: 'Initech LLC', date: '2025-05-19', validUntil: '2025-06-19', amount: 420000, status: 'Sent', itemsCount: 2 },
-];
+// ============================================================
+// HRMS DB-FIRST: Finance/Accounts modules loaded from HRMS DB
+// ============================================================
+const initialAccounts: AccountCOA[] = [];
+const initialJournalEntries: JournalEntry[] = [];
+const initialBankAccounts: BankAccount[] = [];
+const initialExpenseClaims: ExpenseClaim[] = [];
 
-const initialSalesOrders: SalesOrder[] = [
-  { id: 'SO-2025-01', soNumber: 'SO-2025-001', customerName: 'Globex Corporation', date: '2025-05-19', totalAmount: 850000, fulfillmentStatus: 'Fulfilled' },
-  { id: 'SO-2025-02', soNumber: 'SO-2025-002', customerName: 'Stark Industries', date: '2025-05-20', totalAmount: 1200000, fulfillmentStatus: 'Partial' },
-];
 
-const initialInvoices: Invoice[] = [
-  { id: 'INV-1024', invoiceNumber: 'INV-2025-1024', customerName: 'Globex Corporation', date: '2025-05-20', dueDate: '2025-06-20', amount: 148350, paidAmount: 148350, status: 'Paid' },
-  { id: 'INV-1025', invoiceNumber: 'INV-2025-1025', customerName: 'Initech LLC', date: '2025-05-19', dueDate: '2025-06-19', amount: 420000, paidAmount: 0, status: 'Issued' },
-];
 
 // ============================================================
 // DB-FIRST: Employees, Leave, Payroll, Candidates start EMPTY.
@@ -254,40 +206,7 @@ const initialPayrollRuns: PayrollRun[] = [];
 // Job candidates load from PostgreSQL on mount
 const initialJobCandidates: JobCandidate[] = [];
 
-const initialAccounts: AccountCOA[] = [
-  { id: 'ACC-1000', code: '1000', name: 'HDFC Bank Primary Operating Account', type: 'Asset', balance: 14835000 },
-  { id: 'ACC-1200', code: '1200', name: 'Accounts Receivable (Trade Customers)', type: 'Asset', balance: 23450000 },
-  { id: 'ACC-2000', code: '2000', name: 'Accounts Payable (Trade Vendors)', type: 'Liability', balance: 850000 },
-  { id: 'ACC-3000', code: '3000', name: 'Retained Earnings / Equity', type: 'Equity', balance: 35000000 },
-  { id: 'ACC-4000', code: '4000', name: 'Sales Revenue - Products & Subscriptions', type: 'Income', balance: 14835000 },
-  { id: 'ACC-5000', code: '5000', name: 'Payroll & Operating Expenses', type: 'Expense', balance: 2475000 },
-];
 
-const initialJournalEntries: JournalEntry[] = [
-  { id: 'JE-2025-001', entryNumber: 'JE-2025-001', date: '2025-05-20', narration: 'Sales Invoice INV-2025-1024 settlement from Globex Corp', debitTotal: 148350, creditTotal: 148350, status: 'Posted' },
-  { id: 'JE-2025-002', entryNumber: 'JE-2025-002', date: '2025-05-19', narration: 'Vendor Purchase PO-2025-045 Office Supplies', debitTotal: 85000, creditTotal: 85000, status: 'Posted' },
-];
-
-const initialBankAccounts: BankAccount[] = [
-  { id: 'BNK-01', bankName: 'HDFC Bank', accountNumber: '50200012345678', accountType: 'Current', balance: 14835000, currency: 'INR' },
-  { id: 'BNK-02', bankName: 'ICICI Bank', accountNumber: '000405019876', accountType: 'Savings', balance: 4500000, currency: 'INR' },
-  { id: 'BNK-03', bankName: 'Petty Cash Box HQ', accountNumber: 'CASH-HQ-01', accountType: 'Petty Cash', balance: 125000, currency: 'INR' },
-];
-
-const initialExpenseClaims: ExpenseClaim[] = [
-  { id: 'EXP-101', claimNumber: 'EXP-2025-012', empName: 'Robert Brown', category: 'Client Meeting & Travel', amount: 12450, date: '2025-05-19', department: 'Sales', status: 'Pending' },
-  { id: 'EXP-102', claimNumber: 'EXP-2025-011', empName: 'James Smith', category: 'Software Subscriptions', amount: 8400, date: '2025-05-15', department: 'Engineering', status: 'Approved' },
-];
-
-const initialPurchaseOrders: PurchaseOrder[] = [
-  { id: 'PO-2025-045', poNumber: 'PO-2025-045', vendorName: 'Office Supplies Ltd', date: '2025-05-20', amount: 85000, status: 'Draft' },
-  { id: 'PO-2025-044', poNumber: 'PO-2025-044', vendorName: 'AWS Cloud Services', date: '2025-05-15', amount: 240000, status: 'Completed' },
-];
-
-const initialVendors: Vendor[] = [
-  { id: 'VND-001', code: 'VND-001', name: 'Office Supplies Ltd', contactPerson: 'Mark Miller', email: 'sales@officesupplies.com', phone: '+1 888-555-1212', payableBalance: 85000, rating: 4.6 },
-  { id: 'VND-002', code: 'VND-002', name: 'AWS Cloud Services', contactPerson: 'Cloud Support', email: 'billing@aws.com', phone: '+1 800-444-3333', payableBalance: 0, rating: 4.9 },
-];
 
 const initialProjects: Project[] = [
   { id: 'PRJ-101', code: 'PRJ-101', name: 'ERP Suite Enterprise Rollout', client: 'Globex Corporation', budget: 5000000, spent: 2100000, progress: 68, status: 'In Progress' },
@@ -391,10 +310,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activities, setActivities] = useState<Activity[]>(initialActivities);
   const [followUps, setFollowUps] = useState<FollowUp[]>(initialFollowUps);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
-  const [products] = useState<Product[]>(initialProducts);
-  const [quotations] = useState<Quotation[]>(initialQuotations);
-  const [salesOrders] = useState<SalesOrder[]>(initialSalesOrders);
-  const [invoices] = useState<Invoice[]>(initialInvoices);
+  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [quotations, setQuotations] = useState<Quotation[]>(initialQuotations);
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(initialSalesOrders);
+  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [attendanceRecords, setAttendanceRecords] = useState<DetailedAttendanceRecord[]>(() =>
     attendanceService.getAttendanceRecords()
@@ -524,15 +443,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ============================================================
   // DB-FIRST: Load ALL business data from PostgreSQL on mount.
+  // HRMS data → HRMS database | CRM data → crm database
   // Refreshing the browser restores exact state from database.
   // ============================================================
   useEffect(() => {
     async function syncFromDatabase() {
+      // ── HRMS Database Sync (Friend 2) ─────────────────────
       try {
-        // 1. Load Employees from PostgreSQL
+        // 1. Load Employees from HRMS PostgreSQL
         await reloadEmployeesFromDB();
 
-        // 2. Load Leave Requests from PostgreSQL
+        // 2. Load Leave Requests from HRMS PostgreSQL
         const leaveRes = await fetch('/api/leave/requests');
         if (leaveRes.ok) {
           const leaveJson = await leaveRes.json();
@@ -552,7 +473,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // 3. Load Payroll Runs from PostgreSQL
+        // 3. Load Payroll Runs from HRMS PostgreSQL
         const payrollRes = await fetch('/api/payroll/runs');
         if (payrollRes.ok) {
           const payrollJson = await payrollRes.json();
@@ -569,7 +490,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // 4. Load Shifts from PostgreSQL
+        // 4. Load Shifts from HRMS PostgreSQL
         const shiftRes = await fetch('/api/shifts');
         if (shiftRes.ok) {
           const shiftJson = await shiftRes.json();
@@ -587,7 +508,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // 5. Load Candidates from PostgreSQL
+        // 5. Load Candidates from HRMS PostgreSQL
         const canRes = await fetch('/api/recruitment/candidates');
         if (canRes.ok) {
           const canJson = await canRes.json();
@@ -596,10 +517,250 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // 6. Load Today's Attendance & Live Events from PostgreSQL
+        // 6. Load Today's Attendance & Live Events from HRMS PostgreSQL
         await reloadAttendanceFromDB();
+
+        // 7. Load Chart of Accounts (COA) from HRMS PostgreSQL
+        const coaRes = await AccountsAPI.getCOA();
+        if (coaRes.success && Array.isArray(coaRes.data)) {
+          setAccounts(coaRes.data.map((r: any) => ({
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            type: r.type || 'Asset',
+            balance: parseFloat(r.balance) || 0,
+          })));
+        }
+
+        // 8. Load Bank Accounts from HRMS PostgreSQL
+        const bankRes = await BankingAPI.getAccounts();
+        if (bankRes.success && Array.isArray(bankRes.data)) {
+          setBankAccounts(bankRes.data.map((r: any) => ({
+            id: r.id,
+            bankName: r.bank_name,
+            accountNumber: r.account_number,
+            accountType: r.account_type || 'Current',
+            balance: parseFloat(r.balance) || 0,
+            currency: 'INR',
+          })));
+        }
+
+        // 9. Load Journal Entries from HRMS PostgreSQL
+        const jrnRes = await AccountsAPI.getJournals();
+        if (jrnRes.success && Array.isArray(jrnRes.data)) {
+          setJournalEntries(jrnRes.data.map((r: any) => ({
+            id: r.id,
+            entryNumber: r.voucher_no || r.id,
+            date: r.entry_date ? r.entry_date.split('T')[0] : '',
+            narration: r.narration || '',
+            debitTotal: parseFloat(r.total_debit) || 0,
+            creditTotal: parseFloat(r.total_credit) || 0,
+            status: r.status === 'POSTED' ? 'Posted' : 'Draft',
+          })));
+        }
+
+        // 10. Load Expense Claims from HRMS PostgreSQL
+        const expRes = await ExpensesAPI.getAll();
+        if (expRes.success && Array.isArray(expRes.data)) {
+          setExpenseClaims(expRes.data.map((r: any) => ({
+            id: r.id,
+            claimNumber: r.expense_no || r.id,
+            empName: r.employee_id || 'Staff Member',
+            category: r.category || 'General',
+            amount: parseFloat(r.amount) || 0,
+            date: r.expense_date ? r.expense_date.split('T')[0] : '',
+            department: r.department || 'Operations',
+            status: r.status === 'APPROVED' ? 'Approved' : r.status === 'REIMBURSED' ? 'Reimbursed' : 'Pending',
+          })));
+        }
       } catch (err) {
-        console.warn('⚠️ DB sync notice (backend may be starting):', err);
+        console.warn('⚠️ HRMS DB sync notice:', err);
+      }
+
+      // ── CRM Database Sync (Friend 1) ───────────────────────
+      try {
+        // 11. Load Leads from CRM PostgreSQL
+        const leadsRes = await LeadsAPI.getAll();
+        if (leadsRes.success && Array.isArray(leadsRes.data)) {
+          setLeads(leadsRes.data.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            company: r.company || '',
+            email: r.email || '',
+            phone: r.phone || '',
+            value: parseFloat(r.value) || 0,
+            stage: r.stage || 'New',
+            score: parseInt(r.score) || 50,
+            source: r.source || 'Manual/Other',
+            assignedTo: r.assigned_to || '',
+            createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
+          })));
+        }
+
+        // 12. Load Customers from CRM PostgreSQL
+        const custsRes = await CustomersAPI.getAll();
+        if (custsRes.success && Array.isArray(custsRes.data)) {
+          setCustomers(custsRes.data.map((r: any) => ({
+            id: r.id,
+            customerCode: r.customer_code || r.id,
+            customerName: r.customer_name,
+            customerType: r.customer_type || 'Company',
+            industry: r.industry || '',
+            ownerId: r.owner_id || '',
+            status: r.status || 'Active',
+            primaryContact: {
+              name: r.contact_name || '',
+              email: r.contact_email || '',
+              phone: r.contact_phone || '',
+            },
+            billingAddress: {
+              city: r.billing_city || '',
+              country: r.billing_country || '',
+            },
+            creditLimit: parseFloat(r.credit_limit) || 0,
+            createdAt: r.created_at || new Date().toISOString(),
+            updatedAt: r.updated_at || new Date().toISOString(),
+          })));
+        }
+
+        // 13. Load Contacts from CRM PostgreSQL
+        const contactsRes = await ContactsAPI.getAll();
+        if (contactsRes.success && Array.isArray(contactsRes.data)) {
+          setContacts(contactsRes.data.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            customerId: r.customer_id || '',
+            customerName: r.company || '',
+            designation: r.title || '',
+            email: r.email || '',
+            phone: r.phone || '',
+            owner: '',
+            lastInteraction: r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
+            status: 'Active' as const,
+          })));
+        }
+
+        // 14. Load Opportunities from CRM PostgreSQL
+        const oppsRes = await OpportunitiesAPI.getAll();
+        if (oppsRes.success && Array.isArray(oppsRes.data)) {
+          setOpportunities(oppsRes.data.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            customerId: r.customer_id || '',
+            customerName: r.customer_name || '',
+            value: parseFloat(r.value) || 0,
+            probability: parseInt(r.probability) || 50,
+            expectedClose: r.expected_close ? r.expected_close.split('T')[0] : '',
+            owner: r.owner || '',
+            stage: r.stage || 'New',
+          })));
+        }
+
+        // 15. Load Activities from CRM PostgreSQL
+        const activitiesRes = await CRMActivitiesAPI.getAll();
+        if (activitiesRes.success && Array.isArray(activitiesRes.data)) {
+          setActivities(activitiesRes.data.map((r: any) => ({
+            id: r.id,
+            title: r.title,
+            type: r.type || 'Task',
+            relatedTo: r.related_to || '',
+            assignedTo: r.assigned_to || '',
+            dueDate: r.due_date || '',
+            priority: r.priority || 'Medium',
+            status: r.status || 'Pending',
+            outcome: r.outcome || '',
+          })));
+        }
+
+        // 16. Load Products Catalog from CRM PostgreSQL
+        const productsRes = await CRMProductsAPI.getAll();
+        if (productsRes.success && Array.isArray(productsRes.data)) {
+          setProducts(productsRes.data.map((r: any) => ({
+            id: r.id,
+            sku: r.sku || r.id,
+            name: r.name,
+            category: r.category || 'General',
+            price: parseFloat(r.price) || 0,
+            stock: parseInt(r.stock) || 0,
+            uom: r.uom || 'Units',
+            hsnCode: r.hsn_code || '',
+            taxRate: parseFloat(r.tax_rate) || 18,
+          })));
+        }
+
+        // 17. Load Quotations from CRM PostgreSQL
+        const quotesRes = await QuotationsAPI.getAll();
+        if (quotesRes.success && Array.isArray(quotesRes.data)) {
+          setQuotations(quotesRes.data.map((r: any) => ({
+            id: r.id,
+            quoteNumber: r.quote_number || r.id,
+            customerId: r.customer_id || '',
+            customerName: r.customer_name || '',
+            date: r.date ? r.date.split('T')[0] : '',
+            validUntil: r.valid_until ? r.valid_until.split('T')[0] : '',
+            amount: parseFloat(r.amount) || 0,
+            status: r.status || 'Draft',
+            itemsCount: parseInt(r.items_count) || 1,
+          })));
+        }
+
+        // 18. Load Sales Orders from CRM PostgreSQL
+        const soRes = await SalesOrdersAPI.getAll();
+        if (soRes.success && Array.isArray(soRes.data)) {
+          setSalesOrders(soRes.data.map((r: any) => ({
+            id: r.id,
+            soNumber: r.so_number || r.id,
+            customerName: r.customer_name || '',
+            date: r.date ? r.date.split('T')[0] : '',
+            totalAmount: parseFloat(r.total_amount) || 0,
+            fulfillmentStatus: r.fulfillment_status || 'Pending',
+          })));
+        }
+
+        // 19. Load Invoices from CRM PostgreSQL
+        const invRes = await CRMInvoicesAPI.getAll();
+        if (invRes.success && Array.isArray(invRes.data)) {
+          setInvoices(invRes.data.map((r: any) => ({
+            id: r.id,
+            invoiceNumber: r.invoice_number || r.id,
+            customerName: r.customer_name || '',
+            date: r.date ? r.date.split('T')[0] : '',
+            dueDate: r.due_date ? r.due_date.split('T')[0] : '',
+            amount: parseFloat(r.amount) || 0,
+            paidAmount: parseFloat(r.paid_amount) || 0,
+            status: r.status || 'Draft',
+          })));
+        }
+
+        // 20. Load Vendors from CRM PostgreSQL
+        const vndRes = await VendorsAPI.getAll();
+        if (vndRes.success && Array.isArray(vndRes.data)) {
+          setVendors(vndRes.data.map((r: any) => ({
+            id: r.id,
+            code: r.code || r.id,
+            name: r.name,
+            contactPerson: r.contact_person || '',
+            email: r.email || '',
+            phone: r.phone || '',
+            payableBalance: parseFloat(r.payable_balance) || 0,
+            rating: parseFloat(r.rating) || 5,
+          })));
+        }
+
+        // 21. Load Purchase Orders from CRM PostgreSQL
+        const poRes = await PurchaseOrdersAPI.getAll();
+        if (poRes.success && Array.isArray(poRes.data)) {
+          setPurchaseOrders(poRes.data.map((r: any) => ({
+            id: r.id,
+            poNumber: r.po_number || r.id,
+            vendorName: r.vendor_name || r.vendor_name_resolved || '',
+            date: r.date ? r.date.split('T')[0] : '',
+            amount: parseFloat(r.amount) || 0,
+            status: r.status || 'Draft',
+          })));
+        }
+      } catch (err) {
+        console.warn('⚠️ CRM DB sync notice:', err);
       }
     }
     syncFromDatabase();
@@ -842,12 +1003,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(initialLeaveRequests);
   const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>(initialPayrollRuns);
   const [jobCandidates, setJobCandidates] = useState<JobCandidate[]>(initialJobCandidates);
-  const [accounts] = useState<AccountCOA[]>(initialAccounts);
-  const [journalEntries] = useState<JournalEntry[]>(initialJournalEntries);
-  const [bankAccounts] = useState<BankAccount[]>(initialBankAccounts);
+  const [accounts, setAccounts] = useState<AccountCOA[]>(initialAccounts);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(initialJournalEntries);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(initialBankAccounts);
   const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(initialExpenseClaims);
-  const [purchaseOrders] = useState<PurchaseOrder[]>(initialPurchaseOrders);
-  const [vendors] = useState<Vendor[]>(initialVendors);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(initialPurchaseOrders);
+  const [vendors, setVendors] = useState<Vendor[]>(initialVendors);
   const [projects] = useState<Project[]>(initialProjects);
   const [tasks] = useState<Task[]>(initialTasks);
   const [helpdeskTickets] = useState<HelpdeskTicket[]>(initialHelpdeskTickets);
@@ -876,58 +1037,152 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  const addLead = (leadData: Omit<Lead, 'id' | 'createdAt'>) => {
-    const newLead: Lead = {
-      ...leadData,
-      id: `LD-${Math.floor(100 + Math.random() * 900)}`,
-      createdAt: 'Just now',
-    };
-    setLeads((prev) => [newLead, ...prev]);
-  };
-  
-  const updateLead = (id: string, updates: Partial<Lead>) => {
-    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l)));
-  };
+  // ============================================================
+  // CRM Mutations — Optimistic UI update + persist to crm DB
+  // ============================================================
 
-  const deleteLead = (id: string) => {
-    setLeads((prev) => prev.filter((l) => l.id !== id));
-  };
+  const addLead = useCallback(async (leadData: Omit<Lead, 'id' | 'createdAt'>) => {
+    const tempId = `LD-${Date.now()}`;
+    const newLead: Lead = { ...leadData, id: tempId, createdAt: 'Just now' };
+    setLeads((prev) => [newLead, ...prev]); // Optimistic
+    try {
+      const res = await LeadsAPI.create({
+        id: tempId,
+        name: leadData.name,
+        company: leadData.company,
+        email: leadData.email,
+        phone: leadData.phone,
+        value: leadData.value,
+        stage: leadData.stage,
+        score: leadData.score,
+        source: leadData.source,
+        assignedTo: leadData.assignedTo,
+      });
+      if (res.success && res.data) {
+        setLeads((prev) => prev.map((l) => l.id === tempId ? { ...newLead, id: res.data.id } : l));
+      }
+    } catch (err) { console.warn('⚠️ [CRM] addLead failed:', err); }
+  }, []);
 
-  const addCustomer = (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => {
-    const now = new Date().toISOString().split('T')[0];
-    setCustomers((prev) => [
-      {
-        createdAt: now,
-        updatedAt: now,
-        ...customer,
-        id: `CUST-${Math.floor(2000 + Math.random() * 900)}`
-      },
-      ...prev
-    ]);
-  };
+  const updateLead = useCallback(async (id: string, updates: Partial<Lead>) => {
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l))); // Optimistic
+    try {
+      await LeadsAPI.update(id, {
+        stage: updates.stage,
+        score: updates.score,
+        value: updates.value,
+        assigned_to: updates.assignedTo,
+      });
+    } catch (err) { console.warn('⚠️ [CRM] updateLead failed:', err); }
+  }, []);
 
-  const updateCustomer = (id: string, updates: Partial<Customer>) => {
-    setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
-  };
+  const deleteLead = useCallback(async (id: string) => {
+    setLeads((prev) => prev.filter((l) => l.id !== id)); // Optimistic
+    try { await LeadsAPI.delete(id); }
+    catch (err) { console.warn('⚠️ [CRM] deleteLead failed:', err); }
+  }, []);
 
-  const addContact = (contact: Omit<Contact, 'id'>) => {
-    setContacts((prev) => [{ ...contact, id: `CONT-${Math.floor(1000 + Math.random() * 900)}` }, ...prev]);
-  };
+  const addCustomer = useCallback(async (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => {
+    const now = new Date().toISOString();
+    const tempId = `CUST-${Date.now()}`;
+    const newCust: Customer = { createdAt: now, updatedAt: now, ...customer, id: tempId };
+    setCustomers((prev) => [newCust, ...prev]); // Optimistic
+    try {
+      await CustomersAPI.create({
+        id: tempId,
+        customerCode: (customer as any).customerCode || tempId,
+        customerName: customer.customerName,
+        customerType: customer.customerType,
+        industry: customer.industry,
+        ownerId: customer.ownerId,
+        status: customer.status,
+        creditLimit: customer.creditLimit,
+        contactName: customer.primaryContact?.name,
+        contactEmail: customer.primaryContact?.email,
+        contactPhone: customer.primaryContact?.phone,
+        billingCity: customer.billingAddress?.city,
+        billingCountry: customer.billingAddress?.country,
+      });
+    } catch (err) { console.warn('⚠️ [CRM] addCustomer failed:', err); }
+  }, []);
 
-  const addOpportunity = (opp: Omit<Opportunity, 'id'>) => {
-    setOpportunities((prev) => [{ ...opp, id: `OPP-${Math.floor(100 + Math.random() * 900)}` }, ...prev]);
-  };
+  const updateCustomer = useCallback(async (id: string, updates: Partial<Customer>) => {
+    setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c))); // Optimistic
+    try {
+      await CustomersAPI.update(id, {
+        customerName: updates.customerName,
+        customerType: updates.customerType,
+        industry: updates.industry,
+        status: updates.status,
+        creditLimit: updates.creditLimit,
+        contactName: updates.primaryContact?.name,
+        contactEmail: updates.primaryContact?.email,
+        contactPhone: updates.primaryContact?.phone,
+        billingCity: updates.billingAddress?.city,
+        billingCountry: updates.billingAddress?.country,
+      });
+    } catch (err) { console.warn('⚠️ [CRM] updateCustomer failed:', err); }
+  }, []);
 
-  const updateOpportunity = (id: string, updates: Partial<Opportunity>) => {
-    setOpportunities((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o)));
-  };
+  const addContact = useCallback(async (contact: Omit<Contact, 'id'>) => {
+    const tempId = `CON-${Date.now()}`;
+    setContacts((prev) => [{ ...contact, id: tempId }, ...prev]); // Optimistic
+    try { await ContactsAPI.create({ id: tempId, ...contact }); }
+    catch (err) { console.warn('⚠️ [CRM] addContact failed:', err); }
+  }, []);
 
-  const addActivity = (activity: Omit<Activity, 'id'>) => {
-    setActivities((prev) => [{ ...activity, id: `ACT-${Math.floor(100 + Math.random() * 900)}` }, ...prev]);
-  };
+  const addOpportunity = useCallback(async (opp: Omit<Opportunity, 'id'>) => {
+    const tempId = `OPP-${Date.now()}`;
+    setOpportunities((prev) => [{ ...opp, id: tempId }, ...prev]); // Optimistic
+    try {
+      await OpportunitiesAPI.create({
+        id: tempId,
+        name: opp.name,
+        customerId: opp.customerId,
+        customerName: opp.customerName,
+        value: opp.value,
+        probability: opp.probability,
+        expectedClose: opp.expectedClose,
+        owner: opp.owner,
+        stage: opp.stage,
+      });
+    } catch (err) { console.warn('⚠️ [CRM] addOpportunity failed:', err); }
+  }, []);
+
+  const updateOpportunity = useCallback(async (id: string, updates: Partial<Opportunity>) => {
+    setOpportunities((prev) => prev.map((o) => (o.id === id ? { ...o, ...updates } : o))); // Optimistic
+    try {
+      await OpportunitiesAPI.update(id, {
+        name: updates.name,
+        value: updates.value,
+        probability: updates.probability,
+        expectedClose: updates.expectedClose,
+        stage: updates.stage,
+        owner: updates.owner,
+      });
+    } catch (err) { console.warn('⚠️ [CRM] updateOpportunity failed:', err); }
+  }, []);
+
+  const addActivity = useCallback(async (activity: Omit<Activity, 'id'>) => {
+    const tempId = `ACT-${Date.now()}`;
+    setActivities((prev) => [{ ...activity, id: tempId }, ...prev]); // Optimistic
+    try {
+      await CRMActivitiesAPI.create({
+        id: tempId,
+        title: activity.title,
+        type: activity.type,
+        relatedTo: activity.relatedTo,
+        assignedTo: activity.assignedTo,
+        dueDate: activity.dueDate,
+        priority: activity.priority,
+        status: activity.status,
+        outcome: activity.outcome,
+      });
+    } catch (err) { console.warn('⚠️ [CRM] addActivity failed:', err); }
+  }, []);
 
   const addFollowUp = (fu: Omit<FollowUp, 'id'>) => {
-    setFollowUps((prev) => [{ ...fu, id: `FU-${Math.floor(100 + Math.random() * 900)}` }, ...prev]);
+    setFollowUps((prev) => [{ ...fu, id: `FU-${Date.now()}` }, ...prev]);
   };
 
   const updateFollowUp = (id: string, updates: Partial<FollowUp>) => {
@@ -936,7 +1191,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addNote = (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
     const now = new Date().toISOString().split('T')[0];
-    setNotes((prev) => [{ ...note, id: `NOTE-${Math.floor(100 + Math.random() * 900)}`, createdAt: now, updatedAt: now }, ...prev]);
+    setNotes((prev) => [{ ...note, id: `NOTE-${Date.now()}`, createdAt: now, updatedAt: now }, ...prev]);
   };
 
   const addDocument = (doc: Omit<DocumentFile, 'id' | 'updatedAt'>) => {

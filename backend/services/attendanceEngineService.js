@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { pool } from '../db/pool.js';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2
 import { broadcastAttendanceEvent } from '../utils/websocket.js';
 
 export class AttendanceEngineService {

@@ -1,6 +1,6 @@
 import express from 'express';
 import { FinanceService } from '../services/financeService.js';
-import { pool } from '../db/pool.js';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2
 
 const router = express.Router();
 
@@ -13,6 +13,17 @@ router.get('/coa', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+// GET /api/accounts/journals - Fetch Journal Entries
+router.get('/journals', async (req, res) => {
+  try {
+    const data = await FinanceService.getJournalEntries();
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 
 // POST /api/accounts/journals - Post Journal Entry (Double-Entry Validation)
 router.post('/journals', async (req, res) => {

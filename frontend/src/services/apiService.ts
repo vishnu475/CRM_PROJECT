@@ -142,8 +142,198 @@ export const ActivityAPI = {
 };
 
 // ────────────────────────────────────────────────────────────
+// HRMS — FINANCE / ACCOUNTS
+// ────────────────────────────────────────────────────────────
+export const AccountsAPI = {
+  getCOA: () => request('GET', '/accounts/coa'),
+  getJournals: () => request('GET', '/accounts/journals'),
+  postJournal: (data: any) => request('POST', '/accounts/journals', data),
+  getTrialBalance: () => request('GET', '/accounts/trial-balance'),
+};
+
+// ────────────────────────────────────────────────────────────
+// HRMS — BANKING
+// ────────────────────────────────────────────────────────────
+export const BankingAPI = {
+  getAccounts: () => request('GET', '/banking/accounts'),
+  getTransactions: (bankAccountId?: string) => {
+    const params = bankAccountId ? `?bankAccountId=${bankAccountId}` : '';
+    return request('GET', `/banking/transactions${params}`);
+  },
+  transfer: (data: { fromAccountId: string; toAccountId: string; amount: number; description?: string; referenceNo?: string }) =>
+    request('POST', '/banking/transfer', data),
+};
+
+// ────────────────────────────────────────────────────────────
+// HRMS — EXPENSES
+// ────────────────────────────────────────────────────────────
+export const ExpensesAPI = {
+  getAll: () => request('GET', '/expenses'),
+  create: (data: any) => request('POST', '/expenses', data),
+  approve: (id: string) => request('PATCH', `/expenses/${id}/approve`),
+};
+
+// ────────────────────────────────────────────────────────────
+// HRMS — MASTER DATA (Departments, Designations, Branches)
+// ────────────────────────────────────────────────────────────
+export const MasterDataAPI = {
+  getDepartments: () => request('GET', '/departments'),
+  getDesignations: () => request('GET', '/designations'),
+  getBranches: () => request('GET', '/branches'),
+};
+
+// ────────────────────────────────────────────────────────────
 // HEALTH CHECK
 // ────────────────────────────────────────────────────────────
 export const HealthAPI = {
   check: () => request('GET', '/health'),
 };
+
+// ============================================================
+// CRM DATABASE APIs — Friend 1 (crm PostgreSQL database)
+// ============================================================
+
+// ────────────────────────────────────────────────────────────
+// CRM — LEADS
+// ────────────────────────────────────────────────────────────
+export const LeadsAPI = {
+  getAll: (filters?: { stage?: string; source?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.stage)  params.set('stage', filters.stage);
+    if (filters?.source) params.set('source', filters.source);
+    return request('GET', `/leads?${params.toString()}`);
+  },
+  getById: (id: string) => request('GET', `/leads/${id}`),
+  create:  (data: any)  => request('POST', '/leads', data),
+  update:  (id: string, data: any) => request('PATCH', `/leads/${id}`, data),
+  delete:  (id: string) => request('DELETE', `/leads/${id}`),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — CUSTOMERS
+// ────────────────────────────────────────────────────────────
+export const CustomersAPI = {
+  getAll: (filters?: { status?: string; industry?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status)   params.set('status', filters.status);
+    if (filters?.industry) params.set('industry', filters.industry);
+    return request('GET', `/customers?${params.toString()}`);
+  },
+  getById: (id: string) => request('GET', `/customers/${id}`),
+  create:  (data: any)  => request('POST', '/customers', data),
+  update:  (id: string, data: any) => request('PATCH', `/customers/${id}`, data),
+  delete:  (id: string) => request('DELETE', `/customers/${id}`),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — CONTACTS
+// ────────────────────────────────────────────────────────────
+export const ContactsAPI = {
+  getAll:  (filters?: { customerId?: string; leadId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.customerId) params.set('customerId', filters.customerId);
+    if (filters?.leadId)     params.set('leadId', filters.leadId);
+    return request('GET', `/contacts?${params.toString()}`);
+  },
+  create: (data: any)  => request('POST', '/contacts', data),
+  delete: (id: string) => request('DELETE', `/contacts/${id}`),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — OPPORTUNITIES
+// ────────────────────────────────────────────────────────────
+export const OpportunitiesAPI = {
+  getAll: (filters?: { stage?: string; customerId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.stage)      params.set('stage', filters.stage);
+    if (filters?.customerId) params.set('customerId', filters.customerId);
+    return request('GET', `/opportunities?${params.toString()}`);
+  },
+  create: (data: any)  => request('POST', '/opportunities', data),
+  update: (id: string, data: any) => request('PATCH', `/opportunities/${id}`, data),
+  delete: (id: string) => request('DELETE', `/opportunities/${id}`),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — ACTIVITIES
+// ────────────────────────────────────────────────────────────
+export const CRMActivitiesAPI = {
+  getAll:  (filters?: { type?: string; status?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.type)   params.set('type', filters.type);
+    if (filters?.status) params.set('status', filters.status);
+    return request('GET', `/crm/activities?${params.toString()}`);
+  },
+  create: (data: any)  => request('POST', '/crm/activities', data),
+  update: (id: string, data: any) => request('PATCH', `/crm/activities/${id}`, data),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — QUOTATIONS
+// ────────────────────────────────────────────────────────────
+export const QuotationsAPI = {
+  getAll:  (filters?: { status?: string }) => {
+    const params = filters?.status ? `?status=${filters.status}` : '';
+    return request('GET', `/quotations${params}`);
+  },
+  create: (data: any)  => request('POST', '/quotations', data),
+  update: (id: string, data: any) => request('PATCH', `/quotations/${id}`, data),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — SALES ORDERS
+// ────────────────────────────────────────────────────────────
+export const SalesOrdersAPI = {
+  getAll:  (filters?: { fulfillmentStatus?: string }) => {
+    const params = filters?.fulfillmentStatus ? `?fulfillmentStatus=${filters.fulfillmentStatus}` : '';
+    return request('GET', `/sales-orders${params}`);
+  },
+  create: (data: any)  => request('POST', '/sales-orders', data),
+  update: (id: string, data: any) => request('PATCH', `/sales-orders/${id}`, data),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — INVOICES
+// ────────────────────────────────────────────────────────────
+export const CRMInvoicesAPI = {
+  getAll:  (filters?: { status?: string }) => {
+    const params = filters?.status ? `?status=${filters.status}` : '';
+    return request('GET', `/crm/invoices${params}`);
+  },
+  create: (data: any)  => request('POST', '/crm/invoices', data),
+  update: (id: string, data: any) => request('PATCH', `/crm/invoices/${id}`, data),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — PRODUCTS
+// ────────────────────────────────────────────────────────────
+export const CRMProductsAPI = {
+  getAll:  () => request('GET', '/crm/products'),
+  create:  (data: any)  => request('POST', '/crm/products', data),
+  update:  (id: string, data: any) => request('PATCH', `/crm/products/${id}`, data),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — VENDORS
+// ────────────────────────────────────────────────────────────
+export const VendorsAPI = {
+  getAll:  () => request('GET', '/vendors'),
+  create:  (data: any)  => request('POST', '/vendors', data),
+  update:  (id: string, data: any) => request('PATCH', `/vendors/${id}`, data),
+  delete:  (id: string) => request('DELETE', `/vendors/${id}`),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — PURCHASE ORDERS
+// ────────────────────────────────────────────────────────────
+export const PurchaseOrdersAPI = {
+  getAll:  (filters?: { status?: string }) => {
+    const params = filters?.status ? `?status=${filters.status}` : '';
+    return request('GET', `/purchase-orders${params}`);
+  },
+  create:  (data: any)  => request('POST', '/purchase-orders', data),
+  update:  (id: string, data: any) => request('PATCH', `/purchase-orders/${id}`, data),
+  delete:  (id: string) => request('DELETE', `/purchase-orders/${id}`),
+};
+
+

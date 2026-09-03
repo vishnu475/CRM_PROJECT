@@ -1,6 +1,6 @@
 import express from 'express';
 import { AttendanceEngineService } from '../services/attendanceEngineService.js';
-import { pool } from '../db/pool.js';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2
 
 const router = express.Router();
 

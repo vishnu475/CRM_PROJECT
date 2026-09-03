@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export async function ensureDatabaseAndMigrate() {
-  console.log('--- PostgreSQL HRMS Database Initialization ---');
+  console.log('--- PostgreSQL HRMS Database Initialization (Friend 2) ---');
   const user = process.env.DB_USER || 'postgres';
   const host = process.env.DB_HOST || 'localhost';
   const password = process.env.DB_PASSWORD || 'postgres';
@@ -66,6 +66,21 @@ export async function ensureDatabaseAndMigrate() {
           console.log(`  ✅ Migration executed: ${file}`);
         } catch (err) {
           console.warn(`  ⚠️ Migration notice [${file}]: ${err.message}`);
+        }
+      }
+    }
+
+    // Run HRMS-specific seed data (accounts, bank accounts, expenses, journal entries)
+    const hrmsSeeds = ['hrms/001_hrms_seed.sql'];
+    for (const file of hrmsSeeds) {
+      const filePath = path.join(migrationsDir, file);
+      if (fs.existsSync(filePath)) {
+        const sql = fs.readFileSync(filePath, 'utf8');
+        try {
+          await pool.query(sql);
+          console.log(`  ✅ HRMS Seed executed: ${file}`);
+        } catch (err) {
+          console.warn(`  ⚠️ HRMS Seed notice [${file}]: ${err.message}`);
         }
       }
     }
