@@ -1,4 +1,5 @@
-import { pool } from '../db/pool.js';
+import { hrmsPool, pool as defaultPool } from '../db/pool.js';
+const pool = hrmsPool || defaultPool;
 import { PaymentService } from './paymentService.js';
 
 async function logActivity(client, { module, entity, entityId, action, oldValue, newValue, performedBy }) {

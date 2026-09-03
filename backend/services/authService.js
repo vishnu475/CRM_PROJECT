@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { pool } from '../db/pool.js';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2 (users/employees)
 
 const JWT_SECRET = process.env.JWT_SECRET || 'crm_hrms_super_secret_jwt_key_2026';
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2
 import { RecruitmentController } from '../controllers/recruitmentController.js';
 
 const router = express.Router();

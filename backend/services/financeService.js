@@ -1,4 +1,4 @@
-import { pool } from '../db/pool.js';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2 (accounts, journals, bank)
 
 export class FinanceService {
   /**
@@ -57,6 +57,12 @@ export class FinanceService {
     const res = await pool.query('SELECT * FROM accounts ORDER BY code ASC');
     return res.rows;
   }
+
+  static async getJournalEntries() {
+    const res = await pool.query('SELECT * FROM journal_entries ORDER BY entry_date DESC, created_at DESC');
+    return res.rows;
+  }
+
 
   static async getTrialBalance() {
     const res = await pool.query(

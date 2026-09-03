@@ -1,5 +1,5 @@
 import express from 'express';
-import { pool } from '../db/pool.js';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2 (employees, attendance, bank accounts)
 
 const router = express.Router();
 

@@ -1,4 +1,4 @@
-import { pool } from '../db/pool.js';
+import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2
 
 export const getAttendanceLogs = async (req, res) => {
   try {
