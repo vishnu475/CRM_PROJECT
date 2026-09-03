@@ -106,9 +106,18 @@ interface AppContextType {
   notes: Note[];
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
   products: Product[];
+  addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   quotations: Quotation[];
+  addQuotation: (quotation: Omit<Quotation, 'id'>) => Promise<void>;
   salesOrders: SalesOrder[];
+  addSalesOrder: (so: Omit<SalesOrder, 'id'>) => Promise<void>;
   invoices: Invoice[];
+  addInvoice: (inv: Omit<Invoice, 'id'>) => Promise<void>;
+  vendors: Vendor[];
+  addVendor: (vendor: Omit<Vendor, 'id'>) => Promise<void>;
+  purchaseOrders: PurchaseOrder[];
+  addPurchaseOrder: (po: Omit<PurchaseOrder, 'id'>) => Promise<void>;
+  syncFromDatabase: () => Promise<void>;
   employees: Employee[];
   addEmployee: (employeeData: Partial<Employee>) => Employee;
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
@@ -138,8 +147,6 @@ interface AppContextType {
   bankAccounts: BankAccount[];
   expenseClaims: ExpenseClaim[];
   approveExpense: (id: string) => void;
-  purchaseOrders: PurchaseOrder[];
-  vendors: Vendor[];
   projects: Project[];
   tasks: Task[];
   helpdeskTickets: HelpdeskTicket[];
@@ -482,8 +489,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // HRMS data → HRMS database | CRM data → crm database
   // Refreshing the browser restores exact state from database.
   // ============================================================
-  useEffect(() => {
-    async function syncFromDatabase() {
+  const syncFromDatabase = useCallback(async () => {
       // ── HRMS Database Sync (Friend 2) ─────────────────────
       try {
         // 1. Load Employees from HRMS PostgreSQL
@@ -798,9 +804,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch (err) {
         console.warn('⚠️ CRM DB sync notice:', err);
       }
-    }
+  }, [reloadEmployeesFromDB, reloadAttendanceFromDB]);
+
+  useEffect(() => {
     syncFromDatabase();
-  }, []);
+  }, [syncFromDatabase]);
 
   const addAttendanceEvent = (evt: AttendanceEvent) => {
     setAttendanceEvents(prev => [evt, ...prev]);
@@ -1243,6 +1251,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { console.warn('⚠️ [CRM] addActivity failed:', err); }
   }, []);
 
+  const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
+    const tempId = `PROD-${Date.now()}`;
+    setProducts((prev) => [{ ...product, id: tempId }, ...prev]);
+    try {
+      await CRMProductsAPI.create({ id: tempId, ...product });
+    } catch (err) { console.warn('⚠️ [CRM] addProduct failed:', err); }
+  }, []);
+
+  const addQuotation = useCallback(async (quotation: Omit<Quotation, 'id'>) => {
+    const tempId = `QT-${Date.now()}`;
+    setQuotations((prev) => [{ ...quotation, id: tempId }, ...prev]);
+    try {
+      await QuotationsAPI.create({ id: tempId, ...quotation });
+    } catch (err) { console.warn('⚠️ [CRM] addQuotation failed:', err); }
+  }, []);
+
+  const addSalesOrder = useCallback(async (so: Omit<SalesOrder, 'id'>) => {
+    const tempId = `SO-${Date.now()}`;
+    setSalesOrders((prev) => [{ ...so, id: tempId }, ...prev]);
+    try {
+      await SalesOrdersAPI.create({ id: tempId, ...so });
+    } catch (err) { console.warn('⚠️ [CRM] addSalesOrder failed:', err); }
+  }, []);
+
+  const addInvoice = useCallback(async (inv: Omit<Invoice, 'id'>) => {
+    const tempId = `INV-${Date.now()}`;
+    setInvoices((prev) => [{ ...inv, id: tempId }, ...prev]);
+    try {
+      await CRMInvoicesAPI.create({ id: tempId, ...inv });
+    } catch (err) { console.warn('⚠️ [CRM] addInvoice failed:', err); }
+  }, []);
+
+  const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>) => {
+    const tempId = `VND-${Date.now()}`;
+    setVendors((prev) => [{ ...vendor, id: tempId }, ...prev]);
+    try {
+      await VendorsAPI.create({ id: tempId, ...vendor });
+    } catch (err) { console.warn('⚠️ [CRM] addVendor failed:', err); }
+  }, []);
+
+  const addPurchaseOrder = useCallback(async (po: Omit<PurchaseOrder, 'id'>) => {
+    const tempId = `PO-${Date.now()}`;
+    setPurchaseOrders((prev) => [{ ...po, id: tempId }, ...prev]);
+    try {
+      await PurchaseOrdersAPI.create({ id: tempId, ...po });
+    } catch (err) { console.warn('⚠️ [CRM] addPurchaseOrder failed:', err); }
+  }, []);
+
   const addFollowUp = (fu: Omit<FollowUp, 'id'>) => {
     setFollowUps((prev) => [{ ...fu, id: `FU-${Date.now()}` }, ...prev]);
   };
@@ -1520,9 +1576,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes,
         addNote,
         products,
+        addProduct,
         quotations,
+        addQuotation,
         salesOrders,
+        addSalesOrder,
         invoices,
+        addInvoice,
+        purchaseOrders,
+        addPurchaseOrder,
+        vendors,
+        addVendor,
+        syncFromDatabase,
         employees,
         addEmployee,
         updateEmployee,
@@ -1552,8 +1617,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bankAccounts,
         expenseClaims,
         approveExpense,
-        purchaseOrders,
-        vendors,
         projects,
         tasks,
         helpdeskTickets,

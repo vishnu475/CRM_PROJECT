@@ -10,6 +10,10 @@ import { CrmCustomersList } from '../components/CrmCustomersList';
 import { CrmAddCustomer } from '../components/CrmAddCustomer';
 import { CrmCustomerDetails } from '../components/CrmCustomerDetails';
 
+import { CrmOpportunities } from '../components/CrmOpportunities';
+import { CrmContactsList } from '../components/CrmContactsList';
+import { CrmActivitiesList } from '../components/CrmActivitiesList';
+
 const PlaceholderContent: React.FC<{ title: string }> = ({ title }) => (
   <div>
     <h2 className="text-xl font-semibold text-[#0f172a] mb-2">{title}</h2>
@@ -33,12 +37,12 @@ export const CrmPage: React.FC = () => {
       case 'customers': return <CrmCustomersList onViewChange={setActiveCrmView} onCustomerSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('customer-details'); }} />;
       case 'add-customer': return <CrmAddCustomer onViewChange={setActiveCrmView} />;
       case 'customer-details': return selectedEntityId ? <CrmCustomerDetails customerId={selectedEntityId} onViewChange={setActiveCrmView} /> : <PlaceholderContent title="Customer Not Found" />;
-      case 'contacts': return <PlaceholderContent title="Contacts" />;
-      case 'opportunities': return <PlaceholderContent title="Opportunities" />;
-      case 'activities': return <PlaceholderContent title="Activities" />;
-      case 'follow-ups': return <PlaceholderContent title="Follow-ups" />;
-      case 'pipeline': return <PlaceholderContent title="Pipeline" />;
-      case 'notes': return <PlaceholderContent title="Notes" />;
+      case 'contacts': return <CrmContactsList onViewChange={setActiveCrmView} />;
+      case 'opportunities': return <CrmOpportunities onViewChange={setActiveCrmView} />;
+      case 'pipeline': return <CrmOpportunities onViewChange={setActiveCrmView} />;
+      case 'activities': return <CrmActivitiesList onViewChange={setActiveCrmView} />;
+      case 'follow-ups': return <CrmActivitiesList onViewChange={setActiveCrmView} />;
+      case 'notes': return <CrmActivitiesList onViewChange={setActiveCrmView} />;
       default: return <CrmOverview onViewChange={setActiveCrmView} />;
     }
   };

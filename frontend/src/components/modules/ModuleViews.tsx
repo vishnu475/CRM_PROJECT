@@ -33,6 +33,11 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { CrmModule } from '../../modules/crm';
+import { CustomersPage } from '../../modules/customers/pages/CustomersPage';
+import { SalesPage } from '../../modules/sales/pages/SalesPage';
+import { VendorsPage } from '../../modules/vendors/pages/VendorsPage';
+import { PurchasesPage } from '../../modules/purchases/pages/PurchasesPage';
+import { InventoryPage } from '../../modules/inventory/pages/InventoryPage';
 import {
   AdministrationPage,
   HrmsPage,
@@ -110,97 +115,10 @@ export const ModuleViews: React.FC = () => {
       return <CrmModule />;
 
     case 'sales':
-      return (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-                <TrendingUp className="text-emerald-400" size={22} />
-                Sales & Invoicing Pipeline
-              </h1>
-              <p className="text-xs text-slate-500">Generate quotations, issue sales orders, and post tax invoices.</p>
-            </div>
-            <button className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-[#0f172a] rounded-xl text-xs font-semibold">
-              + New Quotation
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white shadow-sm border border-slate-200 rounded-2xl p-5 shadow-lg">
-              <h3 className="text-sm font-bold text-[#0f172a] mb-3">Quotations</h3>
-              <div className="space-y-3 text-xs">
-                {quotations.map((q) => (
-                  <div key={q.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center">
-                    <div>
-                      <p className="font-bold text-slate-800">{q.quoteNumber}</p>
-                      <p className="text-[10px] text-slate-500">{q.customerName}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-extrabold text-emerald-400">₹ {q.amount.toLocaleString()}</p>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold">{q.status}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white shadow-sm border border-slate-200 rounded-2xl p-5 shadow-lg">
-              <h3 className="text-sm font-bold text-[#0f172a] mb-3">Tax Invoices</h3>
-              <div className="space-y-3 text-xs">
-                {invoices.map((inv) => (
-                  <div key={inv.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center">
-                    <div>
-                      <p className="font-bold text-slate-800">{inv.invoiceNumber}</p>
-                      <p className="text-[10px] text-slate-500">{inv.customerName}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-extrabold text-emerald-400">₹ {inv.amount.toLocaleString()}</p>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold">{inv.status}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
+      return <SalesPage />;
 
     case 'customers':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Users className="text-indigo-400" size={22} />
-            Customers & Account Ledger
-          </h1>
-
-          <div className="bg-white shadow-sm border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase">
-                <tr>
-                  <th className="p-3.5">Code</th>
-                  <th className="p-3.5">Customer / Company</th>
-                  <th className="p-3.5">Email</th>
-                  <th className="p-3.5">Credit Limit</th>
-                  <th className="p-3.5">Outstanding Balance</th>
-                  <th className="p-3.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {customers.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-50">
-                    <td className="p-3.5 font-mono text-indigo-400">{c.customerCode || '—'}</td>
-                    <td className="p-3.5 font-bold text-[#0f172a]">{c.customerName}</td>
-                    <td className="p-3.5">{c.primaryContact.email}</td>
-                    <td className="p-3.5 font-bold">₹ {(c.creditLimit || 0).toLocaleString()}</td>
-                    <td className="p-3.5 font-bold text-amber-400">₹ 0</td>
-                    <td className="p-3.5"><span className="text-emerald-400 font-bold">{c.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      );
+      return <CustomersPage />;
 
     case 'recruitment':
       return <RecruitmentPage />;
@@ -230,75 +148,13 @@ export const ModuleViews: React.FC = () => {
       return <BankingPage />;
 
     case 'vendors':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Truck className="text-teal-400" size={22} />
-            Vendor Master Directory
-          </h1>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {vendors.map((v) => (
-              <div key={v.id} className="bg-white shadow-sm border border-slate-200 p-5 rounded-2xl space-y-2">
-                <div className="flex justify-between items-center">
-                  <p className="font-bold text-[#0f172a] text-sm">{v.name}</p>
-                  <span className="text-amber-400 text-xs font-bold">⭐ {v.rating}</span>
-                </div>
-                <p className="text-xs text-slate-500">Contact: {v.contactPerson} ({v.email})</p>
-                <p className="text-xs font-bold text-rose-400">Payable Balance: ₹ {v.payableBalance.toLocaleString()}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <VendorsPage />;
 
     case 'purchases':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <ShoppingCart className="text-purple-400" size={22} />
-            Purchase Management & GRN
-          </h1>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {purchaseOrders.map((po) => (
-              <div key={po.id} className="bg-white shadow-sm border border-slate-200 p-5 rounded-2xl flex justify-between items-center">
-                <div>
-                  <p className="font-bold text-[#0f172a] text-sm">{po.poNumber}</p>
-                  <p className="text-xs text-slate-500">{po.vendorName}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-extrabold text-emerald-400 text-sm">₹ {po.amount.toLocaleString()}</p>
-                  <span className="px-2.5 py-0.5 bg-purple-500/10 text-purple-400 text-[10px] font-bold rounded-lg">{po.status}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <PurchasesPage />;
 
     case 'inventory':
-      return (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Boxes className="text-amber-400" size={22} />
-            Inventory SKUs & Stock Balance
-          </h1>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {products.map((p) => (
-              <div key={p.id} className="bg-white shadow-sm border border-slate-200 p-4 rounded-2xl space-y-2">
-                <p className="text-xs font-bold text-[#0f172a]">{p.name}</p>
-                <p className="text-[10px] text-slate-500 font-mono">SKU: {p.sku}</p>
-                <div className="flex justify-between text-xs pt-2 border-t border-slate-200">
-                  <span className="text-slate-600">Stock: <span className="font-bold text-[#0f172a]">{p.stock}</span></span>
-                  <span className="text-emerald-400 font-bold">₹ {p.price.toLocaleString()}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      return <InventoryPage />;
 
     case 'projects':
       return (
