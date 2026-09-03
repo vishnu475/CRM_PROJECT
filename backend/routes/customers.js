@@ -63,8 +63,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/customers/:id
-router.patch('/:id', async (req, res) => {
+// PUT & PATCH /api/customers/:id
+const updateCustomerHandler = async (req, res) => {
   const { id } = req.params;
   const { customerName, customerType, industry, ownerId, status, creditLimit,
           contactName, contactEmail, contactPhone, billingCity, billingCountry } = req.body;
@@ -92,7 +92,9 @@ router.patch('/:id', async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-});
+};
+router.put('/:id', updateCustomerHandler);
+router.patch('/:id', updateCustomerHandler);
 
 // DELETE /api/customers/:id
 router.delete('/:id', async (req, res) => {

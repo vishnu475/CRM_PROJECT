@@ -58,8 +58,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/leads/:id — Update lead stage or details
-router.patch('/:id', async (req, res) => {
+// PUT & PATCH /api/leads/:id — Update lead stage or details
+const updateHandler = async (req, res) => {
   const { id } = req.params;
   const fields = req.body;
   try {
@@ -76,7 +76,9 @@ router.patch('/:id', async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-});
+};
+router.put('/:id', updateHandler);
+router.patch('/:id', updateHandler);
 
 // DELETE /api/leads/:id — Delete lead
 router.delete('/:id', async (req, res) => {
