@@ -18,7 +18,7 @@ type TabType = 'overview' | 'activities' | 'notes' | 'documents';
 const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 
 export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewChange }) => {
-  const { leads, activities, notes, documents, followUps, updateLead, addActivity, addNote, addFollowUp, addDocument } = useApp();
+  const { leads, activities, notes, documents, followUps, updateLead, addActivity, updateActivity, addNote, addFollowUp, addDocument } = useApp();
   
   const lead = leads.find(l => l.id === leadId);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -499,8 +499,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               {leadActivities.map(activity => {
                 const isCall = activity.type === 'Call';
                 const isEmail = activity.type === 'Email';
+                const isCompleted = activity.status === 'Completed';
                 const Icon = isCall ? Phone : (isEmail ? Mail : CheckCircle2);
-                const colorClass = isCall ? 'bg-emerald-100 text-emerald-600' : (isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600');
+                const colorClass = isCompleted
+                  ? (isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
+                  : 'bg-amber-100 text-amber-600';
 
                 return (
                   <div key={activity.id} className="relative pl-6">
@@ -508,9 +511,32 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                       <Icon size={14} />
                     </div>
                     <div>
-                      <div className="flex justify-between items-start mb-1">
-                        <p className="text-sm font-bold text-[#0f172a]">{activity.title}</p>
-                        <span className="text-xs text-slate-500">{activity.dueDate}</span>
+                      <div className="flex justify-between items-start mb-1 gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-[#0f172a]">{activity.title}</p>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {activity.status || 'Completed'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!isCompleted && (
+                            <button
+                              onClick={() => {
+                                updateActivity(activity.id, { status: 'Completed' });
+                                if (lead.stage === 'New' && (activity.type === 'Call' || activity.type === 'Email' || activity.type === 'Meeting')) {
+                                  updateLead(lead.id, { stage: 'Contacted' });
+                                }
+                              }}
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded transition flex items-center gap-1"
+                              title="Mark this interaction completed and advance stage"
+                            >
+                              <CheckCircle2 size={12} /> Mark Completed
+                            </button>
+                          )}
+                          <span className="text-xs text-slate-500">{activity.dueDate}</span>
+                        </div>
                       </div>
                       <p className="text-xs text-slate-600 mb-2">{activity.outcome || 'No outcome recorded.'}</p>
                       <div className="flex items-center text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
@@ -660,10 +686,27 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
                   >
                     <option value="Completed">✅ Completed (Validates Contacted Stage)</option>
-                    <option value="Pending">⏳ Pending / Scheduled</option>
+                    <option value="Pending">⏳ Pending / Scheduled (Lead Remains in New)</option>
                   </select>
                 </div>
               </div>
+
+              {/* HELPER STATUS HINT */}
+              {activityForm.status === 'Pending' ? (
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">⏳</span>
+                  <div>
+                    <span className="font-bold">Pending / Scheduled Activity:</span> This upcoming activity will be recorded in the timeline. The lead will <strong>remain in "New"</strong> until the interaction is marked Completed.
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">✅</span>
+                  <div>
+                    <span className="font-bold">Completed Interaction:</span> This records a completed interaction and will <strong>automatically advance the lead to "Contacted"</strong>.
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Subject / Discussion Topic *</label>
@@ -708,9 +751,16 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                  className={`px-4 py-2 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5 ${
+                    activityForm.status === 'Pending'
+                      ? 'bg-slate-700 hover:bg-slate-800'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
                 >
-                  <CheckCircle2 size={14} /> {lead.stage === 'New' ? 'Save & Move to Contacted' : 'Save Interaction'}
+                  <CheckCircle2 size={14} />
+                  {activityForm.status === 'Pending'
+                    ? 'Save Scheduled Activity (Keep in New)'
+                    : (lead.stage === 'New' ? 'Save & Move to Contacted' : 'Save Interaction')}
                 </button>
               </div>
             </form>

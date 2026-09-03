@@ -100,6 +100,7 @@ interface AppContextType {
   updateOpportunity: (id: string, updates: Partial<Opportunity>) => void;
   activities: Activity[];
   addActivity: (activity: Omit<Activity, 'id'>) => void;
+  updateActivity: (id: string, updates: Partial<Activity>) => void;
   followUps: FollowUp[];
   addFollowUp: (fu: Omit<FollowUp, 'id'>) => void;
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
@@ -1251,6 +1252,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { console.warn('⚠️ [CRM] addActivity failed:', err); }
   }, []);
 
+  const updateActivity = useCallback(async (id: string, updates: Partial<Activity>) => {
+    setActivities((prev) =>
+      prev.map((act) => (act.id === id ? { ...act, ...updates } : act))
+    );
+    try {
+      await CRMActivitiesAPI.update(id, updates);
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateActivity failed:', err);
+    }
+  }, []);
+
   const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
     const tempId = `PROD-${Date.now()}`;
     setProducts((prev) => [{ ...product, id: tempId }, ...prev]);
@@ -1570,6 +1582,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateOpportunity,
         activities,
         addActivity,
+        updateActivity,
         followUps,
         addFollowUp,
         updateFollowUp,
