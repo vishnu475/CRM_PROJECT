@@ -605,6 +605,110 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
         </div>
       )}
 
+      {/* LOG ACTIVITY / INTERACTION MODAL */}
+      {showActivityForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Phone size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">Log Customer Interaction</h3>
+                  <p className="text-xs text-slate-500">Record a call, meeting, or email for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowActivityForm(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleAddActivity(); }} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Interaction Type *</label>
+                  <select
+                    value={activityForm.type}
+                    onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="Call">📞 Phone Call</option>
+                    <option value="Email">✉️ Email Exchange</option>
+                    <option value="Meeting">📅 In-Person / Demo Meeting</option>
+                    <option value="Task">📋 Task / Follow-up</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Status *</label>
+                  <select
+                    value={activityForm.status || 'Completed'}
+                    onChange={(e) => setActivityForm({ ...activityForm, status: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="Completed">✅ Completed (Validates Contacted Stage)</option>
+                    <option value="Pending">⏳ Pending / Scheduled</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Subject / Discussion Topic *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Discovery call regarding CRM requirements"
+                  value={activityForm.title}
+                  onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={activityForm.date || new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setActivityForm({ ...activityForm, date: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Outcome / Discussion Notes</label>
+                <textarea
+                  rows={3}
+                  placeholder="Summarize key takeaways, client response, agreed next steps..."
+                  value={activityForm.outcome}
+                  onChange={(e) => setActivityForm({ ...activityForm, outcome: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowActivityForm(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} /> Save Interaction
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* FOLLOW UP FORM MODAL */}
       {showFollowUpForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
