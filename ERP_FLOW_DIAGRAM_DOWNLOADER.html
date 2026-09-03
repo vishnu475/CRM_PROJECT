@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP Suite - End-to-End System Flow & Architecture Diagram</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background-color: #f1f5f9;
+      color: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background-color: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #1e3a8a;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: #64748b;
+      font-weight: 500;
+    }
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .btn {
+      padding: 0.6rem 1.25rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-decoration: none;
+      transition: all 0.15s ease-in-out;
+      border: 1px solid transparent;
+    }
+    .btn-primary {
+      background-color: #2563eb;
+      color: #ffffff;
+    }
+    .btn-primary:hover {
+      background-color: #1d4ed8;
+      box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+    }
+    .btn-secondary {
+      background-color: #ffffff;
+      color: #334155;
+      border-color: #cbd5e1;
+    }
+    .btn-secondary:hover {
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    main {
+      flex: 1;
+      padding: 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .diagram-card {
+      background: #ffffff;
+      border-radius: 1rem;
+      border: 1px solid #e2e8f0;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .diagram-image-container {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 0.75rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .diagram-image {
+      width: 100%;
+      height: auto;
+      max-height: 80vh;
+      object-fit: contain;
+      display: block;
+      transition: transform 0.2s ease;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.25rem;
+    }
+    .info-card {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      border: 1px solid #e2e8f0;
+      padding: 1.25rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .info-card h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .info-card p {
+      font-size: 0.8rem;
+      color: #475569;
+      line-height: 1.5;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.375rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.025em;
+    }
+    .badge-blue { background: #eff6ff; color: #2563eb; }
+    .badge-teal { background: #f0fdfa; color: #0d9488; }
+    .badge-emerald { background: #ecfdf5; color: #059669; }
+    .badge-amber { background: #fffbeb; color: #d97706; }
+    .badge-red { background: #fef2f2; color: #dc2626; }
+    .badge-purple { background: #faf5ff; color: #9333ea; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <div class="brand-title">
+        <span>⚡ ERP SUITE</span>
+      </div>
+      <div class="brand-subtitle">Enterprise Software Platform: End-to-End Workflow Architecture</div>
+    </div>
+    <div class="actions">
+      <a id="downloadBtn" href="./erp_system_flow_diagram.jpg" download="ERP_System_Flow_Diagram.jpg" class="btn btn-primary">
+        📥 Download JPG Image
+      </a>
+      <button onclick="window.print()" class="btn btn-secondary">
+        🖨️ Print / Save PDF
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Visual Image Card -->
+    <div class="diagram-card">
+      <div class="diagram-image-container">
+        <img 
+          id="flowImage" 
+          src="./erp_system_flow_diagram.jpg" 
+          alt="ERP CRM HRMS Integrated Workflow Architecture Diagram" 
+          class="diagram-image"
+        />
+      </div>
+    </div>
+
+    <!-- Module Details Breakdown -->
+    <div class="info-grid">
+      <div class="info-card">
+        <h3><span class="badge badge-blue">Module 1</span> CRM & Lead Management</h3>
+        <p>Captures leads, tracks customer opportunities, orchestrates communications, and converts prospects into sales quotations and verified accounts.</p>
+      </div>
+
+      <div class="info-card">
+        <h3><span class="badge badge-teal">Module 2</span> HRMS & Workforce</h3>
+        <p>Maintains employee records, candidate onboarding, organizational hierarchy, department designations, and dynamic employee codes (EMP-xxx).</p>
+      </div>
+
+      <div class="info-card">
+        <h3><span class="badge badge-emerald">Module 3</span> Biometric Attendance & Leave</h3>
+        <p>Real-time shift punch-in/out tracking, grace-period late penalties, overtime calculation, and self-service leave regularization approvals.</p>
+      </div>
+
+      <div class="info-card">
+        <h3><span class="badge badge-amber">Module 4</span> Task Intelligence & Deliverables</h3>
+        <p>Manager work-order assignment with PostgreSQL persistence, live deliverable completion audits, time logging, and employee progress tracking.</p>
+      </div>
+
+      <div class="info-card">
+        <h3><span class="badge badge-red">Module 5</span> Payroll & Double-Entry Accounting</h3>
+        <p>Attendance-synchronized salary runs, statutory deductions, digital payslip PDF generation, Chart of Accounts, and General Ledger posting.</p>
+      </div>
+
+      <div class="info-card">
+        <h3><span class="badge badge-purple">Module 6</span> Settings & Security</h3>
+        <p>Role-based access control (RBAC), Two-Factor Authentication (2FA), active device session monitoring, and drag-and-drop navigation ordering.</p>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Ensure 1-click JPG download works across all browsers
+    document.getElementById('downloadBtn').addEventListener('click', function(e) {
+      const img = document.getElementById('flowImage');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = img.naturalWidth || 1920;
+      canvas.height = img.naturalHeight || 1080;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      
+      const a = document.createElement('a');
+      a.download = 'ERP_System_End_To_End_Flow_Diagram.jpg';
+      a.href = canvas.toDataURL('image/jpeg', 0.95);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      e.preventDefault();
+    });
+  </script>
+</body>
+</html>
