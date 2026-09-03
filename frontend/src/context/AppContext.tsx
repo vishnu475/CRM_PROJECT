@@ -631,7 +631,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             company: r.company || '',
             email: r.email || '',
             phone: r.phone || '',
-            value: parseFloat(r.value) || 0,
+            value: parseFloat(r.value) || parseFloat(r.budget) || 0,
+            budget: parseFloat(r.budget) || parseFloat(r.value) || 0,
+            requirement: r.requirement || '',
+            decisionMaker: r.decision_maker || r.contact_person || '',
+            expectedCloseDate: r.expected_close_date || '',
             stage: r.stage || 'New',
             score: parseInt(r.score) || 50,
             source: r.source || 'Manual/Other',
@@ -1123,11 +1127,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         company: leadData.company,
         email: leadData.email,
         phone: leadData.phone,
-        value: leadData.value,
+        value: leadData.value || leadData.budget || 0,
+        budget: leadData.budget || leadData.value || 0,
         stage: leadData.stage,
         score: leadData.score,
         source: leadData.source,
         assignedTo: leadData.assignedTo,
+        requirement: leadData.requirement,
+        decisionMaker: leadData.decisionMaker || leadData.contactPerson,
+        expectedCloseDate: leadData.expectedCloseDate,
       });
       if (res.success && res.data) {
         setLeads((prev) => prev.map((l) => l.id === tempId ? { ...newLead, id: res.data.id } : l));
@@ -1138,12 +1146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateLead = useCallback(async (id: string, updates: Partial<Lead>) => {
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l))); // Optimistic
     try {
-      await LeadsAPI.update(id, {
-        stage: updates.stage,
-        score: updates.score,
-        value: updates.value,
-        assigned_to: updates.assignedTo,
-      });
+      await LeadsAPI.update(id, updates);
     } catch (err) { console.warn('⚠️ [CRM] updateLead failed:', err); }
   }, []);
 

@@ -93,6 +93,9 @@ export interface Lead {
   alternatePhone?: string;
   website?: string;
   expectedCloseDate?: string;
+  requirement?: string;
+  decisionMaker?: string;
+  budget?: number;
   address?: string;
   city?: string;
   state?: string;

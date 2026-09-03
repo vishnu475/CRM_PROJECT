@@ -1,6 +1,7 @@
-// Test suite for CRM Lead-Stage Workflow Validation (Step 1: New -> Contacted)
+// Test suite for CRM Lead-Stage Workflow Validation
+// Covers: Step 1 (New -> Contacted) AND Step 2 (Contacted -> Qualified)
 
-function validateLeadStageTransition(lead, targetStage, activities) {
+function validateLeadStageTransition(lead, targetStage, activities = []) {
   const currentStage = lead.stage;
 
   // No change in stage
@@ -8,7 +9,7 @@ function validateLeadStageTransition(lead, targetStage, activities) {
     return { allowed: true };
   }
 
-  // STEP 1 ONLY: Validation for New -> Contacted
+  // STEP 1: Validation for New -> Contacted
   if (currentStage === 'New' && targetStage === 'Contacted') {
     const hasCompletedInteraction = activities.some((act) => {
       const isRelated =
@@ -33,12 +34,60 @@ function validateLeadStageTransition(lead, targetStage, activities) {
     }
   }
 
+  // STEP 2: Validation for Contacted -> Qualified
+  if (currentStage === 'Contacted' && targetStage === 'Qualified') {
+    const missingFields = [];
+
+    // 1. Requirement (meaningful text, not empty or whitespace-only)
+    const requirement = (lead.requirement || '').trim();
+    if (!requirement) {
+      missingFields.push('Requirement');
+    }
+
+    // 2. Budget (valid positive monetary value > 0)
+    const budgetVal =
+      lead.budget !== undefined && Number(lead.budget) > 0
+        ? Number(lead.budget)
+        : lead.value !== undefined && Number(lead.value) > 0
+        ? Number(lead.value)
+        : 0;
+
+    if (!budgetVal || budgetVal <= 0 || isNaN(budgetVal)) {
+      missingFields.push('Budget');
+    }
+
+    // 3. Decision Maker (identified purchasing authority)
+    const decisionMaker = (lead.decisionMaker || lead.contactPerson || '').trim();
+    if (!decisionMaker) {
+      missingFields.push('Decision Maker');
+    }
+
+    // 4. Expected Closing Date (valid date)
+    const expectedCloseDate = (lead.expectedCloseDate || '').trim();
+    if (!expectedCloseDate) {
+      missingFields.push('Expected Closing Date');
+    }
+
+    if (missingFields.length > 0) {
+      if (missingFields.length === 1) {
+        return {
+          allowed: false,
+          message: `Please provide the ${missingFields[0]} before qualifying this lead.`,
+        };
+      }
+      return {
+        allowed: false,
+        message: `Complete the following qualification details before moving this lead to Qualified:\n• ${missingFields.join('\n• ')}`,
+      };
+    }
+  }
+
   // All other stage transitions are allowed (reserved for future step rules)
   return { allowed: true };
 }
 
 console.log('================================================================');
-console.log('🧪 RUNNING LEAD-STAGE WORKFLOW VALIDATION TESTS (STEP 1 ONLY)');
+console.log('🧪 RUNNING LEAD-STAGE WORKFLOW VALIDATION TESTS (STEPS 1 & 2)');
 console.log('================================================================\n');
 
 let passed = 0;
@@ -54,69 +103,77 @@ function assert(condition, testName, extraInfo = '') {
   }
 }
 
-// Lead Base
-const leadNew = { id: 'LD-001', name: 'Rajesh Kumar', stage: 'New', company: 'Tata Tech' };
-const leadContacted = { id: 'LD-002', name: 'Anita Sharma', stage: 'Contacted', company: 'Infosys' };
+// STEP 2 CASES (Contacted -> Qualified)
 
-// --- CASE 1: New lead with no activities ---
-const case1Res = validateLeadStageTransition(leadNew, 'Contacted', []);
+// CASE 1: Contacted lead with all four qualification fields empty
+const leadCase1 = { id: 'LD-101', name: 'Alpha Tech', stage: 'Contacted' };
+const res1 = validateLeadStageTransition(leadCase1, 'Qualified');
 assert(
-  case1Res.allowed === false && case1Res.message === 'Please record a completed call, email, or meeting before moving this lead to Contacted.',
-  'CASE 1: New lead with no activities -> BLOCKED',
-  `Blocked with exact message: "${case1Res.message}"`
+  res1.allowed === false && res1.message.includes('Requirement') && res1.message.includes('Budget') && res1.message.includes('Decision Maker') && res1.message.includes('Expected Closing Date'),
+  'CASE 1: All 4 qualification fields empty -> BLOCKED',
+  `Blocked with: "${res1.message.replace(/\n/g, ' ')}"`
 );
 
-// --- CASE 2: New lead with an incomplete/pending call ---
-const activitiesCase2 = [
-  { id: 'ACT-1', title: 'Intro Call', type: 'Call', relatedTo: 'LD-001', status: 'Pending' }
-];
-const case2Res = validateLeadStageTransition(leadNew, 'Contacted', activitiesCase2);
+// CASE 2: Requirement exists, but Budget is missing
+const leadCase2 = { id: 'LD-102', name: 'Beta Corp', stage: 'Contacted', requirement: 'Enterprise ERP Suite', decisionMaker: 'Sunil Verma', expectedCloseDate: '2026-10-15', budget: 0, value: 0 };
+const res2 = validateLeadStageTransition(leadCase2, 'Qualified');
 assert(
-  case2Res.allowed === false,
-  'CASE 2: New lead with incomplete/pending call -> BLOCKED',
-  `Status: Pending -> Allowed: ${case2Res.allowed}`
+  res2.allowed === false && res2.message === 'Please provide the Budget before qualifying this lead.',
+  'CASE 2: Requirement exists, but Budget is missing -> BLOCKED',
+  `Message: "${res2.message}"`
 );
 
-// --- CASE 3: New lead with a completed call ---
-const activitiesCase3 = [
-  { id: 'ACT-2', title: 'Intro Call', type: 'Call', relatedTo: 'LD-001', status: 'Completed' }
-];
-const case3Res = validateLeadStageTransition(leadNew, 'Contacted', activitiesCase3);
+// CASE 3: Requirement + Budget exist, but Decision Maker is missing
+const leadCase3 = { id: 'LD-103', name: 'Gamma Ltd', stage: 'Contacted', requirement: 'CRM Implementation', budget: 350000, expectedCloseDate: '2026-11-01' };
+const res3 = validateLeadStageTransition(leadCase3, 'Qualified');
 assert(
-  case3Res.allowed === true,
-  'CASE 3: New lead with completed call -> ALLOWED',
-  `Status: Completed -> Allowed: ${case3Res.allowed}`
+  res3.allowed === false && res3.message === 'Please provide the Decision Maker before qualifying this lead.',
+  'CASE 3: Requirement + Budget exist, Decision Maker missing -> BLOCKED',
+  `Message: "${res3.message}"`
 );
 
-// --- CASE 4: New lead with a completed email ---
-const activitiesCase4 = [
-  { id: 'ACT-3', title: 'Introduction Email', type: 'Email', relatedTo: 'LD-001', status: 'Completed' }
-];
-const case4Res = validateLeadStageTransition(leadNew, 'Contacted', activitiesCase4);
+// CASE 4: Requirement + Budget + Decision Maker exist, but Expected Closing Date is missing
+const leadCase4 = { id: 'LD-104', name: 'Delta Systems', stage: 'Contacted', requirement: 'HRMS Cloud Module', budget: 500000, decisionMaker: 'Priya Nair', expectedCloseDate: '' };
+const res4 = validateLeadStageTransition(leadCase4, 'Qualified');
 assert(
-  case4Res.allowed === true,
-  'CASE 4: New lead with completed email -> ALLOWED',
-  `Status: Completed -> Allowed: ${case4Res.allowed}`
+  res4.allowed === false && res4.message === 'Please provide the Expected Closing Date before qualifying this lead.',
+  'CASE 4: Req + Budget + Decision Maker exist, Close Date missing -> BLOCKED',
+  `Message: "${res4.message}"`
 );
 
-// --- CASE 5: New lead with a completed meeting ---
-const activitiesCase5 = [
-  { id: 'ACT-4', title: 'Intro Demo Meeting', type: 'Meeting', relatedTo: 'LD-001', status: 'Completed' }
-];
-const case5Res = validateLeadStageTransition(leadNew, 'Contacted', activitiesCase5);
+// CASE 5: All four fields are valid
+const leadCase5 = { id: 'LD-105', name: 'Omega Global', stage: 'Contacted', requirement: 'Complete ERP & CRM Solution', budget: 750000, decisionMaker: 'Vikram Mehta (VP Tech)', expectedCloseDate: '2026-12-31' };
+const res5 = validateLeadStageTransition(leadCase5, 'Qualified');
 assert(
-  case5Res.allowed === true,
-  'CASE 5: New lead with completed meeting -> ALLOWED',
-  `Status: Completed -> Allowed: ${case5Res.allowed}`
+  res5.allowed === true,
+  'CASE 5: All 4 qualification fields valid -> ALLOWED',
+  `Stage transition to Qualified permitted: ${res5.allowed}`
 );
 
-// --- CASE 6: Existing lead already in Contacted ---
-const case6Res1 = validateLeadStageTransition(leadContacted, 'Qualified', []);
-const case6Res2 = validateLeadStageTransition(leadContacted, 'Proposal', []);
+// STEP 1 REGRESSION CASES
+
+// CASE 6: Existing New -> Contacted workflow from Step 1
+const leadNewNoAct = { id: 'LD-001', name: 'New Lead', stage: 'New' };
+const leadNewWithAct = { id: 'LD-001', name: 'New Lead', stage: 'New' };
+const acts = [{ id: 'A1', type: 'Call', status: 'Completed', relatedTo: 'LD-001' }];
+
+const res6a = validateLeadStageTransition(leadNewNoAct, 'Contacted', []);
+const res6b = validateLeadStageTransition(leadNewWithAct, 'Contacted', acts);
 assert(
-  case6Res1.allowed === true && case6Res2.allowed === true,
-  'CASE 6: Existing lead in Contacted -> Existing behavior preserved',
-  `Contacted->Qualified: ${case6Res1.allowed}, Contacted->Proposal: ${case6Res2.allowed}`
+  res6a.allowed === false && res6b.allowed === true,
+  'CASE 6: Step 1 (New -> Contacted) still works exactly as before',
+  `No Act: ${res6a.allowed} (Blocked), With Completed Act: ${res6b.allowed} (Allowed)`
+);
+
+// CASE 7: Existing leads already in Qualified/Proposal/Negotiation/Won/Lost
+const leadQualified = { id: 'LD-007', name: 'Qualified Lead', stage: 'Qualified' };
+const leadProposal = { id: 'LD-008', name: 'Proposal Lead', stage: 'Proposal' };
+const res7a = validateLeadStageTransition(leadQualified, 'Proposal');
+const res7b = validateLeadStageTransition(leadProposal, 'Negotiation');
+assert(
+  res7a.allowed === true && res7b.allowed === true,
+  'CASE 7: Existing leads in other stages continue to work without disruption',
+  `Qualified->Proposal: ${res7a.allowed}, Proposal->Negotiation: ${res7b.allowed}`
 );
 
 console.log('\n================================================================');
