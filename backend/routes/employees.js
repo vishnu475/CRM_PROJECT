@@ -32,11 +32,11 @@ router.get('/', async (req, res) => {
         COALESCE(c.applied_position, c.job_title, 'Senior Software Engineer'),
         CURRENT_DATE,
         'Active',
-        COALESCE(c.expected_salary, c.annual_ctc, 400000),
-        COALESCE(c.expected_salary, c.annual_ctc, 400000),
-        ROUND((COALESCE(c.expected_salary, c.annual_ctc, 400000) / 12)::numeric, 2),
-        ROUND((COALESCE(c.expected_salary, c.annual_ctc, 400000) / 12 * 0.6)::numeric, 2),
-        ROUND((COALESCE(c.expected_salary, c.annual_ctc, 400000) / 12 * 0.4)::numeric, 2),
+        COALESCE(c.expected_salary, 400000),
+        COALESCE(c.expected_salary, 400000),
+        ROUND((COALESCE(c.expected_salary, 400000) / 12)::numeric, 2),
+        ROUND((COALESCE(c.expected_salary, 400000) / 12 * 0.6)::numeric, 2),
+        ROUND((COALESCE(c.expected_salary, 400000) / 12 * 0.4)::numeric, 2),
         COALESCE(c.recruiter, 'Sarah Jenkins')
       FROM job_candidates c
       WHERE (c.stage = 'Employee' OR c.stage = 'Hired' OR c.status = 'CONVERTED')
