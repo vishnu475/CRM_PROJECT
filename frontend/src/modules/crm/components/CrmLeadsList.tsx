@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { CrmView, Lead } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
+import { validateLeadStageTransition } from '../utils/leadWorkflowValidation';
 import { 
   Plus, Search, Filter, MoreVertical, ChevronLeft, ChevronRight, 
   CheckCircle2, AlertCircle, Building2, User, Phone, Mail, Calendar
@@ -13,7 +14,7 @@ interface CrmLeadsListProps {
 }
 
 export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLeadSelect }) => {
-  const { leads, updateLead } = useApp();
+  const { leads, updateLead, activities } = useApp();
   
   // Filtering and Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -26,8 +27,9 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
   // Selection State
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   
-  // Archive Modal State
+  // Archive & Validation Modal State
   const [leadToArchive, setLeadToArchive] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Derive Active Leads
   const activeLeads = useMemo(() => leads.filter(l => l.status !== 'archived'), [leads]);
@@ -139,6 +141,27 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
         </div>
       )}
 
+      {/* VALIDATION BLOCKED MODAL */}
+      {validationError && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md animate-in zoom-in-95 duration-200 space-y-4">
+            <div className="flex items-center gap-3 text-amber-600">
+              <AlertCircle size={22} className="shrink-0" />
+              <h3 className="text-base font-bold text-slate-900">Stage Transition Blocked</h3>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed">{validationError}</p>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setValidationError(null)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-sm transition"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
         <div>
@@ -234,9 +257,26 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                   </div>
                 </td>
                 <td className="p-4">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}>
-                    {lead.stage}
-                  </span>
+                  <select
+                    value={lead.stage}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      const targetStage = e.target.value as Lead['stage'];
+                      const validation = validateLeadStageTransition(lead, targetStage, activities);
+                      if (!validation.allowed) {
+                        setValidationError(validation.message || 'Stage transition not allowed.');
+                        return;
+                      }
+                      setValidationError(null);
+                      updateLead(lead.id, { stage: targetStage });
+                    }}
+                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getStageBadgeColor(lead.stage)}`}
+                    title="Change stage"
+                  >
+                    {['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'].map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </td>
                 <td className="p-4">
                   <div className={`inline-flex items-center justify-center w-8 h-8 rounded-full border text-xs font-bold ${getLeadScoreColor(lead.score)}`}>
@@ -296,9 +336,26 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
             </div>
             
             <div className="flex items-center justify-between mt-4">
-              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}>
-                {lead.stage}
-              </span>
+              <select
+                value={lead.stage}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const targetStage = e.target.value as Lead['stage'];
+                  const validation = validateLeadStageTransition(lead, targetStage, activities);
+                  if (!validation.allowed) {
+                    setValidationError(validation.message || 'Stage transition not allowed.');
+                    return;
+                  }
+                  setValidationError(null);
+                  updateLead(lead.id, { stage: targetStage });
+                }}
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getStageBadgeColor(lead.stage)}`}
+                title="Change stage"
+              >
+                {['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
               <span className="text-sm font-bold text-slate-700">{formatINR(lead.value)}</span>
             </div>
             

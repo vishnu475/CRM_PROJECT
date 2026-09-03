@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { CrmView } from '../../../types';
+import { CrmView, Lead } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
+import { validateLeadStageTransition } from '../utils/leadWorkflowValidation';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
-  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download
+  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle
 } from 'lucide-react';
 
 interface CrmLeadDetailsProps {
@@ -23,6 +24,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   
   // Forms visibility state
   const [showActivityForm, setShowActivityForm] = useState(false);
@@ -30,11 +32,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [showFollowUpForm, setShowFollowUpForm] = useState(false);
   
   // Form States
-  const [activityForm, setActivityForm] = useState({ type: 'Call' as any, title: '', date: '', outcome: '' });
+  const [activityForm, setActivityForm] = useState({ type: 'Call' as any, title: '', date: '', outcome: '', status: 'Completed' as any });
   const [noteContent, setNoteContent] = useState('');
   const [followUpForm, setFollowUpForm] = useState({ type: 'Call' as any, date: '', description: '' });
 
-  const leadActivities = useMemo(() => activities.filter(a => a.relatedTo === leadId).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()), [activities, leadId]);
+  const leadActivities = useMemo(() => activities.filter(a => a.relatedTo === leadId || a.relatedTo === lead?.name).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()), [activities, leadId, lead?.name]);
   const leadNotes = useMemo(() => notes.filter(n => n.relatedRecord === leadId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [notes, leadId]);
   const leadDocs = useMemo(() => documents.filter(d => d.linkedEntity === leadId), [documents, leadId]);
   
@@ -66,20 +68,31 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     onViewChange('leads');
   };
 
+  const handleStageChange = (newStage: Lead['stage']) => {
+    const validation = validateLeadStageTransition(lead, newStage, activities);
+    if (!validation.allowed) {
+      setValidationError(validation.message || 'Stage transition not allowed.');
+      return;
+    }
+    setValidationError(null);
+    updateLead(lead.id, { stage: newStage });
+  };
+
   const handleAddActivity = () => {
-    if (!activityForm.title || !activityForm.date) return;
+    if (!activityForm.title) return;
     addActivity({
       title: activityForm.title,
       type: activityForm.type,
       relatedTo: leadId,
       assignedTo: lead.assignedTo,
-      dueDate: activityForm.date,
+      dueDate: activityForm.date || new Date().toISOString().split('T')[0],
       priority: 'Medium',
-      status: 'Completed',
+      status: activityForm.status || 'Completed',
       outcome: activityForm.outcome
     });
-    setActivityForm({ type: 'Call', title: '', date: '', outcome: '' });
+    setActivityForm({ type: 'Call', title: '', date: '', outcome: '', status: 'Completed' });
     setShowActivityForm(false);
+    setValidationError(null);
   };
 
   const handleAddNote = () => {
@@ -147,7 +160,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
       {/* LEAD HEADER CARD */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[#0f172a] mb-1">{lead.name}</h1>
             <div className="flex items-center text-sm text-slate-500 flex-wrap gap-2">
@@ -155,9 +168,19 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               <span className="hidden sm:inline text-slate-300">•</span>
               <span className="flex items-center"><User size={14} className="mr-1" /> {lead.contactPerson || lead.email}</span>
               <span className="hidden sm:inline text-slate-300">•</span>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                {lead.stage}
-              </span>
+              <div className="inline-flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-slate-400">Stage:</span>
+                <select
+                  value={lead.stage}
+                  onChange={(e) => handleStageChange(e.target.value as Lead['stage'])}
+                  className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  title="Change Lead Stage"
+                >
+                  {leadStages.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           
@@ -165,7 +188,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             <button className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 flex items-center gap-2">
               <Edit2 size={14} /> Edit
             </button>
-            <button onClick={() => setShowActivityForm(true)} className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 flex items-center gap-2">
+            <button onClick={() => { setShowActivityForm(true); setActiveTab('activities'); }} className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 flex items-center gap-2">
               <Plus size={14} /> Add Activity
             </button>
             <div className="relative">
@@ -186,6 +209,34 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             </div>
           </div>
         </div>
+
+        {/* VALIDATION ERROR BANNER */}
+        {validationError && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-xl flex items-start justify-between gap-3 animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+              <div>
+                <p className="text-xs font-bold text-amber-900">Stage Transition Blocked</p>
+                <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">{validationError}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => { setShowActivityForm(true); setActiveTab('activities'); }}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+              >
+                + Log Interaction
+              </button>
+              <button
+                onClick={() => setValidationError(null)}
+                className="text-amber-600 hover:text-amber-800 text-sm font-bold px-1"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* METRICS ROW */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t border-slate-100">
@@ -221,7 +272,10 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
         {/* STAGE PROGRESSION */}
         <div className="mt-8 pt-6 border-t border-slate-100">
-          <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wider">Sales Stage</p>
+          <div className="flex justify-between items-center mb-3">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Sales Stage</p>
+            <span className="text-[11px] text-slate-400">Click a stage bubble or select above to move stage</span>
+          </div>
           <div className="flex items-center justify-between relative">
             <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-slate-100 z-0"></div>
             <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-indigo-500 z-0 transition-all duration-500" style={{ width: `${Math.max(0, (currentStageIndex / (leadStages.length - 1)) * 100)}%` }}></div>
@@ -231,20 +285,26 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               const isCurrent = idx === currentStageIndex;
               const isLost = stage === 'Lost' && isCurrent;
               
-              let bubbleColor = 'bg-slate-200 border-white text-transparent';
-              if (isPast) bubbleColor = 'bg-indigo-500 border-white text-white';
+              let bubbleColor = 'bg-slate-200 border-white text-transparent hover:border-indigo-200';
+              if (isPast) bubbleColor = 'bg-indigo-500 border-white text-white hover:bg-indigo-600';
               if (isCurrent) bubbleColor = 'bg-indigo-600 border-indigo-200 shadow-md shadow-indigo-500/30 text-white';
               if (isLost) bubbleColor = 'bg-rose-500 border-rose-200 text-white';
 
               return (
-                <div key={stage} className="relative z-10 flex flex-col items-center group">
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => handleStageChange(stage as Lead['stage'])}
+                  className="relative z-10 flex flex-col items-center group cursor-pointer focus:outline-none transition-transform hover:scale-105"
+                  title={`Click to set stage to ${stage}`}
+                >
                   <div className={`w-6 h-6 rounded-full border-4 flex items-center justify-center transition-colors ${bubbleColor}`}>
                     {isPast && <CheckCircle2 size={12} />}
                   </div>
-                  <span className={`absolute top-8 text-[10px] font-bold whitespace-nowrap ${isCurrent ? (isLost ? 'text-rose-600' : 'text-indigo-600') : 'text-slate-400'}`}>
+                  <span className={`absolute top-8 text-[10px] font-bold whitespace-nowrap transition-colors ${isCurrent ? (isLost ? 'text-rose-600' : 'text-indigo-600') : 'text-slate-400 group-hover:text-slate-700'}`}>
                     {stage}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -388,7 +448,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           {showActivityForm && (
             <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-200 animate-in fade-in zoom-in-95">
               <h3 className="text-sm font-bold text-[#0f172a] mb-3">Log New Activity</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Type</label>
                   <select value={activityForm.type} onChange={(e) => setActivityForm({...activityForm, type: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
@@ -399,14 +459,21 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Status</label>
+                  <select value={activityForm.status} onChange={(e) => setActivityForm({...activityForm, status: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="Completed">Completed</option>
+                    <option value="Pending">Pending</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Date</label>
                   <input type="date" value={activityForm.date} onChange={(e) => setActivityForm({...activityForm, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-3">
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Subject</label>
-                  <input type="text" placeholder="E.g. Discussed pricing" value={activityForm.title} onChange={(e) => setActivityForm({...activityForm, title: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                  <input type="text" placeholder="E.g. Discovery Call with client" value={activityForm.title} onChange={(e) => setActivityForm({...activityForm, title: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
                 </div>
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-3">
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Outcome / Notes</label>
                   <textarea rows={2} value={activityForm.outcome} onChange={(e) => setActivityForm({...activityForm, outcome: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
                 </div>
