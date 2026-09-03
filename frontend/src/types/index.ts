@@ -96,6 +96,10 @@ export interface Lead {
   requirement?: string;
   decisionMaker?: string;
   budget?: number;
+  proposalAmount?: number;
+  proposalDate?: string;
+  proposalStatus?: 'Draft' | 'Sent';
+  proposalSentDate?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -175,6 +179,8 @@ export interface Quotation {
   amount: number;
   status: 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Converted';
   itemsCount: number;
+  sentDate?: string;
+  leadId?: string;
 }
 
 export interface SalesOrder {

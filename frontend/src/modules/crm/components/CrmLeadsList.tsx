@@ -14,7 +14,7 @@ interface CrmLeadsListProps {
 }
 
 export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLeadSelect }) => {
-  const { leads, updateLead, activities } = useApp();
+  const { leads, updateLead, activities, quotations } = useApp();
   
   // Filtering and Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -262,7 +262,7 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
                       const targetStage = e.target.value as Lead['stage'];
-                      const validation = validateLeadStageTransition(lead, targetStage, activities);
+                      const validation = validateLeadStageTransition(lead, targetStage, activities, quotations);
                       if (!validation.allowed) {
                         setValidationError(validation.message || 'Stage transition not allowed.');
                         return;

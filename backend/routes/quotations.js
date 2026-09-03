@@ -26,18 +26,18 @@ router.get('/', async (req, res) => {
 
 // POST /api/quotations — Create quotation in CRM database
 router.post('/', async (req, res) => {
-  const { id, quoteNumber, customerId, customerName, date, validUntil, amount, status, items } = req.body;
+  const { id, quoteNumber, customerId, customerName, date, validUntil, amount, status, sentDate, leadId, items } = req.body;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const quoteId = id || `QT-${Date.now()}`;
-    const quoteNo = quoteNumber || `QT-${new Date().getFullYear()}-${quoteId}`;
+    const quoteNo = quoteNumber || `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
 
     const quoteRes = await client.query(
-      `INSERT INTO quotations (id, quote_number, customer_id, customer_name, date, valid_until, amount, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [quoteId, quoteNo, customerId, customerName, date, validUntil, amount || 0, status || 'Draft']
+      `INSERT INTO quotations (id, quote_number, customer_id, customer_name, date, valid_until, amount, status, sent_date, lead_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [quoteId, quoteNo, customerId, customerName, date || new Date().toISOString().split('T')[0], validUntil, amount || 0, status || 'Draft', sentDate || (status === 'Sent' ? new Date().toISOString().split('T')[0] : null), leadId || customerId]
     );
 
     if (items && Array.isArray(items)) {
@@ -60,25 +60,31 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/quotations/:id — Update status (Approve, Send, Reject)
-router.patch('/:id', async (req, res) => {
+// PATCH /api/quotations/:id — Update status, sent_date, amount
+const updateQuotationHandler = async (req, res) => {
   const { id } = req.params;
-  const { status, amount, validUntil } = req.body;
+  const { status, amount, validUntil, sentDate, date } = req.body;
   try {
+    const computedSentDate = sentDate !== undefined ? sentDate : (status === 'Sent' ? new Date().toISOString().split('T')[0] : null);
     const result = await pool.query(
       `UPDATE quotations SET
          status = COALESCE($2, status),
          amount = COALESCE($3, amount),
          valid_until = COALESCE($4, valid_until),
+         sent_date = COALESCE($5, sent_date),
+         date = COALESCE($6, date),
          updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 RETURNING *`,
-      [id, status, amount, validUntil]
+      [id, status, amount, validUntil, computedSentDate, date]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Quotation not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-});
+};
+
+router.patch('/:id', updateQuotationHandler);
+router.put('/:id', updateQuotationHandler);
 
 export default router;

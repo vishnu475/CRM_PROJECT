@@ -18,7 +18,7 @@ type TabType = 'overview' | 'activities' | 'notes' | 'documents';
 const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 
 export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewChange }) => {
-  const { leads, activities, notes, documents, followUps, updateLead, addActivity, updateActivity, addNote, addFollowUp, addDocument } = useApp();
+  const { leads, activities, notes, documents, followUps, quotations, updateLead, addActivity, updateActivity, addQuotation, updateQuotation, addNote, addFollowUp, addDocument } = useApp();
   
   const lead = leads.find(l => l.id === leadId);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -26,6 +26,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showProposalModal, setShowProposalModal] = useState(false);
   
   // Forms visibility state
   const [showActivityForm, setShowActivityForm] = useState(false);
@@ -36,6 +37,12 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [activityForm, setActivityForm] = useState({ type: 'Call' as any, title: '', date: '', outcome: '', status: 'Completed' as any });
   const [noteContent, setNoteContent] = useState('');
   const [followUpForm, setFollowUpForm] = useState({ type: 'Call' as any, date: '', description: '' });
+  const [proposalForm, setProposalForm] = useState({
+    amount: '',
+    date: '',
+    status: 'Draft' as 'Draft' | 'Sent',
+    sentDate: '',
+  });
   const [editForm, setEditForm] = useState({
     name: '',
     company: '',
@@ -48,6 +55,109 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     industry: '',
     source: '',
   });
+
+  const leadQuotation = useMemo(() => {
+    if (!lead) return null;
+    return quotations.find(
+      (q) =>
+        q.customerId === lead.id ||
+        q.leadId === lead.id ||
+        q.customerName === lead.name ||
+        (q.customerId && q.customerId.includes(lead.id)) ||
+        (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
+    ) || null;
+  }, [quotations, lead]);
+
+  const openProposalModal = () => {
+    if (!lead) return;
+    const defaultAmount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || '';
+    const defaultDate = leadQuotation?.date || lead.proposalDate || new Date().toISOString().split('T')[0];
+    const defaultStatus = (leadQuotation?.status === 'Sent' || lead.proposalStatus === 'Sent') ? 'Sent' : 'Draft';
+    const defaultSentDate = leadQuotation?.sentDate || lead.proposalSentDate || (defaultStatus === 'Sent' ? new Date().toISOString().split('T')[0] : '');
+
+    setProposalForm({
+      amount: defaultAmount ? defaultAmount.toString() : '',
+      date: defaultDate,
+      status: defaultStatus,
+      sentDate: defaultSentDate,
+    });
+    setShowProposalModal(true);
+  };
+
+  const handleSaveProposal = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+    const numericAmount = parseFloat(proposalForm.amount) || 0;
+    const computedSentDate = proposalForm.status === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '';
+
+    if (leadQuotation) {
+      await updateQuotation(leadQuotation.id, {
+        amount: numericAmount,
+        date: proposalForm.date || new Date().toISOString().split('T')[0],
+        status: proposalForm.status,
+        sentDate: computedSentDate,
+      });
+    } else {
+      await addQuotation({
+        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+        customerId: lead.id,
+        leadId: lead.id,
+        customerName: lead.name,
+        date: proposalForm.date || new Date().toISOString().split('T')[0],
+        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        amount: numericAmount,
+        status: proposalForm.status,
+        sentDate: computedSentDate,
+        itemsCount: 1,
+      });
+    }
+
+    updateLead(lead.id, {
+      proposalAmount: numericAmount,
+      proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+      proposalStatus: proposalForm.status,
+      proposalSentDate: computedSentDate,
+    });
+
+    setShowProposalModal(false);
+    setValidationError(null);
+  };
+
+  const handleSendProposal = async () => {
+    if (!lead) return;
+    const today = new Date().toISOString().split('T')[0];
+    const amount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || 0;
+    const date = leadQuotation?.date || lead.proposalDate || today;
+
+    if (leadQuotation) {
+      await updateQuotation(leadQuotation.id, {
+        status: 'Sent',
+        sentDate: today,
+      });
+    } else {
+      await addQuotation({
+        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+        customerId: lead.id,
+        leadId: lead.id,
+        customerName: lead.name,
+        date: date,
+        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        amount: amount,
+        status: 'Sent',
+        sentDate: today,
+        itemsCount: 1,
+      });
+    }
+
+    updateLead(lead.id, {
+      proposalStatus: 'Sent',
+      proposalSentDate: today,
+      proposalAmount: amount,
+      proposalDate: date,
+    });
+
+    setValidationError(null);
+  };
 
   const openEditModal = () => {
     if (!lead) return;
@@ -122,7 +232,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   };
 
   const handleStageChange = (newStage: Lead['stage']) => {
-    const validation = validateLeadStageTransition(lead, newStage, activities);
+    const validation = validateLeadStageTransition(lead, newStage, activities, quotations);
     if (!validation.allowed) {
       setValidationError(validation.message || 'Stage transition not allowed.');
       return;
@@ -287,7 +397,14 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {validationError.includes('qualification') || validationError.includes('Requirement') || validationError.includes('Budget') || validationError.includes('Decision Maker') || validationError.includes('Closing Date') ? (
+              {validationError.toLowerCase().includes('proposal') ? (
+                <button
+                  onClick={openProposalModal}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                >
+                  {leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft' ? '📤 Send Proposal' : '+ Create Proposal'}
+                </button>
+              ) : validationError.includes('qualification') || validationError.includes('Requirement') || validationError.includes('Budget') || validationError.includes('Decision Maker') || validationError.includes('Closing Date') ? (
                 <button
                   onClick={openEditModal}
                   className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
@@ -497,6 +614,76 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </div>
                 <p className="text-sm font-bold text-[#0f172a]">
                   {lead.expectedCloseDate || <span className="text-slate-400 font-normal italic">Expected close date not set</span>}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* PROPOSAL & QUOTATION DETAILS SECTION */}
+          <div className="bg-white rounded-xl border border-indigo-100 shadow-xs p-6 md:col-span-2">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <h2 className="text-base font-bold text-[#0f172a] flex items-center">
+                <FileText size={18} className="mr-2 text-indigo-600" /> Proposal & Quotation Details
+              </h2>
+              <div className="flex items-center gap-2">
+                {(leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') && (
+                  <button
+                    onClick={handleSendProposal}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    title="Send proposal to customer"
+                  >
+                    <CheckCircle2 size={13} /> Send Proposal
+                  </button>
+                )}
+                <button
+                  onClick={openProposalModal}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <Edit2 size={12} /> {leadQuotation || lead.proposalAmount ? 'Edit Proposal' : '+ Create Proposal'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">1. Proposal Amount</span>
+                <p className="text-base font-bold text-[#0f172a]">
+                  {(leadQuotation?.amount && leadQuotation.amount > 0) || (lead.proposalAmount && lead.proposalAmount > 0) ? (
+                    formatINR(leadQuotation?.amount || lead.proposalAmount || 0)
+                  ) : (
+                    <span className="text-slate-400 font-normal italic text-sm">No amount set</span>
+                  )}
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">2. Proposal Date</span>
+                <p className="text-sm font-bold text-[#0f172a]">
+                  {leadQuotation?.date || lead.proposalDate || <span className="text-slate-400 font-normal italic text-sm">Not set</span>}
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">3. Proposal Status</span>
+                <div className="mt-0.5">
+                  {(leadQuotation?.status === 'Sent' || lead.proposalStatus === 'Sent') ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Sent
+                    </span>
+                  ) : (leadQuotation || lead.proposalStatus) ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                      <Clock size={12} /> Draft
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 text-xs italic">No proposal</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">4. Sent Date</span>
+                <p className="text-sm font-bold text-[#0f172a]">
+                  {leadQuotation?.sentDate || lead.proposalSentDate || <span className="text-slate-400 font-normal italic text-xs">Not sent yet</span>}
                 </p>
               </div>
             </div>
@@ -1058,6 +1245,137 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
                 >
                   <CheckCircle2 size={14} /> Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PROPOSAL MODAL */}
+      {showProposalModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">
+                    {leadQuotation || lead.proposalAmount ? 'Edit Proposal / Quotation' : 'Create & Send Proposal'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Proposal requirements for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowProposalModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProposal} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Proposal Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    placeholder="e.g. 250000"
+                    value={proposalForm.amount}
+                    onChange={(e) => setProposalForm({ ...proposalForm, amount: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Proposal Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={proposalForm.date}
+                    onChange={(e) => setProposalForm({ ...proposalForm, date: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Proposal Status <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={proposalForm.status}
+                    onChange={(e) => {
+                      const newStatus = e.target.value as 'Draft' | 'Sent';
+                      setProposalForm({
+                        ...proposalForm,
+                        status: newStatus,
+                        sentDate: newStatus === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '',
+                      });
+                    }}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="Draft">📝 Draft (Lead Remains Qualified)</option>
+                    <option value="Sent">📤 Sent to Customer (Allows Proposal Stage)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Sent Date {proposalForm.status === 'Sent' && <span className="text-rose-500">*</span>}
+                  </label>
+                  <input
+                    type="date"
+                    disabled={proposalForm.status !== 'Sent'}
+                    value={proposalForm.sentDate}
+                    onChange={(e) => setProposalForm({ ...proposalForm, sentDate: e.target.value })}
+                    className={`w-full p-2.5 border rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                      proposalForm.status === 'Sent' ? 'border-slate-300 bg-white text-slate-800' : 'border-slate-200 bg-slate-100 text-slate-400'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* STATUS HELPER BANNER */}
+              {proposalForm.status === 'Draft' ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">📝</span>
+                  <div>
+                    <span className="font-bold">Draft Proposal:</span> This proposal draft will be saved. The lead will <strong>remain in "Qualified"</strong> until the proposal status is set to "Sent".
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">📤</span>
+                  <div>
+                    <span className="font-bold">Sent Proposal:</span> The proposal has been sent to the customer, which <strong>allows the lead to advance to "Proposal"</strong>.
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowProposalModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} /> Save Proposal
                 </button>
               </div>
             </form>

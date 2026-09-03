@@ -1,4 +1,4 @@
-import { Lead, Activity } from '../../../types';
+import { Lead, Activity, Quotation } from '../../../types';
 
 export interface StageTransitionResult {
   allowed: boolean;
@@ -17,11 +17,19 @@ export interface StageTransitionResult {
  * 2. Budget (positive monetary value > 0)
  * 3. Decision Maker (identified contact/decision maker)
  * 4. Expected Closing Date (valid date)
+ * 
+ * STEP 3 RULE:
+ * Qualified -> Proposal requires a valid proposal/quotation with:
+ * 1. Proposal Amount (> 0)
+ * 2. Proposal Date (valid date)
+ * 3. Proposal Status ('Sent' - Draft is not allowed)
+ * 4. Sent Date (valid date when status is Sent)
  */
 export const validateLeadStageTransition = (
   lead: Lead,
   targetStage: Lead['stage'],
-  activities: Activity[]
+  activities: Activity[] = [],
+  quotations: Quotation[] = []
 ): StageTransitionResult => {
   const currentStage = lead.stage;
 
@@ -99,6 +107,74 @@ export const validateLeadStageTransition = (
       return {
         allowed: false,
         message: `Complete the following qualification details before moving this lead to Qualified:\n• ${missingFields.join('\n• ')}`,
+      };
+    }
+  }
+
+  // STEP 3: Validation for Qualified -> Proposal
+  if (currentStage === 'Qualified' && targetStage === 'Proposal') {
+    // Look for associated quotation in quotations array
+    const linkedQuotation = quotations.find((q) =>
+      q.customerId === lead.id ||
+      q.leadId === lead.id ||
+      q.customerName === lead.name ||
+      (q.customerId && q.customerId.includes(lead.id)) ||
+      (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
+    );
+
+    // Has a proposal been created (either via Quotations or direct Lead proposal fields)?
+    const hasProposal =
+      !!linkedQuotation ||
+      lead.proposalStatus !== undefined ||
+      (lead.proposalAmount !== undefined && lead.proposalAmount > 0) ||
+      (lead.proposalDate !== undefined && lead.proposalDate.trim().length > 0);
+
+    if (!hasProposal) {
+      return {
+        allowed: false,
+        message: 'Please create and send a proposal before moving this lead to Proposal.',
+      };
+    }
+
+    const proposalStatus = (linkedQuotation?.status || lead.proposalStatus || 'Draft');
+    const proposalAmount =
+      linkedQuotation?.amount !== undefined
+        ? Number(linkedQuotation.amount)
+        : lead.proposalAmount !== undefined
+        ? Number(lead.proposalAmount)
+        : 0;
+    const proposalDate = (linkedQuotation?.date || lead.proposalDate || '').trim();
+    const sentDate = (linkedQuotation?.sentDate || lead.proposalSentDate || '').trim();
+
+    // Check Proposal Amount
+    if (!proposalAmount || proposalAmount <= 0 || isNaN(proposalAmount)) {
+      return {
+        allowed: false,
+        message: 'Please provide a valid positive proposal amount before moving this lead to Proposal.',
+      };
+    }
+
+    // Check Proposal Date
+    if (!proposalDate) {
+      return {
+        allowed: false,
+        message: 'Please provide a valid proposal date before moving this lead to Proposal.',
+      };
+    }
+
+    // Check Proposal Status (must be 'Sent')
+    if (proposalStatus !== 'Sent') {
+      return {
+        allowed: false,
+        message: 'Please send the proposal before moving this lead to Proposal.',
+      };
+    }
+
+    // Check Sent Date (must exist when status is Sent)
+    if (!sentDate) {
+      return {
+        allowed: false,
+        message: 'Please provide the sent date for the proposal before moving this lead to Proposal.',
       };
     }
   }

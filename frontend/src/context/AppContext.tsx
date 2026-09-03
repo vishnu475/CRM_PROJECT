@@ -110,6 +110,7 @@ interface AppContextType {
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   quotations: Quotation[];
   addQuotation: (quotation: Omit<Quotation, 'id'>) => Promise<void>;
+  updateQuotation: (id: string, updates: Partial<Quotation>) => Promise<void> | void;
   salesOrders: SalesOrder[];
   addSalesOrder: (so: Omit<SalesOrder, 'id'>) => Promise<void>;
   invoices: Invoice[];
@@ -636,6 +637,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             requirement: r.requirement || '',
             decisionMaker: r.decision_maker || r.contact_person || '',
             expectedCloseDate: r.expected_close_date || '',
+            proposalAmount: parseFloat(r.proposal_amount) || 0,
+            proposalDate: r.proposal_date || '',
+            proposalStatus: r.proposal_status || 'Draft',
+            proposalSentDate: r.proposal_sent_date || '',
             stage: r.stage || 'New',
             score: parseInt(r.score) || 50,
             source: r.source || 'Manual/Other',
@@ -742,11 +747,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             id: r.id,
             quoteNumber: r.quote_number || r.id,
             customerId: r.customer_id || '',
+            leadId: r.lead_id || '',
             customerName: r.customer_name || '',
-            date: r.date ? r.date.split('T')[0] : '',
-            validUntil: r.valid_until ? r.valid_until.split('T')[0] : '',
+            date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+            validUntil: r.valid_until ? (typeof r.valid_until === 'string' ? r.valid_until.split('T')[0] : new Date(r.valid_until).toISOString().split('T')[0]) : '',
             amount: parseFloat(r.amount) || 0,
             status: r.status || 'Draft',
+            sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
             itemsCount: parseInt(r.items_count) || 1,
           })));
         }
@@ -1282,6 +1289,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { console.warn('⚠️ [CRM] addQuotation failed:', err); }
   }, []);
 
+  const updateQuotation = useCallback(async (id: string, updates: Partial<Quotation>) => {
+    setQuotations((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, ...updates } : q))
+    );
+    try {
+      await QuotationsAPI.update(id, updates);
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateQuotation failed:', err);
+    }
+  }, []);
+
   const addSalesOrder = useCallback(async (so: Omit<SalesOrder, 'id'>) => {
     const tempId = `SO-${Date.now()}`;
     setSalesOrders((prev) => [{ ...so, id: tempId }, ...prev]);
@@ -1595,6 +1613,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addProduct,
         quotations,
         addQuotation,
+        updateQuotation,
         salesOrders,
         addSalesOrder,
         invoices,
