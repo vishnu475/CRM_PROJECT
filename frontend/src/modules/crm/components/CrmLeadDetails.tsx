@@ -72,7 +72,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     if (!lead) return;
     const defaultAmount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || '';
     const defaultDate = leadQuotation?.date || lead.proposalDate || new Date().toISOString().split('T')[0];
-    const defaultStatus = (leadQuotation?.status === 'Sent' || lead.proposalStatus === 'Sent') ? 'Sent' : 'Draft';
+    const defaultStatus: 'Draft' | 'Sent' = (leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') ? 'Draft' : 'Sent';
     const defaultSentDate = leadQuotation?.sentDate || lead.proposalSentDate || (defaultStatus === 'Sent' ? new Date().toISOString().split('T')[0] : '');
 
     setProposalForm({
@@ -112,11 +112,14 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       });
     }
 
+    const shouldAdvance = lead.stage === 'Qualified' && proposalForm.status === 'Sent' && numericAmount > 0;
+
     updateLead(lead.id, {
       proposalAmount: numericAmount,
       proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
       proposalStatus: proposalForm.status,
       proposalSentDate: computedSentDate,
+      ...(shouldAdvance ? { stage: 'Proposal' } : {}),
     });
 
     setShowProposalModal(false);
@@ -149,11 +152,14 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       });
     }
 
+    const shouldAdvance = lead.stage === 'Qualified' && amount > 0;
+
     updateLead(lead.id, {
       proposalStatus: 'Sent',
       proposalSentDate: today,
       proposalAmount: amount,
       proposalDate: date,
+      ...(shouldAdvance ? { stage: 'Proposal' } : {}),
     });
 
     setValidationError(null);
