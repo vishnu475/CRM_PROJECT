@@ -63,6 +63,7 @@ export async function ensureCRMDatabaseAndMigrate() {
       '004_proposal_fields.sql',
       '005_activity_purpose.sql',
       '006_won_fields.sql',
+      '007_lost_fields.sql',
     ];
 
     for (const file of migrationFiles) {

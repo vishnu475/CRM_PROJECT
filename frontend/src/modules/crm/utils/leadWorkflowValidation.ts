@@ -135,6 +135,19 @@ export const isDealAcceptedInteraction = (act: Activity, lead: Lead): boolean =>
   return acceptanceKeywords.some((keyword) => combinedText.includes(keyword));
 };
 
+export const CRM_LOST_REASONS = [
+  'Budget too high',
+  'Customer chose competitor',
+  'No requirement',
+  'Customer not interested',
+  'Timing issue',
+  'Duplicate lead',
+  'Unable to contact',
+  'Other',
+] as const;
+
+export type CrmLostReason = (typeof CRM_LOST_REASONS)[number];
+
 /**
  * Validates lead stage transitions according to CRM workflow business rules.
  * 
@@ -166,6 +179,15 @@ export const isDealAcceptedInteraction = (act: Activity, lead: Lead): boolean =>
  * 2. Valid positive Final Agreed Amount (> 0).
  * 3. Valid Closed/Won Date.
  * 4. Explicit confirmation that customer accepted the deal (completed Customer Acceptance / Deal Closed activity).
+ * 
+ * STEP 6 RULE:
+ * Lost Lead Workflow:
+ * 1. Allowed from any active stage (New, Contacted, Qualified, Proposal, Negotiation).
+ * 2. Won -> Lost is strictly BLOCKED.
+ * 3. Requires a valid Lost Reason from controlled list.
+ * 4. If "Other" reason is chosen, requires custom explanation.
+ * 5. Requires Lost Notes/Comments explaining why the deal was lost.
+ * 6. Lost leads cannot be transitioned forward to active stages (Lost -> * is blocked).
  */
 export const validateLeadStageTransition = (
   lead: Lead,
@@ -177,6 +199,57 @@ export const validateLeadStageTransition = (
 
   // No change in stage
   if (currentStage === targetStage) {
+    return { allowed: true };
+  }
+
+  // STEP 6.1: Once a lead is Lost, it cannot be transitioned to any other stage
+  if (currentStage === 'Lost') {
+    return {
+      allowed: false,
+      message: `Cannot move lead from "Lost" to "${targetStage}". Deals marked as Lost cannot be transitioned to active stages.`,
+    };
+  }
+
+  // STEP 6.2: Moving a lead to Lost
+  if (targetStage === 'Lost') {
+    // Cannot move a Won lead to Lost
+    if (currentStage === 'Won') {
+      return {
+        allowed: false,
+        message: 'Cannot move a "Won" lead to "Lost". Deals marked as Won are closed and finalized.',
+      };
+    }
+
+    // 1. Lost Reason is required
+    const lostReason = (lead.lostReason || '').trim();
+    if (!lostReason) {
+      return {
+        allowed: false,
+        message: 'Please provide a valid Lost Reason before marking this lead as Lost.',
+      };
+    }
+
+    // 2. If "Other" reason, require custom explanation
+    if (lostReason.toLowerCase() === 'other') {
+      const otherDetails = (lead.lostReasonDetails || '').trim();
+      const lostNotes = (lead.lostNotes || '').trim();
+      if (!otherDetails && !lostNotes) {
+        return {
+          allowed: false,
+          message: 'Please provide a custom explanation when selecting "Other" as the Lost Reason.',
+        };
+      }
+    }
+
+    // 3. Lost Notes / Comments are required
+    const lostNotes = (lead.lostNotes || '').trim();
+    if (!lostNotes) {
+      return {
+        allowed: false,
+        message: 'Please provide Lost Notes/Comments explaining why this deal was lost.',
+      };
+    }
+
     return { allowed: true };
   }
 
@@ -408,6 +481,6 @@ export const validateLeadStageTransition = (
     }
   }
 
-  // All other stage transitions are allowed (reserved for future step rules)
+  // All other stage transitions are allowed
   return { allowed: true };
 };

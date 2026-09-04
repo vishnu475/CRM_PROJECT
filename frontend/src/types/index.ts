@@ -103,6 +103,10 @@ export interface Lead {
   finalAgreedAmount?: number;
   wonDate?: string;
   dealClosedNotes?: string;
+  lostReason?: string;
+  lostReasonDetails?: string;
+  lostNotes?: string;
+  lostDate?: string;
   address?: string;
   city?: string;
   state?: string;

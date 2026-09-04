@@ -2,10 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
-import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction } from '../utils/leadWorkflowValidation';
+import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
-  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award
+  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award,
+  XCircle, AlertOctagon
 } from 'lucide-react';
 
 interface CrmLeadDetailsProps {
@@ -28,6 +29,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [showEditModal, setShowEditModal] = useState(false);
   const [showProposalModal, setShowProposalModal] = useState(false);
   const [showWonModal, setShowWonModal] = useState(false);
+  const [showLostModal, setShowLostModal] = useState(false);
   
   // Forms visibility state
   const [showActivityForm, setShowActivityForm] = useState(false);
@@ -63,6 +65,12 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     wonDate: new Date().toISOString().split('T')[0],
     acceptanceNotes: 'Customer accepted the proposal and confirmed deal closure.',
     recordAcceptanceActivity: true,
+  });
+  const [lostForm, setLostForm] = useState({
+    lostReason: 'Budget too high',
+    lostReasonDetails: '',
+    lostNotes: '',
+    lostDate: new Date().toISOString().split('T')[0],
   });
   const [editForm, setEditForm] = useState({
     name: '',
@@ -230,6 +238,55 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     setValidationError(null);
   };
 
+  const openLostModal = () => {
+    if (!lead) return;
+    if (lead.stage === 'Won') {
+      setValidationError('Cannot move a "Won" lead to "Lost". Deals marked as Won are closed and finalized.');
+      return;
+    }
+    setLostForm({
+      lostReason: lead.lostReason || 'Budget too high',
+      lostReasonDetails: lead.lostReasonDetails || '',
+      lostNotes: lead.lostNotes || lead.notes || '',
+      lostDate: lead.lostDate || new Date().toISOString().split('T')[0],
+    });
+    setShowLostModal(true);
+  };
+
+  const handleSaveLost = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+
+    const lostReason = (lostForm.lostReason || '').trim();
+    if (!lostReason) {
+      setValidationError('Please select a valid Lost Reason.');
+      return;
+    }
+
+    if (lostReason.toLowerCase() === 'other' && !lostForm.lostReasonDetails.trim() && !lostForm.lostNotes.trim()) {
+      setValidationError('Please provide a custom explanation when selecting "Other" as the Lost Reason.');
+      return;
+    }
+
+    if (!lostForm.lostNotes.trim()) {
+      setValidationError('Please provide Lost Notes/Comments explaining why this deal was lost.');
+      return;
+    }
+
+    const finalLostDate = lostForm.lostDate || new Date().toISOString().split('T')[0];
+
+    updateLead(lead.id, {
+      stage: 'Lost',
+      lostReason: lostReason,
+      lostReasonDetails: lostForm.lostReasonDetails.trim(),
+      lostNotes: lostForm.lostNotes.trim(),
+      lostDate: finalLostDate,
+    });
+
+    setShowLostModal(false);
+    setValidationError(null);
+  };
+
   const openEditModal = () => {
     if (!lead) return;
     setEditForm({
@@ -303,6 +360,14 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   };
 
   const handleStageChange = (newStage: Lead['stage']) => {
+    if (newStage === 'Lost') {
+      if (lead.stage === 'Won') {
+        setValidationError('Cannot move a "Won" lead to "Lost". Deals marked as Won are closed and finalized.');
+        return;
+      }
+      openLostModal();
+      return;
+    }
     const validation = validateLeadStageTransition(lead, newStage, activities, quotations);
     if (!validation.allowed) {
       setValidationError(validation.message || 'Stage transition not allowed.');
@@ -459,6 +524,15 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <CheckCircle2 size={15} /> Close Deal (Mark Won)
               </button>
             )}
+            {lead.stage !== 'Won' && lead.stage !== 'Lost' && (
+              <button
+                onClick={openLostModal}
+                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-sm rounded-lg shadow-xs transition flex items-center gap-1.5"
+                title="Mark lead as Lost"
+              >
+                <XCircle size={15} /> Mark as Lost
+              </button>
+            )}
             <button
               onClick={openEditModal}
               className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 flex items-center gap-2"
@@ -477,6 +551,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
                   <button onClick={openEditModal} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Edit Lead & Qualification</button>
                   <button onClick={() => { setShowFollowUpForm(true); setShowMoreMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Add Follow-up</button>
+                  {lead.stage !== 'Won' && lead.stage !== 'Lost' && (
+                    <button onClick={() => { openLostModal(); setShowMoreMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-rose-700 hover:bg-rose-50 font-medium flex items-center gap-1.5">
+                      <XCircle size={14} /> Mark Deal Lost
+                    </button>
+                  )}
                   <div className="h-px bg-slate-200 my-1"></div>
                   <button className="w-full text-left px-4 py-2 text-sm text-slate-400 cursor-not-allowed" title="Coming soon">Create Opportunity</button>
                   <button className="w-full text-left px-4 py-2 text-sm text-slate-400 cursor-not-allowed" title="Coming soon">Convert to Customer</button>
@@ -487,6 +566,41 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             </div>
           </div>
         </div>
+
+        {/* LOST OPPORTUNITY BANNER */}
+        {lead.stage === 'Lost' && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-3 animate-in fade-in duration-200">
+            <div className="p-2 bg-rose-100 text-rose-600 rounded-lg shrink-0 mt-0.5">
+              <AlertOctagon size={20} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-bold text-rose-900">Opportunity Closed — Lost</h4>
+                <span className="text-xs bg-rose-100 text-rose-800 font-bold px-2.5 py-0.5 rounded-full border border-rose-200">
+                  Reason: {lead.lostReason || 'Closed Lost'}
+                </span>
+                {lead.lostDate && (
+                  <span className="text-xs text-rose-600 font-medium">
+                    • Lost on {lead.lostDate}
+                  </span>
+                )}
+              </div>
+              {lead.lostReasonDetails && (
+                <p className="text-xs text-rose-800 mt-1 font-medium">
+                  <strong>Custom Reason:</strong> {lead.lostReasonDetails}
+                </p>
+              )}
+              {lead.lostNotes && (
+                <p className="text-xs text-rose-700 mt-1 leading-relaxed bg-white/70 p-2.5 rounded-lg border border-rose-200/60">
+                  <strong>Lost Notes:</strong> {lead.lostNotes}
+                </p>
+              )}
+              <p className="text-[11px] text-rose-500 mt-1.5">
+                This opportunity is closed and excluded from the active sales pipeline.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* VALIDATION ERROR BANNER */}
         {validationError && (
@@ -499,7 +613,16 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {validationError.toLowerCase().includes('won') || validationError.toLowerCase().includes('acceptance') || validationError.toLowerCase().includes('closure') || validationError.toLowerCase().includes('agreed amount') ? (
+              {validationError.toLowerCase().includes('lost') ? (
+                lead.stage !== 'Won' && (
+                  <button
+                    onClick={openLostModal}
+                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                  >
+                    <XCircle size={14} /> Provide Lost Details
+                  </button>
+                )
+              ) : validationError.toLowerCase().includes('won') || validationError.toLowerCase().includes('acceptance') || validationError.toLowerCase().includes('closure') || validationError.toLowerCase().includes('agreed amount') ? (
                 <button
                   onClick={openWonModal}
                   className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
@@ -1731,6 +1854,118 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
                 >
                   <Award size={14} /> Confirm Deal Won 🎉
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LOST / CLOSE DEAL MODAL */}
+      {showLostModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                  <AlertOctagon size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">Mark Opportunity as Lost</h3>
+                  <p className="text-xs text-slate-500">Record reason and notes for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLostModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveLost} className="space-y-4">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900 flex items-start gap-2">
+                <span className="text-base">ℹ️</span>
+                <div>
+                  <span className="font-bold">Lost Opportunity Record:</span> Please select a standard lost reason and provide explanatory notes. The lead and its entire communication history will remain preserved in CRM reports.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Lost Reason <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={lostForm.lostReason}
+                    onChange={(e) => setLostForm({ ...lostForm, lostReason: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none bg-white"
+                  >
+                    {CRM_LOST_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Lost Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={lostForm.lostDate}
+                    onChange={(e) => setLostForm({ ...lostForm, lostDate: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {lostForm.lostReason === 'Other' && (
+                <div className="animate-in fade-in duration-150">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Custom Reason Explanation <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Specify the exact reason for losing this opportunity"
+                    value={lostForm.lostReasonDetails}
+                    onChange={(e) => setLostForm({ ...lostForm, lostReasonDetails: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lost Notes / Comments <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Provide context and summary of why the customer decided not to proceed..."
+                  value={lostForm.lostNotes}
+                  onChange={(e) => setLostForm({ ...lostForm, lostNotes: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowLostModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <AlertOctagon size={14} /> Confirm Mark as Lost
                 </button>
               </div>
             </form>
