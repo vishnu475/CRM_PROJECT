@@ -2,10 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
-import { validateLeadStageTransition, isNegotiationInteraction } from '../utils/leadWorkflowValidation';
+import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction } from '../utils/leadWorkflowValidation';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
-  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle
+  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award
 } from 'lucide-react';
 
 interface CrmLeadDetailsProps {
@@ -27,6 +27,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showProposalModal, setShowProposalModal] = useState(false);
+  const [showWonModal, setShowWonModal] = useState(false);
   
   // Forms visibility state
   const [showActivityForm, setShowActivityForm] = useState(false);
@@ -36,7 +37,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   // Form States
   const [activityForm, setActivityForm] = useState<{
     type: 'Call' | 'Meeting' | 'Email' | 'Task';
-    purpose: 'General' | 'Follow-up' | 'Negotiation';
+    purpose: 'General' | 'Follow-up' | 'Negotiation' | 'Customer Acceptance' | 'Deal Closed';
     title: string;
     date: string;
     outcome: string;
@@ -56,6 +57,12 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     date: '',
     status: 'Draft' as 'Draft' | 'Sent',
     sentDate: '',
+  });
+  const [wonForm, setWonForm] = useState({
+    finalAgreedAmount: '',
+    wonDate: new Date().toISOString().split('T')[0],
+    acceptanceNotes: 'Customer accepted the proposal and confirmed deal closure.',
+    recordAcceptanceActivity: true,
   });
   const [editForm, setEditForm] = useState({
     name: '',
@@ -179,6 +186,50 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     setValidationError(null);
   };
 
+  const openWonModal = () => {
+    if (!lead) return;
+    const defaultAmount = lead.finalAgreedAmount || leadQuotation?.amount || lead.proposalAmount || lead.value || lead.budget || '';
+    const defaultWonDate = lead.wonDate || new Date().toISOString().split('T')[0];
+    setWonForm({
+      finalAgreedAmount: defaultAmount ? defaultAmount.toString() : '',
+      wonDate: defaultWonDate,
+      acceptanceNotes: 'Customer accepted the proposal and confirmed deal closure.',
+      recordAcceptanceActivity: true,
+    });
+    setShowWonModal(true);
+  };
+
+  const handleSaveWon = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+    const numericFinalAmount = parseFloat(wonForm.finalAgreedAmount) || 0;
+    const finalWonDate = wonForm.wonDate || new Date().toISOString().split('T')[0];
+
+    if (wonForm.recordAcceptanceActivity) {
+      await addActivity({
+        title: 'Customer Deal Acceptance & Agreement Signed',
+        type: 'Meeting',
+        purpose: 'Customer Acceptance',
+        relatedTo: lead.id,
+        assignedTo: lead.assignedTo,
+        dueDate: finalWonDate,
+        priority: 'High',
+        status: 'Completed',
+        outcome: wonForm.acceptanceNotes,
+      });
+    }
+
+    updateLead(lead.id, {
+      finalAgreedAmount: numericFinalAmount,
+      wonDate: finalWonDate,
+      value: numericFinalAmount,
+      stage: 'Won',
+    });
+
+    setShowWonModal(false);
+    setValidationError(null);
+  };
+
   const openEditModal = () => {
     if (!lead) return;
     setEditForm({
@@ -288,9 +339,19 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
     // Auto-advance lead stage to 'Negotiation' if in 'Proposal' and completed negotiation activity recorded
     if (lead.stage === 'Proposal' && actStatus === 'Completed') {
-      const isNeg = isNegotiationInteraction({ ...newActivity, id: 'temp' }, lead);
+      const isNeg = isNegotiationInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
       if (isNeg) {
         updateLead(lead.id, { stage: 'Negotiation' });
+      }
+    }
+
+    // Auto-advance lead stage to 'Won' if in 'Negotiation' and completed customer acceptance activity recorded
+    if (lead.stage === 'Negotiation' && actStatus === 'Completed') {
+      const isAccepted = isDealAcceptedInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
+      const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
+      const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
+      if (isAccepted && hasAmount && hasDate) {
+        updateLead(lead.id, { stage: 'Won' });
       }
     }
 
@@ -389,6 +450,15 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           </div>
           
           <div className="flex items-center gap-3">
+            {lead.stage === 'Negotiation' && (
+              <button
+                onClick={openWonModal}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-lg shadow-sm transition flex items-center gap-1.5"
+                title="Record acceptance and mark deal as Won"
+              >
+                <CheckCircle2 size={15} /> Close Deal (Mark Won)
+              </button>
+            )}
             <button
               onClick={openEditModal}
               className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 flex items-center gap-2"
@@ -429,7 +499,14 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {validationError.toLowerCase().includes('negotiation') ? (
+              {validationError.toLowerCase().includes('won') || validationError.toLowerCase().includes('acceptance') || validationError.toLowerCase().includes('closure') || validationError.toLowerCase().includes('agreed amount') ? (
+                <button
+                  onClick={openWonModal}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                >
+                  🎉 Close Deal (Won)
+                </button>
+              ) : validationError.toLowerCase().includes('negotiation') ? (
                 <button
                   onClick={() => {
                     setActivityForm({
@@ -844,6 +921,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     <option value="General">General Interaction</option>
                     <option value="Follow-up">Follow-up Touchpoint</option>
                     <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                    <option value="Customer Acceptance">🎉 Customer Acceptance / Deal Closed</option>
                   </select>
                 </div>
                 <div>
@@ -867,12 +945,27 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   </div>
                 )}
 
+                {(activityForm.purpose === 'Customer Acceptance' || activityForm.purpose === 'Deal Closed') && (
+                  <div className="sm:col-span-4 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-center gap-2 animate-in fade-in">
+                    <span className="text-base">🎉</span>
+                    <div>
+                      <strong>Customer Deal Acceptance:</strong> Record explicit confirmation from the customer (verbal acceptance, contract signed, purchase order received) to qualify the deal for Won.
+                    </div>
+                  </div>
+                )}
+
                 <div className="sm:col-span-4">
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Subject *</label>
                   <input
                     type="text"
                     required
-                    placeholder={activityForm.purpose === 'Negotiation' ? "E.g. Commercial negotiation & discount discussion" : "E.g. Discovery Call with client"}
+                    placeholder={
+                      activityForm.purpose === 'Customer Acceptance'
+                        ? "E.g. Customer approved proposal & contract signed"
+                        : activityForm.purpose === 'Negotiation'
+                        ? "E.g. Commercial negotiation & discount discussion"
+                        : "E.g. Discovery Call with client"
+                    }
                     value={activityForm.title}
                     onChange={(e) => setActivityForm({...activityForm, title: e.target.value})}
                     className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
@@ -882,7 +975,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Outcome / Discussion Notes</label>
                   <textarea
                     rows={2}
-                    placeholder={activityForm.purpose === 'Negotiation' ? "E.g. Customer requested a 10% price reduction and Net 45 payment terms before signing." : "What was discussed or concluded?"}
+                    placeholder={
+                      activityForm.purpose === 'Customer Acceptance'
+                        ? "E.g. Customer accepted final pricing and confirmed start date."
+                        : activityForm.purpose === 'Negotiation'
+                        ? "E.g. Customer requested a 10% price reduction and Net 45 payment terms before signing."
+                        : "What was discussed or concluded?"
+                    }
                     value={activityForm.outcome}
                     onChange={(e) => setActivityForm({...activityForm, outcome: e.target.value})}
                     className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
@@ -902,10 +1001,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 const isCall = activity.type === 'Call';
                 const isEmail = activity.type === 'Email';
                 const isCompleted = activity.status === 'Completed';
+                const isDealWon = activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead);
                 const isNeg = activity.purpose === 'Negotiation' || isNegotiationInteraction(activity, lead);
-                const Icon = isCall ? Phone : (isEmail ? Mail : CheckCircle2);
+                const Icon = isDealWon ? Award : (isCall ? Phone : (isEmail ? Mail : CheckCircle2));
                 const colorClass = isCompleted
-                  ? (isNeg ? 'bg-purple-100 text-purple-600' : isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
+                  ? (isDealWon ? 'bg-emerald-100 text-emerald-600' : isNeg ? 'bg-purple-100 text-purple-600' : isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
                   : 'bg-amber-100 text-amber-600';
 
                 return (
@@ -927,6 +1027,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                               🤝 Negotiation
                             </span>
                           )}
+                          {(activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead)) && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                              🎉 Customer Accepted
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           {!isCompleted && (
@@ -938,6 +1043,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                                 }
                                 if (lead.stage === 'Proposal' && isNegotiationInteraction({ ...activity, status: 'Completed' }, lead)) {
                                   updateLead(lead.id, { stage: 'Negotiation' });
+                                }
+                                if (lead.stage === 'Negotiation' && isDealAcceptedInteraction({ ...activity, status: 'Completed' }, lead)) {
+                                  const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
+                                  const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
+                                  if (hasAmount && hasDate) {
+                                    updateLead(lead.id, { stage: 'Won' });
+                                  }
                                 }
                               }}
                               className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded transition flex items-center gap-1"
@@ -1102,6 +1214,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     <option value="General">General Interaction</option>
                     <option value="Follow-up">Follow-up Touchpoint</option>
                     <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                    <option value="Customer Acceptance">🎉 Customer Acceptance / Deal Closed</option>
                   </select>
                 </div>
 
@@ -1119,7 +1232,17 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </div>
 
               {/* HELPER STATUS HINT */}
-              {activityForm.purpose === 'Negotiation' ? (
+              {activityForm.purpose === 'Customer Acceptance' || activityForm.purpose === 'Deal Closed' ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-base">🎉</span>
+                  <div>
+                    <span className="font-bold">Deal Won / Customer Acceptance:</span> Record customer agreement confirmation, signed proposal, or purchase order.
+                    {activityForm.status === 'Completed' && lead.stage === 'Negotiation' && (
+                      <span className="block mt-0.5 text-emerald-700 font-semibold">Completing this with a valid final agreed amount & date qualifies the deal to advance to "Won".</span>
+                    )}
+                  </div>
+                </div>
+              ) : activityForm.purpose === 'Negotiation' ? (
                 <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex items-start gap-2 animate-in fade-in">
                   <span className="text-base">🤝</span>
                   <div>
@@ -1499,6 +1622,115 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
                 >
                   <CheckCircle2 size={14} /> Save Proposal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WON / CLOSE DEAL MODAL */}
+      {showWonModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                  <Award size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">🎉 Close Deal — Mark as Won</h3>
+                  <p className="text-xs text-slate-500">Record final agreed deal terms for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowWonModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveWon} className="space-y-4">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2">
+                <span className="text-base">🤝</span>
+                <div>
+                  <span className="font-bold">Deal Closure Requirements:</span> To mark this deal Won, confirm the final agreed deal amount and closed/won date with customer acceptance confirmation.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Final Agreed Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    placeholder="e.g. 275000"
+                    value={wonForm.finalAgreedAmount}
+                    onChange={(e) => setWonForm({ ...wonForm, finalAgreedAmount: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">Final negotiated commercial value</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Closed / Won Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={wonForm.wonDate}
+                    onChange={(e) => setWonForm({ ...wonForm, wonDate: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">Date customer accepted the deal</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Customer Acceptance & Deal Notes
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Customer signed proposal, approved ₹2,75,000 final cost, contract received."
+                  value={wonForm.acceptanceNotes}
+                  onChange={(e) => setWonForm({ ...wonForm, acceptanceNotes: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="recordAcceptanceActivity"
+                  checked={wonForm.recordAcceptanceActivity}
+                  onChange={(e) => setWonForm({ ...wonForm, recordAcceptanceActivity: e.target.checked })}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                />
+                <label htmlFor="recordAcceptanceActivity" className="text-xs font-medium text-slate-700 cursor-pointer">
+                  Log a completed <strong>Customer Acceptance</strong> activity in the timeline
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowWonModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <Award size={14} /> Confirm Deal Won 🎉
                 </button>
               </div>
             </form>

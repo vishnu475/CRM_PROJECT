@@ -341,7 +341,7 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => {
                   const targetStage = e.target.value as Lead['stage'];
-                  const validation = validateLeadStageTransition(lead, targetStage, activities);
+                  const validation = validateLeadStageTransition(lead, targetStage, activities, quotations);
                   if (!validation.allowed) {
                     setValidationError(validation.message || 'Stage transition not allowed.');
                     return;

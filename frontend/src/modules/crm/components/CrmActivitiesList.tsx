@@ -13,7 +13,7 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [newType, setNewType] = useState<Activity['type']>('Call');
-  const [newPurpose, setNewPurpose] = useState<'General' | 'Follow-up' | 'Negotiation'>('General');
+  const [newPurpose, setNewPurpose] = useState<'General' | 'Follow-up' | 'Negotiation' | 'Customer Acceptance' | 'Deal Closed'>('General');
   const [newTitle, setNewTitle] = useState('');
   const [newOutcome, setNewOutcome] = useState('');
   const [newRelatedTo, setNewRelatedTo] = useState('');
@@ -121,6 +121,11 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
                           🤝 Negotiation
                         </span>
                       )}
+                      {(act.purpose === 'Customer Acceptance' || act.purpose === 'Deal Closed') && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          🎉 Customer Accepted
+                        </span>
+                      )}
                     </div>
 
                     <span className="text-xs text-slate-400">
@@ -185,6 +190,7 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
                   <option value="General">General Interaction</option>
                   <option value="Follow-up">Follow-up Touchpoint</option>
                   <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                  <option value="Customer Acceptance">🎉 Customer Acceptance / Deal Closed</option>
                 </select>
               </div>
 

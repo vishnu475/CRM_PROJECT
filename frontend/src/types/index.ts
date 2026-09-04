@@ -100,6 +100,9 @@ export interface Lead {
   proposalDate?: string;
   proposalStatus?: 'Draft' | 'Sent';
   proposalSentDate?: string;
+  finalAgreedAmount?: number;
+  wonDate?: string;
+  dealClosedNotes?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -439,7 +442,7 @@ export interface Activity {
   id: string;
   title: string;
   type: 'Call' | 'Meeting' | 'Email' | 'Task' | 'Reminder';
-  purpose?: 'General' | 'Follow-up' | 'Negotiation';
+  purpose?: 'General' | 'Follow-up' | 'Negotiation' | 'Customer Acceptance' | 'Deal Closed';
   relatedTo: string;
   assignedTo: string;
   dueDate: string;

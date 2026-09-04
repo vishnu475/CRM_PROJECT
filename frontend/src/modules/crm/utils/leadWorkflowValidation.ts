@@ -84,6 +84,58 @@ export const isNegotiationInteraction = (act: Activity, lead: Lead): boolean => 
 };
 
 /**
+ * Helper to determine if an activity represents a customer acceptance or deal closure.
+ */
+export const isDealAcceptedInteraction = (act: Activity, lead: Lead): boolean => {
+  if (act.status !== 'Completed') return false;
+
+  const isRelated =
+    act.relatedTo === lead.id ||
+    act.relatedTo === lead.name ||
+    (act.relatedTo && act.relatedTo.includes(lead.name)) ||
+    (act.relatedTo && act.relatedTo.includes(lead.id));
+
+  if (!isRelated) return false;
+
+  // 1. Explicit purpose set to 'Customer Acceptance' or 'Deal Closed'
+  if (act.purpose === 'Customer Acceptance' || act.purpose === 'Deal Closed') {
+    return true;
+  }
+
+  // 2. Semantic analysis of title and outcome text
+  const combinedText = `${act.title || ''} ${act.outcome || ''}`.toLowerCase().trim();
+  if (!combinedText) return false;
+
+  const acceptanceKeywords = [
+    'accepted',
+    'deal closed',
+    'deal won',
+    'closed won',
+    'contract signed',
+    'signed contract',
+    'agreement signed',
+    'signed agreement',
+    'po received',
+    'purchase order received',
+    'order confirmed',
+    'order confirmation',
+    'deal agreed',
+    'approved proposal',
+    'proposal accepted',
+    'client confirmed',
+    'customer accepted',
+    'terms accepted',
+    'verbal confirmation',
+    'deal finalized',
+    'final approval received',
+    'deal won confirmation',
+    'won deal',
+  ];
+
+  return acceptanceKeywords.some((keyword) => combinedText.includes(keyword));
+};
+
+/**
  * Validates lead stage transitions according to CRM workflow business rules.
  * 
  * STEP 1 RULE:
@@ -106,7 +158,14 @@ export const isNegotiationInteraction = (act: Activity, lead: Lead): boolean => 
  * STEP 4 RULE:
  * Proposal -> Negotiation requires:
  * 1. Lead is currently in Proposal (no stage skipping).
- * 2. At least one completed interaction that represents an actual customer negotiation/discussion (e.g. discount, payment terms, features, timeline, counter-offer).
+ * 2. At least one completed interaction that represents an actual customer negotiation/discussion.
+ * 
+ * STEP 5 RULE:
+ * Negotiation -> Won requires:
+ * 1. Lead is currently in Negotiation (no stage skipping).
+ * 2. Valid positive Final Agreed Amount (> 0).
+ * 3. Valid Closed/Won Date.
+ * 4. Explicit confirmation that customer accepted the deal (completed Customer Acceptance / Deal Closed activity).
  */
 export const validateLeadStageTransition = (
   lead: Lead,
@@ -278,6 +337,73 @@ export const validateLeadStageTransition = (
       return {
         allowed: false,
         message: 'Record a completed customer negotiation or response before moving this lead to Negotiation.',
+      };
+    }
+  }
+
+  // STEP 5: Validation for Negotiation -> Won
+  if (targetStage === 'Won') {
+    // Prevent stage skipping (e.g. from New/Contacted/Qualified/Proposal directly to Won)
+    if (currentStage !== 'Negotiation') {
+      return {
+        allowed: false,
+        message: `Lead must be in "Negotiation" stage before moving to "Won". Current stage is "${currentStage}".`,
+      };
+    }
+
+    const missingWonRequirements: string[] = [];
+
+    // 1. Customer Acceptance Confirmation Activity
+    const hasAcceptanceActivity = activities.some((act) => isDealAcceptedInteraction(act, lead));
+    if (!hasAcceptanceActivity) {
+      missingWonRequirements.push('Customer Acceptance (completed activity confirming deal acceptance/closure)');
+    }
+
+    // 2. Final Agreed Amount (> 0)
+    const finalAmount =
+      lead.finalAgreedAmount !== undefined && Number(lead.finalAgreedAmount) > 0
+        ? Number(lead.finalAgreedAmount)
+        : lead.value !== undefined && Number(lead.value) > 0
+        ? Number(lead.value)
+        : lead.budget !== undefined && Number(lead.budget) > 0
+        ? Number(lead.budget)
+        : 0;
+
+    if (!finalAmount || finalAmount <= 0 || isNaN(finalAmount)) {
+      missingWonRequirements.push('Final Agreed Amount (valid positive number)');
+    }
+
+    // 3. Closed/Won Date
+    const wonDate = (lead.wonDate || lead.expectedCloseDate || '').trim();
+    if (!wonDate) {
+      missingWonRequirements.push('Closed/Won Date');
+    }
+
+    if (missingWonRequirements.length > 0) {
+      if (missingWonRequirements.length === 1) {
+        if (!hasAcceptanceActivity) {
+          return {
+            allowed: false,
+            message: 'Record a completed customer acceptance or deal closure activity before marking this deal as Won.',
+          };
+        }
+        if (!finalAmount || finalAmount <= 0 || isNaN(finalAmount)) {
+          return {
+            allowed: false,
+            message: 'Please provide a valid positive Final Agreed Amount before marking this deal as Won.',
+          };
+        }
+        if (!wonDate) {
+          return {
+            allowed: false,
+            message: 'Please provide the Closed/Won Date before marking this deal as Won.',
+          };
+        }
+      }
+
+      return {
+        allowed: false,
+        message: `Complete the following requirements before moving this lead to Won:\n• ${missingWonRequirements.join('\n• ')}`,
       };
     }
   }
