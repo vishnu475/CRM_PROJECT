@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { CrmView, Lead } from '../../../types';
+import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
-import { validateLeadStageTransition } from '../utils/leadWorkflowValidation';
+import { validateLeadStageTransition, isNegotiationInteraction } from '../utils/leadWorkflowValidation';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
   CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle
@@ -34,7 +34,21 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [showFollowUpForm, setShowFollowUpForm] = useState(false);
   
   // Form States
-  const [activityForm, setActivityForm] = useState({ type: 'Call' as any, title: '', date: '', outcome: '', status: 'Completed' as any });
+  const [activityForm, setActivityForm] = useState<{
+    type: 'Call' | 'Meeting' | 'Email' | 'Task';
+    purpose: 'General' | 'Follow-up' | 'Negotiation';
+    title: string;
+    date: string;
+    outcome: string;
+    status: 'Completed' | 'Pending';
+  }>({
+    type: 'Call',
+    purpose: 'General',
+    title: '',
+    date: '',
+    outcome: '',
+    status: 'Completed',
+  });
   const [noteContent, setNoteContent] = useState('');
   const [followUpForm, setFollowUpForm] = useState({ type: 'Call' as any, date: '', description: '' });
   const [proposalForm, setProposalForm] = useState({
@@ -251,24 +265,36 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     if (!activityForm.title) return;
     const actStatus = activityForm.status || 'Completed';
     const actType = activityForm.type || 'Call';
+    const actPurpose = activityForm.purpose || 'General';
 
-    addActivity({
+    const newActivity: Omit<Activity, 'id'> = {
       title: activityForm.title,
       type: actType,
+      purpose: actPurpose,
       relatedTo: leadId,
       assignedTo: lead.assignedTo,
       dueDate: activityForm.date || new Date().toISOString().split('T')[0],
       priority: 'Medium',
       status: actStatus,
       outcome: activityForm.outcome
-    });
+    };
+
+    addActivity(newActivity);
 
     // Auto-advance lead stage to 'Contacted' if in 'New' and completed interaction recorded
     if (lead.stage === 'New' && actStatus === 'Completed' && (actType === 'Call' || actType === 'Email' || actType === 'Meeting')) {
       updateLead(lead.id, { stage: 'Contacted' });
     }
 
-    setActivityForm({ type: 'Call', title: '', date: '', outcome: '', status: 'Completed' });
+    // Auto-advance lead stage to 'Negotiation' if in 'Proposal' and completed negotiation activity recorded
+    if (lead.stage === 'Proposal' && actStatus === 'Completed') {
+      const isNeg = isNegotiationInteraction({ ...newActivity, id: 'temp' }, lead);
+      if (isNeg) {
+        updateLead(lead.id, { stage: 'Negotiation' });
+      }
+    }
+
+    setActivityForm({ type: 'Call', purpose: 'General', title: '', date: '', outcome: '', status: 'Completed' });
     setShowActivityForm(false);
     setValidationError(null);
   };
@@ -403,7 +429,25 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {validationError.toLowerCase().includes('proposal') ? (
+              {validationError.toLowerCase().includes('negotiation') ? (
+                <button
+                  onClick={() => {
+                    setActivityForm({
+                      type: 'Call',
+                      purpose: 'Negotiation',
+                      title: '',
+                      date: new Date().toISOString().split('T')[0],
+                      outcome: '',
+                      status: 'Completed',
+                    });
+                    setShowActivityForm(true);
+                    setActiveTab('activities');
+                  }}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                >
+                  🤝 Log Negotiation
+                </button>
+              ) : validationError.toLowerCase().includes('proposal') ? (
                 <button
                   onClick={openProposalModal}
                   className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
@@ -784,10 +828,10 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           {showActivityForm && (
             <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-200 animate-in fade-in zoom-in-95">
               <h3 className="text-sm font-bold text-[#0f172a] mb-3">Log New Activity</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Type</label>
-                  <select value={activityForm.type} onChange={(e) => setActivityForm({...activityForm, type: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                  <select value={activityForm.type} onChange={(e) => setActivityForm({...activityForm, type: e.target.value as any})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white">
                     <option value="Call">Call</option>
                     <option value="Email">Email</option>
                     <option value="Meeting">Meeting</option>
@@ -795,23 +839,54 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Purpose</label>
+                  <select value={activityForm.purpose} onChange={(e) => setActivityForm({...activityForm, purpose: e.target.value as any})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white font-medium">
+                    <option value="General">General Interaction</option>
+                    <option value="Follow-up">Follow-up Touchpoint</option>
+                    <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Status</label>
-                  <select value={activityForm.status} onChange={(e) => setActivityForm({...activityForm, status: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                  <select value={activityForm.status} onChange={(e) => setActivityForm({...activityForm, status: e.target.value as any})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white">
                     <option value="Completed">Completed</option>
                     <option value="Pending">Pending</option>
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Date</label>
-                  <input type="date" value={activityForm.date} onChange={(e) => setActivityForm({...activityForm, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                  <input type="date" value={activityForm.date} onChange={(e) => setActivityForm({...activityForm, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white" />
                 </div>
-                <div className="sm:col-span-3">
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Subject</label>
-                  <input type="text" placeholder="E.g. Discovery Call with client" value={activityForm.title} onChange={(e) => setActivityForm({...activityForm, title: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                
+                {activityForm.purpose === 'Negotiation' && (
+                  <div className="sm:col-span-4 p-2.5 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex items-center gap-2 animate-in fade-in">
+                    <span className="text-base">🤝</span>
+                    <div>
+                      <strong>Negotiation Discussion:</strong> Record customer feedback or counter-offer discussing pricing, discounts, custom features, payment terms, or delivery timeline.
+                    </div>
+                  </div>
+                )}
+
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Subject *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={activityForm.purpose === 'Negotiation' ? "E.g. Commercial negotiation & discount discussion" : "E.g. Discovery Call with client"}
+                    value={activityForm.title}
+                    onChange={(e) => setActivityForm({...activityForm, title: e.target.value})}
+                    className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  />
                 </div>
-                <div className="sm:col-span-3">
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Outcome / Notes</label>
-                  <textarea rows={2} value={activityForm.outcome} onChange={(e) => setActivityForm({...activityForm, outcome: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Outcome / Discussion Notes</label>
+                  <textarea
+                    rows={2}
+                    placeholder={activityForm.purpose === 'Negotiation' ? "E.g. Customer requested a 10% price reduction and Net 45 payment terms before signing." : "What was discussed or concluded?"}
+                    value={activityForm.outcome}
+                    onChange={(e) => setActivityForm({...activityForm, outcome: e.target.value})}
+                    className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  ></textarea>
                 </div>
               </div>
               <div className="flex justify-end gap-2">
@@ -827,9 +902,10 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 const isCall = activity.type === 'Call';
                 const isEmail = activity.type === 'Email';
                 const isCompleted = activity.status === 'Completed';
+                const isNeg = activity.purpose === 'Negotiation' || isNegotiationInteraction(activity, lead);
                 const Icon = isCall ? Phone : (isEmail ? Mail : CheckCircle2);
                 const colorClass = isCompleted
-                  ? (isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
+                  ? (isNeg ? 'bg-purple-100 text-purple-600' : isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
                   : 'bg-amber-100 text-amber-600';
 
                 return (
@@ -846,6 +922,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                           }`}>
                             {activity.status || 'Completed'}
                           </span>
+                          {activity.purpose === 'Negotiation' && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 inline-flex items-center gap-1">
+                              🤝 Negotiation
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           {!isCompleted && (
@@ -854,6 +935,9 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                                 updateActivity(activity.id, { status: 'Completed' });
                                 if (lead.stage === 'New' && (activity.type === 'Call' || activity.type === 'Email' || activity.type === 'Meeting')) {
                                   updateLead(lead.id, { stage: 'Contacted' });
+                                }
+                                if (lead.stage === 'Proposal' && isNegotiationInteraction({ ...activity, status: 'Completed' }, lead)) {
+                                  updateLead(lead.id, { stage: 'Negotiation' });
                                 }
                               }}
                               className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded transition flex items-center gap-1"
@@ -868,6 +952,9 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                       <p className="text-xs text-slate-600 mb-2">{activity.outcome || 'No outcome recorded.'}</p>
                       <div className="flex items-center text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                         <span className="px-2 py-0.5 rounded bg-slate-100 mr-2">{activity.type}</span>
+                        {activity.purpose && activity.purpose !== 'General' && (
+                          <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 mr-2">{activity.purpose}</span>
+                        )}
                         <span>{activity.assignedTo}</span>
                       </div>
                     </div>
@@ -990,12 +1077,12 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             </div>
 
             <form onSubmit={(e) => { e.preventDefault(); handleAddActivity(); }} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Interaction Type *</label>
                   <select
                     value={activityForm.type}
-                    onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value })}
+                    onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value as any })}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
                   >
                     <option value="Call">📞 Phone Call</option>
@@ -1006,31 +1093,55 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </div>
 
                 <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Activity Purpose *</label>
+                  <select
+                    value={activityForm.purpose}
+                    onChange={(e) => setActivityForm({ ...activityForm, purpose: e.target.value as any })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="General">General Interaction</option>
+                    <option value="Follow-up">Follow-up Touchpoint</option>
+                    <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Status *</label>
                   <select
                     value={activityForm.status || 'Completed'}
-                    onChange={(e) => setActivityForm({ ...activityForm, status: e.target.value })}
+                    onChange={(e) => setActivityForm({ ...activityForm, status: e.target.value as any })}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
                   >
-                    <option value="Completed">✅ Completed (Validates Contacted Stage)</option>
-                    <option value="Pending">⏳ Pending / Scheduled (Lead Remains in New)</option>
+                    <option value="Completed">✅ Completed</option>
+                    <option value="Pending">⏳ Pending / Scheduled</option>
                   </select>
                 </div>
               </div>
 
               {/* HELPER STATUS HINT */}
-              {activityForm.status === 'Pending' ? (
+              {activityForm.purpose === 'Negotiation' ? (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-base">🤝</span>
+                  <div>
+                    <span className="font-bold">Negotiation Activity:</span> Record discussion regarding pricing, discounts, custom features, payment terms, or delivery timeline.
+                    {activityForm.status === 'Completed' && lead.stage === 'Proposal' && (
+                      <span className="block mt-0.5 text-purple-700 font-semibold">Saving will advance lead to "Negotiation".</span>
+                    )}
+                  </div>
+                </div>
+              ) : activityForm.status === 'Pending' ? (
                 <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2 animate-in fade-in">
                   <span className="text-sm">⏳</span>
                   <div>
-                    <span className="font-bold">Pending / Scheduled Activity:</span> This upcoming activity will be recorded in the timeline. The lead will <strong>remain in "New"</strong> until the interaction is marked Completed.
+                    <span className="font-bold">Pending / Scheduled Activity:</span> This upcoming activity will be recorded in the timeline. The lead will <strong>remain in "{lead.stage}"</strong> until the interaction is marked Completed.
                   </div>
                 </div>
               ) : (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
                   <span className="text-sm">✅</span>
                   <div>
-                    <span className="font-bold">Completed Interaction:</span> This records a completed interaction and will <strong>automatically advance the lead to "Contacted"</strong>.
+                    <span className="font-bold">Completed Interaction:</span> This records a completed interaction
+                    {lead.stage === 'New' && <strong> and will automatically advance the lead to "Contacted"</strong>}.
                   </div>
                 </div>
               )}
@@ -1040,7 +1151,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Discovery call regarding CRM requirements"
+                  placeholder={activityForm.purpose === 'Negotiation' ? "e.g. Discussed pricing discount & payment milestones" : "e.g. Discovery call regarding CRM requirements"}
                   value={activityForm.title}
                   onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
                   className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
@@ -1061,7 +1172,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Outcome / Discussion Notes</label>
                 <textarea
                   rows={3}
-                  placeholder="Summarize key takeaways, client response, agreed next steps..."
+                  placeholder={activityForm.purpose === 'Negotiation' ? "e.g. Customer requested a 10% price reduction and Net 45 payment terms before signing." : "Summarize key takeaways, client response, agreed next steps..."}
                   value={activityForm.outcome}
                   onChange={(e) => setActivityForm({ ...activityForm, outcome: e.target.value })}
                   className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
@@ -1081,13 +1192,19 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   className={`px-4 py-2 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5 ${
                     activityForm.status === 'Pending'
                       ? 'bg-slate-700 hover:bg-slate-800'
+                      : activityForm.purpose === 'Negotiation'
+                      ? 'bg-purple-600 hover:bg-purple-700'
                       : 'bg-indigo-600 hover:bg-indigo-700'
                   }`}
                 >
                   <CheckCircle2 size={14} />
                   {activityForm.status === 'Pending'
-                    ? 'Save Scheduled Activity (Keep in New)'
-                    : (lead.stage === 'New' ? 'Save & Move to Contacted' : 'Save Interaction')}
+                    ? `Save Scheduled Activity (Keep in ${lead.stage})`
+                    : (lead.stage === 'New'
+                      ? 'Save & Move to Contacted'
+                      : (lead.stage === 'Proposal' && activityForm.purpose === 'Negotiation'
+                        ? 'Save & Move to Negotiation'
+                        : 'Save Interaction'))}
                 </button>
               </div>
             </form>

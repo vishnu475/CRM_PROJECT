@@ -439,6 +439,7 @@ export interface Activity {
   id: string;
   title: string;
   type: 'Call' | 'Meeting' | 'Email' | 'Task' | 'Reminder';
+  purpose?: 'General' | 'Follow-up' | 'Negotiation';
   relatedTo: string;
   assignedTo: string;
   dueDate: string;

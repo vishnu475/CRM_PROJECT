@@ -24,13 +24,13 @@ router.get('/', async (req, res) => {
 
 // POST /api/crm/activities
 router.post('/', async (req, res) => {
-  const { id, title, type, relatedTo, customerId, opportunityId, assignedTo, dueDate, priority, status, outcome } = req.body;
+  const { id, title, type, purpose, relatedTo, customerId, opportunityId, assignedTo, dueDate, priority, status, outcome } = req.body;
   try {
     const actId = id || `ACT-${Date.now()}`;
     const result = await pool.query(
-      `INSERT INTO activities (id, title, type, related_to, customer_id, opportunity_id, assigned_to, due_date, priority, status, outcome)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [actId, title, type || 'Task', relatedTo, customerId, opportunityId, assignedTo, dueDate, priority || 'Medium', status || 'Pending', outcome]
+      `INSERT INTO activities (id, title, type, purpose, related_to, customer_id, opportunity_id, assigned_to, due_date, priority, status, outcome)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [actId, title, type || 'Task', purpose || 'General', relatedTo, customerId, opportunityId, assignedTo, dueDate, priority || 'Medium', status || 'Pending', outcome]
     );
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -38,14 +38,14 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/crm/activities/:id — Mark complete, update outcome
+// PATCH /api/crm/activities/:id — Mark complete, update outcome / purpose
 router.patch('/:id', async (req, res) => {
   const { id } = req.params;
-  const { status, outcome } = req.body;
+  const { status, outcome, purpose } = req.body;
   try {
     const result = await pool.query(
-      `UPDATE activities SET status = COALESCE($2, status), outcome = COALESCE($3, outcome) WHERE id = $1 RETURNING *`,
-      [id, status, outcome]
+      `UPDATE activities SET status = COALESCE($2, status), outcome = COALESCE($3, outcome), purpose = COALESCE($4, purpose) WHERE id = $1 RETURNING *`,
+      [id, status, outcome, purpose]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Activity not found' });
     res.json({ success: true, data: result.rows[0] });

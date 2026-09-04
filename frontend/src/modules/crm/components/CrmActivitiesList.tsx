@@ -13,13 +13,15 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [newType, setNewType] = useState<Activity['type']>('Call');
+  const [newPurpose, setNewPurpose] = useState<'General' | 'Follow-up' | 'Negotiation'>('General');
   const [newTitle, setNewTitle] = useState('');
   const [newOutcome, setNewOutcome] = useState('');
   const [newRelatedTo, setNewRelatedTo] = useState('');
 
   const filteredActivities = activities.filter(a =>
     (a.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (a.outcome || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (a.outcome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (a.purpose || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -28,6 +30,7 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
 
     const actData: Omit<Activity, 'id'> = {
       type: newType,
+      purpose: newPurpose,
       title: newTitle,
       relatedTo: newRelatedTo || 'General CRM Account',
       assignedTo: 'Sarah Jenkins',
@@ -40,6 +43,7 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
     await addActivity(actData);
     setNewTitle('');
     setNewOutcome('');
+    setNewPurpose('General');
     setShowAddModal(false);
   };
 
@@ -112,6 +116,11 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-200/60 text-slate-700 uppercase">
                         {act.type}
                       </span>
+                      {act.purpose === 'Negotiation' && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                          🤝 Negotiation
+                        </span>
+                      )}
                     </div>
 
                     <span className="text-xs text-slate-400">
@@ -164,6 +173,19 @@ export const CrmActivitiesList: React.FC<CrmActivitiesListProps> = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Activity Purpose</label>
+                <select
+                  value={newPurpose}
+                  onChange={(e) => setNewPurpose(e.target.value as any)}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white font-medium"
+                >
+                  <option value="General">General Interaction</option>
+                  <option value="Follow-up">Follow-up Touchpoint</option>
+                  <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                </select>
               </div>
 
               <div>

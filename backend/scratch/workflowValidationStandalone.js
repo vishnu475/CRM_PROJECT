@@ -1,14 +1,6 @@
-import { Lead, Activity, Quotation } from '../../../types';
+// Standalone mirror of frontend/src/modules/crm/utils/leadWorkflowValidation.ts for testing
 
-export interface StageTransitionResult {
-  allowed: boolean;
-  message?: string;
-}
-
-/**
- * Helper to determine if an activity represents a genuine customer negotiation or deal-terms response.
- */
-export const isNegotiationInteraction = (act: Activity, lead: Lead): boolean => {
+const isNegotiationInteraction = (act, lead) => {
   if (act.status !== 'Completed') return false;
 
   const isRelated =
@@ -83,45 +75,14 @@ export const isNegotiationInteraction = (act: Activity, lead: Lead): boolean => 
   return hasNegotiationKeyword;
 };
 
-/**
- * Validates lead stage transitions according to CRM workflow business rules.
- * 
- * STEP 1 RULE:
- * New -> Contacted requires at least one completed interaction (Call, Email, or Meeting).
- * 
- * STEP 2 RULE:
- * Contacted -> Qualified requires four valid qualification fields:
- * 1. Requirement (meaningful text)
- * 2. Budget (positive monetary value > 0)
- * 3. Decision Maker (identified contact/decision maker)
- * 4. Expected Closing Date (valid date)
- * 
- * STEP 3 RULE:
- * Qualified -> Proposal requires a valid proposal/quotation with:
- * 1. Proposal Amount (> 0)
- * 2. Proposal Date (valid date)
- * 3. Proposal Status ('Sent' - Draft is not allowed)
- * 4. Sent Date (valid date when status is Sent)
- * 
- * STEP 4 RULE:
- * Proposal -> Negotiation requires:
- * 1. Lead is currently in Proposal (no stage skipping).
- * 2. At least one completed interaction that represents an actual customer negotiation/discussion (e.g. discount, payment terms, features, timeline, counter-offer).
- */
-export const validateLeadStageTransition = (
-  lead: Lead,
-  targetStage: Lead['stage'],
-  activities: Activity[] = [],
-  quotations: Quotation[] = []
-): StageTransitionResult => {
+const validateLeadStageTransition = (lead, targetStage, activities = [], quotations = []) => {
   const currentStage = lead.stage;
 
-  // No change in stage
   if (currentStage === targetStage) {
     return { allowed: true };
   }
 
-  // STEP 1: Validation for New -> Contacted
+  // STEP 1: New -> Contacted
   if (currentStage === 'New' && targetStage === 'Contacted') {
     const hasCompletedInteraction = activities.some((act) => {
       const isRelated =
@@ -146,47 +107,28 @@ export const validateLeadStageTransition = (
     }
   }
 
-  // STEP 2: Validation for Contacted -> Qualified
+  // STEP 2: Contacted -> Qualified
   if (currentStage === 'Contacted' && targetStage === 'Qualified') {
-    const missingFields: string[] = [];
+    const missingFields = [];
 
-    // 1. Requirement (meaningful text, not empty or whitespace-only)
     const requirement = (lead.requirement || '').trim();
-    if (!requirement) {
-      missingFields.push('Requirement');
-    }
+    if (!requirement) missingFields.push('Requirement');
 
-    // 2. Budget (valid positive monetary value > 0)
     const budgetVal =
       lead.budget !== undefined && Number(lead.budget) > 0
         ? Number(lead.budget)
         : lead.value !== undefined && Number(lead.value) > 0
         ? Number(lead.value)
         : 0;
+    if (!budgetVal || budgetVal <= 0 || isNaN(budgetVal)) missingFields.push('Budget');
 
-    if (!budgetVal || budgetVal <= 0 || isNaN(budgetVal)) {
-      missingFields.push('Budget');
-    }
-
-    // 3. Decision Maker (identified purchasing authority)
     const decisionMaker = (lead.decisionMaker || lead.contactPerson || '').trim();
-    if (!decisionMaker) {
-      missingFields.push('Decision Maker');
-    }
+    if (!decisionMaker) missingFields.push('Decision Maker');
 
-    // 4. Expected Closing Date (valid date)
     const expectedCloseDate = (lead.expectedCloseDate || '').trim();
-    if (!expectedCloseDate) {
-      missingFields.push('Expected Closing Date');
-    }
+    if (!expectedCloseDate) missingFields.push('Expected Closing Date');
 
     if (missingFields.length > 0) {
-      if (missingFields.length === 1) {
-        return {
-          allowed: false,
-          message: `Please provide the ${missingFields[0]} before qualifying this lead.`,
-        };
-      }
       return {
         allowed: false,
         message: `Complete the following qualification details before moving this lead to Qualified:\n• ${missingFields.join('\n• ')}`,
@@ -194,9 +136,8 @@ export const validateLeadStageTransition = (
     }
   }
 
-  // STEP 3: Validation for Qualified -> Proposal
+  // STEP 3: Qualified -> Proposal
   if (currentStage === 'Qualified' && targetStage === 'Proposal') {
-    // Look for associated quotation in quotations array
     const linkedQuotation = quotations.find((q) =>
       q.customerId === lead.id ||
       q.leadId === lead.id ||
@@ -205,7 +146,6 @@ export const validateLeadStageTransition = (
       (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
     );
 
-    // Has a proposal been created (either via Quotations or direct Lead proposal fields)?
     const hasProposal =
       !!linkedQuotation ||
       lead.proposalStatus !== undefined ||
@@ -219,7 +159,7 @@ export const validateLeadStageTransition = (
       };
     }
 
-    const proposalStatus = (linkedQuotation?.status || lead.proposalStatus || 'Draft');
+    const proposalStatus = linkedQuotation?.status || lead.proposalStatus || 'Draft';
     const proposalAmount =
       linkedQuotation?.amount !== undefined
         ? Number(linkedQuotation.amount)
@@ -229,7 +169,6 @@ export const validateLeadStageTransition = (
     const proposalDate = (linkedQuotation?.date || lead.proposalDate || '').trim();
     const sentDate = (linkedQuotation?.sentDate || lead.proposalSentDate || '').trim();
 
-    // Check Proposal Amount
     if (!proposalAmount || proposalAmount <= 0 || isNaN(proposalAmount)) {
       return {
         allowed: false,
@@ -237,7 +176,6 @@ export const validateLeadStageTransition = (
       };
     }
 
-    // Check Proposal Date
     if (!proposalDate) {
       return {
         allowed: false,
@@ -245,7 +183,6 @@ export const validateLeadStageTransition = (
       };
     }
 
-    // Check Proposal Status (must be 'Sent')
     if (proposalStatus !== 'Sent') {
       return {
         allowed: false,
@@ -253,7 +190,6 @@ export const validateLeadStageTransition = (
       };
     }
 
-    // Check Sent Date (must exist when status is Sent)
     if (!sentDate) {
       return {
         allowed: false,
@@ -262,9 +198,8 @@ export const validateLeadStageTransition = (
     }
   }
 
-  // STEP 4: Validation for Proposal -> Negotiation
+  // STEP 4: Proposal -> Negotiation
   if (targetStage === 'Negotiation') {
-    // Prevent stage skipping (e.g. from New/Contacted/Qualified directly to Negotiation)
     if (currentStage !== 'Proposal') {
       return {
         allowed: false,
@@ -282,6 +217,7 @@ export const validateLeadStageTransition = (
     }
   }
 
-  // All other stage transitions are allowed (reserved for future step rules)
   return { allowed: true };
 };
+
+export { isNegotiationInteraction, validateLeadStageTransition };

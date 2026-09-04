@@ -719,6 +719,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             assignedTo: r.assigned_to || '',
             dueDate: r.due_date || '',
             priority: r.priority || 'Medium',
+            purpose: r.purpose || 'General',
             status: r.status || 'Pending',
             outcome: r.outcome || '',
           })));
@@ -1252,6 +1253,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: tempId,
         title: activity.title,
         type: activity.type,
+        purpose: activity.purpose || 'General',
         relatedTo: activity.relatedTo,
         assignedTo: activity.assignedTo,
         dueDate: activity.dueDate,
