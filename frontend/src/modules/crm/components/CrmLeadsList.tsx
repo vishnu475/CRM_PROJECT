@@ -2,11 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { CrmView, Lead } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
-import { validateLeadStageTransition } from '../utils/leadWorkflowValidation';
 import { 
   Plus, Search, Filter, MoreVertical, ChevronLeft, ChevronRight, 
-  CheckCircle2, AlertCircle, Building2, User, Phone, Mail, Calendar
+  Building2, User, Mail,
+  Rocket, CheckCheck
 } from 'lucide-react';
+import { ConvertLeadModal } from './ConvertLeadModal';
 
 interface CrmLeadsListProps {
   onViewChange: (view: CrmView) => void;
@@ -14,7 +15,7 @@ interface CrmLeadsListProps {
 }
 
 export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLeadSelect }) => {
-  const { leads, updateLead, activities, quotations } = useApp();
+  const { leads, updateLead } = useApp();
   
   // Filtering and Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,9 +28,9 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
   // Selection State
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   
-  // Archive & Validation Modal State
+  // Archive & Convert Modal State
   const [leadToArchive, setLeadToArchive] = useState<string | null>(null);
-  const [validationError, setValidationError] = useState<string | null>(null);
+  const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
 
   // Derive Active Leads
   const activeLeads = useMemo(() => leads.filter(l => l.status !== 'archived'), [leads]);
@@ -141,27 +142,6 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
         </div>
       )}
 
-      {/* VALIDATION BLOCKED MODAL */}
-      {validationError && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md animate-in zoom-in-95 duration-200 space-y-4">
-            <div className="flex items-center gap-3 text-amber-600">
-              <AlertCircle size={22} className="shrink-0" />
-              <h3 className="text-base font-bold text-slate-900">Stage Transition Blocked</h3>
-            </div>
-            <p className="text-sm text-slate-600 leading-relaxed">{validationError}</p>
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setValidationError(null)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-sm transition"
-              >
-                Understood
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
         <div>
@@ -257,26 +237,35 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                   </div>
                 </td>
                 <td className="p-4">
-                  <select
-                    value={lead.stage}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      const targetStage = e.target.value as Lead['stage'];
-                      const validation = validateLeadStageTransition(lead, targetStage, activities, quotations);
-                      if (!validation.allowed) {
-                        setValidationError(validation.message || 'Stage transition not allowed.');
-                        return;
-                      }
-                      setValidationError(null);
-                      updateLead(lead.id, { stage: targetStage });
-                    }}
-                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getStageBadgeColor(lead.stage)}`}
-                    title="Change stage"
-                  >
-                    {['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'].map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}
+                    >
+                      {lead.stage}
+                    </span>
+
+                    {lead.stage === 'Won' && !lead.isConverted && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLeadToConvert(lead);
+                        }}
+                        className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1 transition-all whitespace-nowrap transform hover:scale-105"
+                        title="Convert Won Lead to Customer, Contact & Opportunity"
+                      >
+                        <Rocket size={13} className="text-amber-300" /> Convert Lead
+                      </button>
+                    )}
+
+                    {lead.isConverted && (
+                      <span 
+                        className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1 whitespace-nowrap shadow-xs"
+                        title="Lead successfully converted to Customer Account"
+                      >
+                        <CheckCheck size={13} className="text-emerald-600" /> Converted
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="p-4">
                   <div className={`inline-flex items-center justify-center w-8 h-8 rounded-full border text-xs font-bold ${getLeadScoreColor(lead.score)}`}>
@@ -293,9 +282,27 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                   </div>
                 </td>
                 <td className="p-4 text-right">
-                  <button onClick={() => setLeadToArchive(lead.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                    <MoreVertical size={16} />
-                  </button>
+                  <div className="flex items-center justify-end gap-1.5">
+                    {lead.stage === 'Won' && !lead.isConverted && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLeadToConvert(lead);
+                        }}
+                        className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md text-xs font-bold transition flex items-center gap-1"
+                        title="Convert Lead"
+                      >
+                        <Rocket size={12} /> Convert
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setLeadToArchive(lead.id)} 
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                      title="Archive Lead"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -336,26 +343,29 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
             </div>
             
             <div className="flex items-center justify-between mt-4">
-              <select
-                value={lead.stage}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  const targetStage = e.target.value as Lead['stage'];
-                  const validation = validateLeadStageTransition(lead, targetStage, activities, quotations);
-                  if (!validation.allowed) {
-                    setValidationError(validation.message || 'Stage transition not allowed.');
-                    return;
-                  }
-                  setValidationError(null);
-                  updateLead(lead.id, { stage: targetStage });
-                }}
-                className={`px-2.5 py-1 rounded-full text-xs font-semibold border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getStageBadgeColor(lead.stage)}`}
-                title="Change stage"
-              >
-                {['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'].map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}
+                >
+                  {lead.stage}
+                </span>
+                {lead.stage === 'Won' && !lead.isConverted && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLeadToConvert(lead);
+                    }}
+                    className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1"
+                  >
+                    <Rocket size={13} className="text-amber-300" /> Convert Lead
+                  </button>
+                )}
+                {lead.isConverted && (
+                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1">
+                    <CheckCheck size={12} className="text-emerald-600" /> Converted
+                  </span>
+                )}
+              </div>
               <span className="text-sm font-bold text-slate-700">{formatINR(lead.value)}</span>
             </div>
             
@@ -395,6 +405,13 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
           </div>
         </div>
       )}
+
+      {/* CONVERT LEAD MODAL */}
+      <ConvertLeadModal
+        isOpen={!!leadToConvert}
+        lead={leadToConvert}
+        onClose={() => setLeadToConvert(null)}
+      />
 
     </div>
   );

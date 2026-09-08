@@ -90,6 +90,7 @@ export interface Lead {
   campaign?: string;
   contactPerson?: string;
   designation?: string;
+  contactRole?: string;
   alternatePhone?: string;
   website?: string;
   expectedCloseDate?: string;
@@ -107,6 +108,14 @@ export interface Lead {
   lostReasonDetails?: string;
   lostNotes?: string;
   lostDate?: string;
+  convertedToCustomerId?: string;
+  convertedToContactId?: string;
+  convertedToOpportunityId?: string;
+  isConverted?: boolean;
+  convertedAt?: string;
+  projectId?: string;
+  isProjectCreated?: boolean;
+  projectCreatedAt?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -119,6 +128,21 @@ export interface Lead {
   updatedAt?: string;
 }
 
+export interface CustomerHealthSummary {
+  customerId?: string;
+  customerName?: string;
+  status: 'Active' | 'At Risk' | 'Inactive' | 'Archived';
+  daysSinceLastActivity: number | null;
+  lastActivityDate: string | null;
+  activeProjects: number;
+  openOpportunities: number;
+  activeSalesOrders: number;
+  overdueFollowUps: number;
+  overdueInvoices: number;
+  delayedProjects: number;
+  reasons: string[];
+}
+
 export interface Customer {
   id: string;
   customerCode?: string;
@@ -128,6 +152,7 @@ export interface Customer {
   website?: string;
   ownerId: string;
   status: 'Active' | 'At Risk' | 'Inactive' | 'Archived';
+  healthSummary?: CustomerHealthSummary;
   primaryContact: {
     name: string;
     designation?: string;
@@ -369,10 +394,20 @@ export interface Project {
   code: string;
   name: string;
   client: string;
+  customerId?: string;
+  sourceLeadId?: string;
+  sourceOpportunityId?: string;
+  projectRequirement?: string;
+  projectNotes?: string;
+  projectManager?: string;
+  startDate?: string;
+  endDate?: string;
   budget: number;
   spent: number;
   progress: number;
-  status: 'In Progress' | 'On Hold' | 'Completed';
+  status: 'Not Started' | 'In Progress' | 'On Hold' | 'Completed' | 'Planning';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Task {
@@ -415,7 +450,7 @@ export interface NotificationItem {
   type: 'info' | 'warning' | 'success' | 'alert';
 }
 
-export type CrmView = 'overview' | 'leads' | 'add-lead' | 'lead-details' | 'customers' | 'add-customer' | 'customer-details' | 'contacts' | 'opportunities' | 'activities' | 'follow-ups' | 'pipeline' | 'notes';
+export type CrmView = 'overview' | 'leads' | 'add-lead' | 'lead-details' | 'customers' | 'add-customer' | 'customer-details' | 'contacts' | 'opportunities' | 'opportunity-details' | 'activities' | 'follow-ups' | 'pipeline' | 'notes';
 
 export interface Contact {
   id: string;
@@ -423,11 +458,18 @@ export interface Contact {
   customerId: string;
   customerName: string;
   designation: string;
+  contactRole?: string;
   email: string;
   phone: string;
-  owner: string;
-  lastInteraction: string;
-  status: 'Active' | 'Inactive';
+  alternatePhone?: string;
+  notes?: string;
+  owner?: string;
+  lastInteraction?: string;
+  status?: 'Active' | 'Inactive' | string;
+  department?: string;
+  leadId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Opportunity {
@@ -448,6 +490,8 @@ export interface Activity {
   type: 'Call' | 'Meeting' | 'Email' | 'Task' | 'Reminder';
   purpose?: 'General' | 'Follow-up' | 'Negotiation' | 'Customer Acceptance' | 'Deal Closed';
   relatedTo: string;
+  customerId?: string;
+  opportunityId?: string;
   assignedTo: string;
   dueDate: string;
   priority: 'Low' | 'Medium' | 'High';

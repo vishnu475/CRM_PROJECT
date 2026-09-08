@@ -2,12 +2,15 @@ import React, { useState, useMemo } from 'react';
 import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
-import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
+import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
+import { findMatchingCustomer, DuplicateCustomerMatch } from '../utils/duplicateCustomerDetection';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
   CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award,
-  XCircle, AlertOctagon
+  XCircle, AlertOctagon, Rocket, Sparkles, CheckCheck, ShieldCheck, FolderKanban, Users
 } from 'lucide-react';
+import { ConvertLeadModal } from './ConvertLeadModal';
+import { CreateProjectModal } from './CreateProjectModal';
 
 interface CrmLeadDetailsProps {
   leadId: string;
@@ -19,9 +22,13 @@ type TabType = 'overview' | 'activities' | 'notes' | 'documents';
 const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 
 export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewChange }) => {
-  const { leads, activities, notes, documents, followUps, quotations, updateLead, addActivity, updateActivity, addQuotation, updateQuotation, addNote, addFollowUp, addDocument } = useApp();
+  const { leads, customers, contacts, opportunities, activities, notes, documents, followUps, quotations, projects, updateLead, addActivity, updateActivity, addQuotation, updateQuotation, addNote, addFollowUp, addDocument, convertLead, setActiveModule } = useApp();
   
   const lead = leads.find(l => l.id === leadId);
+  const associatedContact = useMemo(() => {
+    if (!lead) return null;
+    return contacts.find(c => (c.leadId && c.leadId === lead.id) || (lead.convertedToContactId && c.id === lead.convertedToContactId)) || null;
+  }, [lead, contacts]);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -30,6 +37,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [showProposalModal, setShowProposalModal] = useState(false);
   const [showWonModal, setShowWonModal] = useState(false);
   const [showLostModal, setShowLostModal] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
+  const [convertSubmitting, setConvertSubmitting] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
+  const [matchedCustomer, setMatchedCustomer] = useState<any>(null);
+  const [matchedReason, setMatchedReason] = useState<string>('');
+  const [customerChoice, setCustomerChoice] = useState<'existing' | 'new'>('existing');
   
   // Forms visibility state
   const [showActivityForm, setShowActivityForm] = useState(false);
@@ -71,6 +85,19 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     lostReasonDetails: '',
     lostNotes: '',
     lostDate: new Date().toISOString().split('T')[0],
+  });
+  const [convertForm, setConvertForm] = useState({
+    customerName: '',
+    customerType: 'Company' as 'Company' | 'Individual',
+    industry: '',
+    website: '',
+    contactName: '',
+    contactDesignation: '',
+    contactEmail: '',
+    contactPhone: '',
+    opportunityName: '',
+    opportunityValue: '',
+    expectedCloseDate: '',
   });
   const [editForm, setEditForm] = useState({
     name: '',
@@ -251,6 +278,95 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       lostDate: lead.lostDate || new Date().toISOString().split('T')[0],
     });
     setShowLostModal(true);
+  };
+
+  const openConvertModal = () => {
+    if (!lead) return;
+    const validation = validateLeadConversion(lead);
+    if (!validation.allowed) {
+      setValidationError(validation.reason || 'Lead is not eligible for conversion.');
+      return;
+    }
+    setValidationError(null);
+    setConvertError(null);
+
+    // Duplicate customer check
+    const match = findMatchingCustomer(lead, customers);
+    if (match.hasDuplicate && match.matchingCustomer) {
+      setMatchedCustomer(match.matchingCustomer);
+      setMatchedReason(match.matchReason || 'Strong business identifier matched an existing customer account');
+      setCustomerChoice('existing');
+    } else {
+      setMatchedCustomer(null);
+      setMatchedReason('');
+      setCustomerChoice('new');
+    }
+
+    const defaultOppSummary = lead.requirement
+      ? lead.requirement.length > 30
+        ? lead.requirement.substring(0, 27) + '...'
+        : lead.requirement
+      : 'Deal';
+
+    setConvertForm({
+      customerName: lead.company?.trim() || lead.name,
+      customerType: lead.company ? 'Company' : 'Individual',
+      industry: lead.industry || '',
+      website: lead.website || '',
+      contactName: lead.decisionMaker || lead.contactPerson || lead.name,
+      contactDesignation: lead.designation || 'Primary Contact',
+      contactEmail: lead.email || '',
+      contactPhone: lead.phone || '',
+      opportunityName: lead.company ? `${lead.company} - ${defaultOppSummary}` : `${lead.name} Deal`,
+      opportunityValue: String(lead.finalAgreedAmount || lead.value || lead.budget || 0),
+      expectedCloseDate: lead.wonDate || lead.expectedCloseDate || new Date().toISOString().split('T')[0],
+    });
+    setShowConvertModal(true);
+  };
+
+  const handleExecuteConvert = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+    setConvertSubmitting(true);
+    setConvertError(null);
+
+    const validation = validateLeadConversion(lead);
+    if (!validation.allowed) {
+      setConvertError(validation.reason || 'Lead cannot be converted.');
+      setConvertSubmitting(false);
+      return;
+    }
+
+    try {
+      const res = await convertLead(lead.id, {
+        customerName: convertForm.customerName,
+        customerType: convertForm.customerType,
+        industry: convertForm.industry,
+        website: convertForm.website,
+        contactName: convertForm.contactName,
+        contactDesignation: convertForm.contactDesignation,
+        contactEmail: convertForm.contactEmail,
+        contactPhone: convertForm.contactPhone,
+        opportunityName: convertForm.opportunityName,
+        opportunityValue: parseFloat(convertForm.opportunityValue) || 0,
+        expectedCloseDate: convertForm.expectedCloseDate,
+        useExistingCustomerId: (customerChoice === 'existing' && matchedCustomer) ? matchedCustomer.id : undefined,
+        forceNewCustomer: customerChoice === 'new',
+      });
+
+      if (!res.success) {
+        setConvertError(res.message || 'Failed to convert lead.');
+        setConvertSubmitting(false);
+        return;
+      }
+
+      setShowConvertModal(false);
+      setConvertSubmitting(false);
+      setValidationError(null);
+    } catch (err: any) {
+      setConvertError(err.message || 'An unexpected error occurred during conversion.');
+      setConvertSubmitting(false);
+    }
   };
 
   const handleSaveLost = (e?: React.FormEvent) => {
@@ -515,6 +631,34 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           </div>
           
           <div className="flex items-center gap-3">
+            {lead.stage === 'Won' && !lead.isConverted && (
+              <button
+                onClick={openConvertModal}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm rounded-lg shadow-md transition flex items-center gap-2 transform hover:scale-[1.02]"
+                title="Convert Won Lead to Customer, Primary Contact, and Won Opportunity"
+              >
+                <Rocket size={16} className="text-amber-300" /> Convert Lead
+              </button>
+            )}
+            {lead.stage === 'Won' && (
+              lead.isProjectCreated || lead.projectId ? (
+                <button
+                  onClick={() => setActiveModule('projects')}
+                  className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-sm rounded-lg shadow-xs transition flex items-center gap-1.5"
+                  title="View associated Project in Projects & Client Delivery"
+                >
+                  <FolderKanban size={15} className="text-purple-600" /> Project Created • View Project
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowCreateProjectModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white font-bold text-sm rounded-lg shadow-md transition flex items-center gap-2 transform hover:scale-[1.02]"
+                  title="Create Project from Won Lead Requirements"
+                >
+                  <FolderKanban size={16} className="text-amber-300" /> Create Project
+                </button>
+              )
+            )}
             {lead.stage === 'Negotiation' && (
               <button
                 onClick={openWonModal}
@@ -548,7 +692,40 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <MoreVertical size={18} />
               </button>
               {showMoreMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
+                  {lead.stage === 'Won' && !lead.isConverted && (
+                    <>
+                      <button
+                        onClick={() => { openConvertModal(); setShowMoreMenu(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 font-bold flex items-center gap-2"
+                      >
+                        <Rocket size={14} className="text-indigo-600" /> Convert to Customer
+                      </button>
+                      <div className="h-px bg-slate-200 my-1"></div>
+                    </>
+                  )}
+                  {lead.isConverted && (
+                    <div className="px-4 py-1.5 text-xs text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 mb-1">
+                      <CheckCheck size={14} /> Converted to Customer
+                    </div>
+                  )}
+                  {lead.stage === 'Won' && (
+                    lead.isProjectCreated || lead.projectId ? (
+                      <button
+                        onClick={() => { setActiveModule('projects'); setShowMoreMenu(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-purple-700 hover:bg-purple-50 font-bold flex items-center gap-2"
+                      >
+                        <FolderKanban size={14} className="text-purple-600" /> View Project
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { setShowCreateProjectModal(true); setShowMoreMenu(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-purple-700 hover:bg-purple-50 font-bold flex items-center gap-2"
+                      >
+                        <FolderKanban size={14} className="text-purple-600" /> Create Project
+                      </button>
+                    )
+                  )}
                   <button onClick={openEditModal} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Edit Lead & Qualification</button>
                   <button onClick={() => { setShowFollowUpForm(true); setShowMoreMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Add Follow-up</button>
                   {lead.stage !== 'Won' && lead.stage !== 'Lost' && (
@@ -557,15 +734,111 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     </button>
                   )}
                   <div className="h-px bg-slate-200 my-1"></div>
-                  <button className="w-full text-left px-4 py-2 text-sm text-slate-400 cursor-not-allowed" title="Coming soon">Create Opportunity</button>
-                  <button className="w-full text-left px-4 py-2 text-sm text-slate-400 cursor-not-allowed" title="Coming soon">Convert to Customer</button>
-                  <div className="h-px bg-slate-200 my-1"></div>
                   <button onClick={() => { setShowArchiveModal(true); setShowMoreMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 font-medium">Archive Lead</button>
                 </div>
               )}
             </div>
           </div>
         </div>
+
+        {/* CONVERTED TO CUSTOMER BANNER */}
+        {lead.isConverted && (
+          <div className="mb-6 p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300 rounded-xl flex items-start gap-4 shadow-sm animate-in fade-in duration-200">
+            <div className="p-3 bg-emerald-100 text-emerald-700 rounded-xl shrink-0 mt-0.5 shadow-xs">
+              <Award size={24} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
+                <h4 className="text-base font-bold text-emerald-950">🎉 Lead Converted Successfully</h4>
+                <span className="text-xs bg-emerald-200 text-emerald-900 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300">
+                  Status: Converted
+                </span>
+                {lead.convertedAt && (
+                  <span className="text-xs text-emerald-700 font-medium">
+                    • Converted on {new Date(lead.convertedAt).toLocaleDateString()} at {new Date(lead.convertedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-emerald-800 leading-relaxed mb-3.5">
+                This Won deal has been successfully converted into your CRM Master database. Linked records are live and navigable below:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div
+                  onClick={() => onViewChange('customers')}
+                  className="p-3 bg-white/90 hover:bg-white rounded-lg border border-emerald-200 hover:border-indigo-300 cursor-pointer transition-all shadow-xs group"
+                >
+                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center justify-between">
+                    <span>🏢 Customer Record</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-indigo-600 transition-colors">
+                    {lead.company || lead.name}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.convertedToCustomerId || 'Linked'}</div>
+                </div>
+
+                <div
+                  onClick={() => onViewChange('contacts')}
+                  className="p-3 bg-white/90 hover:bg-white rounded-lg border border-emerald-200 hover:border-indigo-300 cursor-pointer transition-all shadow-xs group"
+                >
+                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center justify-between">
+                    <span>👤 Primary Contact</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-indigo-600 transition-colors">
+                    {lead.decisionMaker || lead.contactPerson || lead.name}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.convertedToContactId || 'Linked'}</div>
+                </div>
+
+                <div
+                  onClick={() => onViewChange('opportunities')}
+                  className="p-3 bg-white/90 hover:bg-white rounded-lg border border-emerald-200 hover:border-indigo-300 cursor-pointer transition-all shadow-xs group"
+                >
+                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center justify-between">
+                    <span>💼 Won Opportunity</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-indigo-600 transition-colors">
+                    {formatINR(lead.finalAgreedAmount || lead.value || lead.budget || 0)}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.convertedToOpportunityId || 'Linked'}</div>
+                </div>
+
+                {/* Linked Project Card */}
+                {lead.isProjectCreated || lead.projectId ? (
+                  <div
+                    onClick={() => setActiveModule('projects')}
+                    className="p-3 bg-white/90 hover:bg-white rounded-lg border border-purple-200 hover:border-purple-400 cursor-pointer transition-all shadow-xs group"
+                  >
+                    <div className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>📁 Client Project</span>
+                      <ChevronRight size={14} className="text-slate-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" />
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-purple-600 transition-colors">
+                      {lead.projectId || 'Project Active'}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 font-semibold mt-0.5">Status: Not Started</div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => setShowCreateProjectModal(true)}
+                    className="p-3 bg-purple-50/80 hover:bg-purple-100/90 rounded-lg border border-dashed border-purple-300 hover:border-purple-500 cursor-pointer transition-all shadow-xs group"
+                  >
+                    <div className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>📁 Create Project</span>
+                      <Plus size={14} className="text-purple-600 group-hover:scale-110 transition" />
+                    </div>
+                    <div className="text-xs font-semibold text-purple-900 truncate mt-1">
+                      Start Project Delivery
+                    </div>
+                    <div className="text-[10px] text-purple-600 mt-0.5">Copy requirements &rarr;</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* LOST OPPORTUNITY BANNER */}
         {lead.stage === 'Lost' && (
@@ -966,19 +1239,50 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-6">
-            <h2 className="text-base font-bold text-[#0f172a] mb-4 flex items-center"><Phone size={18} className="mr-2 text-indigo-500" /> Contact Information</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-base font-bold text-[#0f172a] flex items-center">
+                <Users size={18} className="mr-2 text-indigo-500" /> Associated Contact
+              </h2>
+              <button
+                onClick={() => onViewChange('contacts')}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1"
+                title="Open Contacts Directory"
+              >
+                View in Contacts &rarr;
+              </button>
+            </div>
             <div className="space-y-4">
               <div className="grid grid-cols-3">
+                <span className="text-sm font-semibold text-slate-500 col-span-1">Contact Name</span>
+                <span className="text-sm font-bold text-[#0f172a] col-span-2">
+                  {associatedContact?.name || lead.contactPerson || lead.decisionMaker || lead.name}
+                </span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-sm font-semibold text-slate-500 col-span-1">Designation</span>
+                <span className="text-sm font-medium text-[#0f172a] col-span-2">
+                  {associatedContact?.designation || lead.designation || 'Representative'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-sm font-semibold text-slate-500 col-span-1">Contact Role</span>
+                <span className="text-sm font-medium col-span-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                    {associatedContact?.contactRole || lead.contactRole || 'Decision Maker'}
+                  </span>
+                </span>
+              </div>
+              <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Email</span>
-                <span className="text-sm font-medium text-indigo-600 col-span-2">{lead.email}</span>
+                <span className="text-sm font-medium text-indigo-600 col-span-2">{associatedContact?.email || lead.email}</span>
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Phone</span>
-                <span className="text-sm font-medium text-[#0f172a] col-span-2">{lead.phone || '—'}</span>
+                <span className="text-sm font-medium text-[#0f172a] col-span-2">{associatedContact?.phone || lead.phone || '—'}</span>
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Alt. Phone</span>
-                <span className="text-sm font-medium text-[#0f172a] col-span-2">{lead.alternatePhone || '—'}</span>
+                <span className="text-sm font-medium text-[#0f172a] col-span-2">{associatedContact?.alternatePhone || lead.alternatePhone || '—'}</span>
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Website</span>
@@ -2006,6 +2310,26 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             </div>
           </div>
         </div>
+      )}
+
+      {/* CONVERT LEAD MODAL */}
+      <ConvertLeadModal
+        isOpen={showConvertModal}
+        onClose={() => setShowConvertModal(false)}
+        lead={lead || null}
+      />
+
+      {/* CREATE PROJECT MODAL */}
+      {lead && (
+        <CreateProjectModal
+          isOpen={showCreateProjectModal}
+          onClose={() => setShowCreateProjectModal(false)}
+          lead={lead}
+          customer={customers.find(c => c.id === lead.convertedToCustomerId || (lead.company && c.customerName.toLowerCase() === lead.company.toLowerCase())) || null}
+          onSuccess={(projId) => {
+            // Optional callback logic
+          }}
+        />
       )}
 
     </div>

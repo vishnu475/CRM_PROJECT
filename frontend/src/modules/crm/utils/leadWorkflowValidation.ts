@@ -3,6 +3,7 @@ import { Lead, Activity, Quotation } from '../../../types';
 export interface StageTransitionResult {
   allowed: boolean;
   message?: string;
+  reason?: string;
 }
 
 /**
@@ -147,6 +148,41 @@ export const CRM_LOST_REASONS = [
 ] as const;
 
 export type CrmLostReason = (typeof CRM_LOST_REASONS)[number];
+
+/**
+ * Validates whether a lead is eligible for conversion to Customer, Contact, and Opportunity.
+ * 
+ * Conversion Eligibility Rules:
+ * 1. lead.stage === "Won"
+ * 2. lead.isConverted !== true
+ */
+export const validateLeadConversion = (lead: Lead): StageTransitionResult => {
+  if (!lead) {
+    return {
+      allowed: false,
+      message: 'Lead not found.',
+      reason: 'Lead not found.',
+    };
+  }
+
+  if (lead.isConverted) {
+    return {
+      allowed: false,
+      message: 'This lead has already been converted into a Customer, Contact, and Opportunity.',
+      reason: 'This lead has already been converted into a Customer, Contact, and Opportunity.',
+    };
+  }
+
+  if (lead.stage !== 'Won') {
+    return {
+      allowed: false,
+      message: `Only "Won" leads can be converted into Customers, Contacts, and Opportunities. Current stage is "${lead.stage}".`,
+      reason: `Only "Won" leads can be converted into Customers, Contacts, and Opportunities. Current stage is "${lead.stage}".`,
+    };
+  }
+
+  return { allowed: true };
+};
 
 /**
  * Validates lead stage transitions according to CRM workflow business rules.

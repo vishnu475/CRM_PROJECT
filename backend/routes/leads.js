@@ -44,13 +44,46 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/leads — Create new lead in CRM database
 router.post('/', async (req, res) => {
-  const { id, name, company, email, phone, value, stage, score, source, assignedTo } = req.body;
+  const { 
+    id, name, company, email, phone, value, stage, score, source, assignedTo, 
+    requirement, notes, expectedCloseDate, decisionMaker, budget,
+    contactPerson, designation, contactRole, alternatePhone, website, industry, campaign
+  } = req.body;
+
   try {
     const leadId = id || `LD-${Date.now()}`;
     const result = await pool.query(
-      `INSERT INTO leads (id, name, company, email, phone, value, stage, score, source, assigned_to)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [leadId, name, company, email, phone, value || 0, stage || 'New', score || 50, source || 'Manual/Other', assignedTo]
+      `INSERT INTO leads (
+        id, name, company, email, phone, value, stage, score, source, assigned_to, 
+        requirement, notes, expected_close_date, decision_maker, budget,
+        contact_person, designation, contact_role, alternate_phone, website, industry, campaign
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) 
+      RETURNING *`,
+      [
+        leadId,
+        name,
+        company || null,
+        email,
+        phone || null,
+        value || budget || 0,
+        stage || 'New',
+        score || 50,
+        source || 'Manual/Other',
+        assignedTo || null,
+        requirement || null,
+        notes || null,
+        expectedCloseDate || null,
+        decisionMaker || contactPerson || null,
+        budget || value || 0,
+        contactPerson || null,
+        designation || null,
+        contactRole || null,
+        alternatePhone || null,
+        website || null,
+        industry || null,
+        campaign || null
+      ]
     );
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {

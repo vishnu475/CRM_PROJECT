@@ -220,6 +220,7 @@ export const CustomersAPI = {
     return request('GET', `/customers?${params.toString()}`);
   },
   getById: (id: string) => request('GET', `/customers/${id}`),
+  getHealth: (id: string) => request('GET', `/customers/${id}/health`),
   create:  (data: any)  => request('POST', '/customers', data),
   update:  (id: string, data: any) => request('PATCH', `/customers/${id}`, data),
   delete:  (id: string) => request('DELETE', `/customers/${id}`),
@@ -236,6 +237,7 @@ export const ContactsAPI = {
     return request('GET', `/contacts?${params.toString()}`);
   },
   create: (data: any)  => request('POST', '/contacts', data),
+  update: (id: string, data: any) => request('PATCH', `/contacts/${id}`, data),
   delete: (id: string) => request('DELETE', `/contacts/${id}`),
 };
 
@@ -249,6 +251,7 @@ export const OpportunitiesAPI = {
     if (filters?.customerId) params.set('customerId', filters.customerId);
     return request('GET', `/opportunities?${params.toString()}`);
   },
+  getById: (id: string) => request('GET', `/opportunities/${id}`),
   create: (data: any)  => request('POST', '/opportunities', data),
   update: (id: string, data: any) => request('PATCH', `/opportunities/${id}`, data),
   delete: (id: string) => request('DELETE', `/opportunities/${id}`),
@@ -335,5 +338,23 @@ export const PurchaseOrdersAPI = {
   update:  (id: string, data: any) => request('PATCH', `/purchase-orders/${id}`, data),
   delete:  (id: string) => request('DELETE', `/purchase-orders/${id}`),
 };
+
+// ────────────────────────────────────────────────────────────
+// PROJECTS — CLIENT DELIVERY
+// ────────────────────────────────────────────────────────────
+export const ProjectsAPI = {
+  getAll: (filters?: { status?: string; customerId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.customerId) params.set('customerId', filters.customerId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/projects${query}`);
+  },
+  getById: (id: string) => request('GET', `/projects/${id}`),
+  create: (data: any) => request('POST', '/projects', data),
+  update: (id: string, data: any) => request('PATCH', `/projects/${id}`, data),
+  delete: (id: string) => request('DELETE', `/projects/${id}`),
+};
+
 
 

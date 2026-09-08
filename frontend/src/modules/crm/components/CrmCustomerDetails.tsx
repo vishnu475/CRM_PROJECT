@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
-import { CrmView, Customer } from '../../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { CrmView, Customer, CustomerHealthSummary } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR } from '../utils/crmUtils';
+import { CustomersAPI } from '../../../services/apiService';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, Building2,
-  Phone, Mail, MapPin, FileText, Banknote, Target, Plus, CheckCircle2, ShieldAlert
+  Phone, Mail, MapPin, FileText, Banknote, Target, Plus, CheckCircle2, ShieldAlert,
+  AlertTriangle, Clock, Activity as ActivityIcon, ShieldCheck, Layers, RefreshCw
 } from 'lucide-react';
 
 interface CrmCustomerDetailsProps {
@@ -15,13 +17,33 @@ interface CrmCustomerDetailsProps {
 type TabType = 'overview' | 'contacts' | 'opportunities' | 'activities' | 'follow-ups' | 'notes' | 'documents';
 
 export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customerId, onViewChange }) => {
-  const { customers, opportunities, activities, followUps, updateCustomer } = useApp();
+  const { customers, leads, opportunities, activities, followUps, updateCustomer } = useApp();
   
   const customer = customers.find(c => c.id === customerId);
+  const convertedLead = customer?.convertedFromLeadId ? leads.find(l => l.id === customer.convertedFromLeadId) : null;
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  
+  const [healthSummary, setHealthSummary] = useState<CustomerHealthSummary | null>(customer?.healthSummary || null);
+  const [loadingHealth, setLoadingHealth] = useState(false);
+
+  // Fetch latest health calculation from backend on customerId change
+  useEffect(() => {
+    if (customerId) {
+      setLoadingHealth(true);
+      CustomersAPI.getHealth(customerId)
+        .then((res: any) => {
+          if (res.success && res.data) {
+            setHealthSummary(res.data);
+          }
+        })
+        .catch((err: any) => {
+          console.warn('Customer health fetch error:', err);
+        })
+        .finally(() => setLoadingHealth(false));
+    }
+  }, [customerId]);
+
   const customerOpps = useMemo(() => opportunities.filter(o => o.customerId === customerId), [opportunities, customerId]);
   const customerActivities = useMemo(() => activities.filter(a => a.relatedTo === customer?.customerName), [activities, customer]);
   const customerFollowUps = useMemo(() => followUps.filter(f => f.relatedEntity === customer?.id && f.status !== 'Overdue'), [followUps, customer]);
@@ -54,6 +76,8 @@ export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customer
     );
   }
 
+  const currentStatus = healthSummary?.status || customer.status;
+
   const handleArchive = () => {
     updateCustomer(customer.id, { status: 'Archived' });
     setShowArchiveModal(false);
@@ -68,6 +92,45 @@ export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customer
       default: return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
+
+  const getHealthCardStyle = (status: string) => {
+    switch (status) {
+      case 'Active':
+        return {
+          wrapper: 'bg-gradient-to-r from-emerald-50/80 via-teal-50/40 to-slate-50/50 border-emerald-200',
+          iconBg: 'bg-emerald-100 text-emerald-600',
+          headingColor: 'text-emerald-950',
+          badge: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          bulletColor: 'text-emerald-500'
+        };
+      case 'At Risk':
+        return {
+          wrapper: 'bg-gradient-to-r from-amber-50/80 via-orange-50/40 to-slate-50/50 border-amber-200',
+          iconBg: 'bg-amber-100 text-amber-600',
+          headingColor: 'text-amber-950',
+          badge: 'bg-amber-100 text-amber-800 border-amber-200',
+          bulletColor: 'text-amber-500'
+        };
+      case 'Inactive':
+        return {
+          wrapper: 'bg-gradient-to-r from-slate-100/80 via-slate-50 to-gray-50/50 border-slate-200',
+          iconBg: 'bg-slate-200 text-slate-600',
+          headingColor: 'text-slate-900',
+          badge: 'bg-slate-100 text-slate-700 border-slate-200',
+          bulletColor: 'text-slate-400'
+        };
+      default:
+        return {
+          wrapper: 'bg-slate-50 border-slate-200',
+          iconBg: 'bg-slate-100 text-slate-500',
+          headingColor: 'text-slate-900',
+          badge: 'bg-slate-100 text-slate-700 border-slate-200',
+          bulletColor: 'text-slate-400'
+        };
+    }
+  };
+
+  const healthStyle = getHealthCardStyle(currentStatus);
 
   return (
     <div className="max-w-6xl mx-auto pb-12">
@@ -110,8 +173,8 @@ export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customer
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-bold text-[#0f172a]">{customer.customerName}</h1>
-              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusBadge(customer.status)}`}>
-                {customer.status}
+              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusBadge(currentStatus)}`}>
+                {currentStatus}
               </span>
             </div>
             <div className="flex items-center text-sm text-slate-500 flex-wrap gap-2 mt-2">
@@ -120,6 +183,15 @@ export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customer
               <span className="flex items-center font-mono text-indigo-400">{customer.customerCode || 'No Code'}</span>
               <span className="hidden sm:inline text-slate-300">•</span>
               <span className="flex items-center"><MapPin size={14} className="mr-1" /> {customer.billingAddress?.city || 'No Location'}</span>
+              {customer.convertedFromLeadId && (
+                <>
+                  <span className="hidden sm:inline text-slate-300">•</span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <CheckCircle2 size={12} className="text-emerald-500" />
+                    Converted from Lead: <strong className="font-bold">{convertedLead?.name || customer.convertedFromLeadId}</strong>
+                  </span>
+                </>
+              )}
             </div>
           </div>
           
@@ -170,6 +242,85 @@ export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customer
               <span className="text-sm font-bold text-[#0f172a]">{customer.ownerId || 'Unassigned'}</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* CUSTOMER HEALTH & DIAGNOSTICS CARD */}
+      <div className={`rounded-xl border p-5 mb-6 transition-all shadow-sm ${healthStyle.wrapper}`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200/60">
+          <div className="flex items-center gap-3">
+            <div className={`p-2.5 rounded-xl shadow-xs ${healthStyle.iconBg}`}>
+              {currentStatus === 'Active' ? (
+                <ShieldCheck size={22} />
+              ) : currentStatus === 'At Risk' ? (
+                <AlertTriangle size={22} />
+              ) : (
+                <Clock size={22} />
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className={`text-base font-bold ${healthStyle.headingColor}`}>Customer Health Status</h3>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${healthStyle.badge}`}>
+                  {currentStatus}
+                </span>
+                {loadingHealth && <RefreshCw size={12} className="animate-spin text-slate-400" />}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">System-driven classification based on live activity and business signals</p>
+            </div>
+          </div>
+
+          {/* Key Signal Indicators */}
+          <div className="flex items-center flex-wrap gap-2 text-xs">
+            <div className="bg-white/80 border border-slate-200/80 px-2.5 py-1 rounded-lg">
+              <span className="text-slate-500">Last Activity: </span>
+              <strong className="text-[#0f172a] font-semibold">
+                {healthSummary?.daysSinceLastActivity !== null && healthSummary?.daysSinceLastActivity !== undefined
+                  ? `${healthSummary.daysSinceLastActivity}d ago`
+                  : 'No activity'}
+              </strong>
+            </div>
+            <div className="bg-white/80 border border-slate-200/80 px-2.5 py-1 rounded-lg">
+              <span className="text-slate-500">Active Projects: </span>
+              <strong className="text-[#0f172a] font-semibold">{healthSummary?.activeProjects || 0}</strong>
+            </div>
+            <div className="bg-white/80 border border-slate-200/80 px-2.5 py-1 rounded-lg">
+              <span className="text-slate-500">Open Opps: </span>
+              <strong className="text-[#0f172a] font-semibold">{healthSummary?.openOpportunities || 0}</strong>
+            </div>
+            {(healthSummary?.overdueFollowUps || 0) > 0 && (
+              <div className="bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg text-rose-700 font-semibold">
+                Overdue Follow-ups: {healthSummary?.overdueFollowUps}
+              </div>
+            )}
+            {(healthSummary?.overdueInvoices || 0) > 0 && (
+              <div className="bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg text-rose-700 font-semibold">
+                Overdue Invoices: {healthSummary?.overdueInvoices}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Reasons List */}
+        <div className="pt-3">
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Why this status:</p>
+          <ul className="space-y-1.5 text-xs text-slate-600">
+            {healthSummary?.reasons && healthSummary.reasons.length > 0 ? (
+              healthSummary.reasons.map((reason, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className={`font-bold mt-0.5 ${healthStyle.bulletColor}`}>•</span>
+                  <span className="font-medium text-slate-800">{reason}</span>
+                </li>
+              ))
+            ) : (
+              <li className="flex items-start gap-2">
+                <span className={`font-bold mt-0.5 ${healthStyle.bulletColor}`}>•</span>
+                <span className="font-medium text-slate-800">
+                  {currentStatus === 'Active' ? 'Account has active business and no open risks.' : 'Standard account lifecycle.'}
+                </span>
+              </li>
+            )}
+          </ul>
         </div>
       </div>
 

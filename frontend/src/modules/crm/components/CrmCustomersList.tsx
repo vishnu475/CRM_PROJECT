@@ -212,9 +212,24 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
                         <div className="text-xs text-slate-500 mt-0.5">Limit</div>
                       </td>
                       <td className="p-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusBadge(customer.status)}`}>
-                          {customer.status}
-                        </span>
+                        <div className="relative group/status inline-block">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getStatusBadge(customer.status)} cursor-default`}>
+                            {customer.status}
+                          </span>
+                          {customer.healthSummary?.reasons && customer.healthSummary.reasons.length > 0 && (
+                            <div className="absolute left-0 bottom-full mb-1.5 hidden group-hover/status:block z-30 w-60 p-2.5 bg-slate-900 text-white text-xs rounded-lg shadow-xl border border-slate-700 pointer-events-none">
+                              <p className="font-bold text-slate-200 text-[11px] mb-1">Health Signals ({customer.status}):</p>
+                              <ul className="space-y-1 text-[10px] text-slate-300">
+                                {customer.healthSummary.reasons.map((r, idx) => (
+                                  <li key={idx} className="flex items-start gap-1">
+                                    <span className="text-indigo-400 font-bold">•</span>
+                                    <span>{r}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4">
                         <div className="flex justify-center items-center relative group/menu">
