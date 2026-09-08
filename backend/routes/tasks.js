@@ -222,6 +222,28 @@ router.post('/:id/reopen', async (req, res) => {
   }
 });
 
+// 13b. POST /api/tasks/:id/review — Admin reviews 100% task (APPROVE or REQUEST_CHANGES)
+router.post('/:id/review', async (req, res) => {
+  try {
+    const user = getAuthUser(req);
+    if (user.isEmployeeOnly) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Only Admins can review tasks.' });
+    }
+    const { decision, feedback, actualHours } = req.body;
+    if (decision === 'APPROVE') {
+      const updated = await TaskService.approveTask(req.params.id, user, { managerFeedback: feedback, actualHours });
+      return res.json({ success: true, message: 'Task approved and completed.', data: updated });
+    } else if (decision === 'REQUEST_CHANGES' || decision === 'CHANGES_REQUESTED') {
+      const updated = await TaskService.reopenTask(req.params.id, user, { managerFeedback: feedback });
+      return res.json({ success: true, message: 'Changes requested on task.', data: updated });
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid decision. Must be APPROVE or REQUEST_CHANGES.' });
+    }
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 // 14. POST /api/tasks/:id/reassign — Admin / Manager reassigns task
 router.post('/:id/reassign', async (req, res) => {
   try {
@@ -238,12 +260,22 @@ router.post('/:id/reassign', async (req, res) => {
   }
 });
 
-// 15. POST /api/tasks/:id/comments — Add comment to task
+// 15. GET /api/tasks/:id/comments — Get comments for specific task & project
+router.get('/:id/comments', async (req, res) => {
+  try {
+    const comments = await TaskService.getTaskComments(req.params.id, req.query.projectId || null);
+    res.json({ success: true, data: comments });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 15b. POST /api/tasks/:id/comments — Add comment to task
 router.post('/:id/comments', async (req, res) => {
   try {
     const user = getAuthUser(req);
-    const { comment } = req.body;
-    const newComment = await TaskService.addComment(req.params.id, user, comment);
+    const commentPayload = req.body;
+    const newComment = await TaskService.addComment(req.params.id, user, commentPayload);
     res.status(201).json({ success: true, message: 'Comment posted.', data: newComment });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

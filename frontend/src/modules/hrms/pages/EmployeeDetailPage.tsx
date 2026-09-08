@@ -29,7 +29,8 @@ import {
   Search,
   Check,
   X,
-  ChevronRight
+  ChevronRight,
+  GraduationCap
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
@@ -231,6 +232,35 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({ employee
           </div>
         </div>
       </div>
+
+      {/* Converted Intern History Ribbon */}
+      {employee.converted_from_intern_id && (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0">
+              <GraduationCap size={18} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-purple-950 flex items-center gap-2">
+                Converted from Internship
+                <span className="px-2 py-0.5 bg-purple-200 text-purple-800 rounded-full text-[10px] font-mono">
+                  Intern ID: {employee.converted_from_intern_id}
+                </span>
+              </p>
+              <p className="text-[11px] text-purple-700 mt-0.5">
+                Previous internship records, evaluations, mentor feedback, and certificates are permanently preserved in the HRMS Intern Repository.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveSubSection(`interns/${employee.converted_from_intern_id}`)}
+            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition-colors shrink-0 flex items-center gap-1 shadow-sm"
+          >
+            <span>View Intern Profile</span>
+            <ArrowRight size={13} />
+          </button>
+        </div>
+      )}
 
       {/* 17 Scrollable Tabs Bar */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-1.5 overflow-x-auto scrollbar-thin">

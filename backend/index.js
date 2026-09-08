@@ -25,6 +25,8 @@ import designationsRouter from './routes/designations.js';
 import branchesRouter from './routes/branches.js';
 import dashboardRouter from './routes/dashboard.js';
 import tasksRouter from './routes/tasks.js';
+import internsRouter from './routes/interns.js';
+import reportsRouter from './routes/reports.js';
 
 // ─── CRM Routes (Friend 1 — Leads, Customers, Opportunities, Sales) ──────────
 import leadsRouter from './routes/leads.js';
@@ -54,11 +56,15 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Ensure uploads/tasks directory exists and serve statically
+// Ensure uploads/tasks and uploads/documents directories exist
 const uploadsDir = path.join(__dirname, 'uploads');
 const tasksUploadsDir = path.join(uploadsDir, 'tasks');
+const docsUploadsDir = path.join(uploadsDir, 'documents');
 if (!fs.existsSync(tasksUploadsDir)) {
   fs.mkdirSync(tasksUploadsDir, { recursive: true });
+}
+if (!fs.existsSync(docsUploadsDir)) {
+  fs.mkdirSync(docsUploadsDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDir));
 
@@ -76,6 +82,8 @@ async function initializeHRMSSchema() {
     '009_admin_notifications_and_two_way_sync.sql',
     '010_enterprise_task_management_and_performance.sql',
     '011_task_attachments.sql',
+    '012_intern_management_complete.sql',
+    '013_enterprise_document_management_system.sql',
   ];
 
   for (const migrationFile of migrations) {
@@ -96,26 +104,33 @@ async function initializeHRMSSchema() {
 app.use(authenticateUser);
 
 import essRouter from './routes/ess.js';
+import documentsRouter from './routes/documents.js';
+import { documentTypesRouter, documentCategoriesRouter } from './routes/document_config.js';
 
 // ─── HRMS API Routes (Friend 2) ───────────────────────────────────────────────
-app.use('/api/auth',         authRouter);
-app.use('/api/employees',    employeesRouter);
-app.use('/api/hrms',         hrmsRouter);
-app.use('/api/tasks',        tasksRouter);
-app.use('/api/departments',  departmentsRouter);
-app.use('/api/designations', designationsRouter);
-app.use('/api/branches',     branchesRouter);
-app.use('/api/dashboard',    dashboardRouter);
-app.use('/api/attendance',   attendanceRouter);
-app.use('/api/shifts',       shiftsRouter);
-app.use('/api/leave',        leaveRouter);
-app.use('/api/payroll',      payrollRouter);
-app.use('/api/recruitment',  recruitmentRouter);
-app.use('/api/accounts',     accountsRouter);
-app.use('/api/banking',      bankingRouter);
-app.use('/api/expenses',     expensesRouter);
-app.use('/api/v1/employee',  essRouter);
-app.use('/api/employee',     essRouter);
+app.use('/api/auth',                authRouter);
+app.use('/api/employees',           employeesRouter);
+app.use('/api/hrms',                hrmsRouter);
+app.use('/api/tasks',               tasksRouter);
+app.use('/api/interns',             internsRouter);
+app.use('/api/departments',         departmentsRouter);
+app.use('/api/designations',        designationsRouter);
+app.use('/api/branches',            branchesRouter);
+app.use('/api/dashboard',           dashboardRouter);
+app.use('/api/attendance',          attendanceRouter);
+app.use('/api/shifts',              shiftsRouter);
+app.use('/api/leave',               leaveRouter);
+app.use('/api/payroll',             payrollRouter);
+app.use('/api/recruitment',         recruitmentRouter);
+app.use('/api/accounts',            accountsRouter);
+app.use('/api/banking',             bankingRouter);
+app.use('/api/expenses',            expensesRouter);
+app.use('/api/reports',             reportsRouter);
+app.use('/api/documents',           documentsRouter);
+app.use('/api/document-types',      documentTypesRouter);
+app.use('/api/document-categories', documentCategoriesRouter);
+app.use('/api/v1/employee',         essRouter);
+app.use('/api/employee',            essRouter);
 
 // ─── CRM API Routes (Friend 1) ────────────────────────────────────────────────
 app.use('/api/leads',           leadsRouter);

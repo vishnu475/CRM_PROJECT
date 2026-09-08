@@ -46,12 +46,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     if (selectedRole === 'Employee') {
       setEmail('ashok@company.com');
       setPassword('123456');
-    } else if (selectedRole === 'HRAdmin') {
-      setEmail('hr@company.com');
-      setPassword('123456');
-    } else if (selectedRole === 'FinanceAccountant') {
-      setEmail('finance@company.com');
-      setPassword('123456');
+    } else {
+      setEmail('admin@company.com');
+      setPassword('admin123');
     }
   };
 
@@ -332,10 +329,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                   >
                     <option value="Executive">Executive / Super Admin</option>
                     <option value="Employee">Employee Self-Service (ESS)</option>
-                    <option value="SalesManager">Sales Manager</option>
-                    <option value="HRAdmin">HR Admin</option>
-                    <option value="FinanceAccountant">Finance Accountant</option>
-                    <option value="OperationsManager">Operations Manager</option>
                   </select>
                   <div className="absolute right-4 top-4 pointer-events-none text-slate-500">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>

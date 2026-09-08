@@ -4,8 +4,10 @@ export type TaskStatus =
   | 'IN_PROGRESS'
   | 'BLOCKED'
   | 'SUBMITTED'
+  | 'READY_FOR_REVIEW'
   | 'COMPLETED'
   | 'CANCELLED'
+  | 'CHANGES_REQUESTED'
   | 'REOPENED';
 
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
@@ -25,6 +27,8 @@ export interface TaskActivity {
 export interface TaskComment {
   id: string;
   task_id: string;
+  project_id?: string;
+  parent_comment_id?: string;
   author_id: string;
   author_name: string;
   author_role: string;
@@ -40,6 +44,7 @@ export interface TaskItem {
   department_id?: string;
   department_name?: string;
   department?: string;
+  project_id?: string;
   project_name?: string;
   assigned_to: string;
   assigned_to_name?: string;

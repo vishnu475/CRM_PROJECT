@@ -122,8 +122,23 @@ router.post('/run', async (req, res) => {
   }
 });
 
+// Helper: Check Payroll Admin / Finance Role
+function checkPayrollAdminAuth(req, res, next) {
+  const role = req.user?.role || req.headers['x-user-role'] || (req.headers['x-employee-id'] ? 'Employee' : 'Admin');
+  if (role === 'Employee' || role === 'EMPLOYEE' || req.headers['x-employee-id']) {
+    // Only allow if explicit Admin/Finance/HR role is present and not an unprivileged employee
+    if (role !== 'Admin' && role !== 'Finance' && role !== 'HR' && role !== 'Manager') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Employees cannot disburse or execute salary payments.'
+      });
+    }
+  }
+  next();
+}
+
 // ONE-CLICK SALARY PAYMENT — SINGLE EMPLOYEE
-router.post('/employees/:employeeId/pay', async (req, res) => {
+router.post('/employees/:employeeId/pay', checkPayrollAdminAuth, async (req, res) => {
   const { employeeId } = req.params;
   const { month, year, processedBy = 'Finance Lead', idempotencyKey } = req.body;
   try {
@@ -141,7 +156,7 @@ router.post('/employees/:employeeId/pay', async (req, res) => {
   }
 });
 
-router.post('/pay-salary', async (req, res) => {
+router.post('/pay-salary', checkPayrollAdminAuth, async (req, res) => {
   const { employeeId, month, year, processedBy = 'Finance Lead', idempotencyKey } = req.body;
   try {
     const result = await PayrollService.payEmployeeSalary({
@@ -159,7 +174,7 @@ router.post('/pay-salary', async (req, res) => {
 });
 
 // ONE-CLICK BATCH SALARY PAYMENT — ALL ELIGIBLE EMPLOYEES
-router.post('/pay-all', async (req, res) => {
+router.post('/pay-all', checkPayrollAdminAuth, async (req, res) => {
   const { month, year, processedBy = 'Finance Lead' } = req.body;
   try {
     const result = await PayrollService.payAllEmployeesSalary({

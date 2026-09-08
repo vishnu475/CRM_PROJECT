@@ -251,7 +251,43 @@ export const TasksPage: React.FC = () => {
 
   // Form States - Comment
   const [commentInput, setCommentInput] = useState<string>('');
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [isPostingComment, setIsPostingComment] = useState<boolean>(false);
+
+  const handleSelectTaskDetail = async (task: TaskItem) => {
+    setSelectedTaskDetail(task);
+    setCommentInput('');
+    setReplyingToCommentId(null);
+    try {
+      const full = await taskApiService.getTaskById(task.id);
+      if (full) setSelectedTaskDetail(full);
+    } catch (e) {
+      console.warn('Could not fetch full task details:', e);
+    }
+  };
+
+  // Handle Comment Add
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTaskDetail || !commentInput.trim()) return;
+    setIsPostingComment(true);
+    try {
+      await taskApiService.addComment(selectedTaskDetail.id, {
+        comment: commentInput.trim(),
+        parentCommentId: replyingToCommentId || undefined,
+        projectId: selectedTaskDetail.project_name || selectedTaskDetail.project_id || undefined
+      });
+      setCommentInput('');
+      setReplyingToCommentId(null);
+      const updated = await taskApiService.getTaskById(selectedTaskDetail.id);
+      setSelectedTaskDetail(updated);
+      fetchTasksData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to post comment');
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
 
   // Fetch Tasks & Analytics
   const fetchTasksData = async () => {
@@ -457,23 +493,7 @@ export const TasksPage: React.FC = () => {
     }
   };
 
-  // Handle Comment Add
-  const handleAddComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTaskDetail || !commentInput.trim()) return;
-    setIsPostingComment(true);
-    try {
-      await taskApiService.addComment(selectedTaskDetail.id, commentInput.trim());
-      setCommentInput('');
-      const updated = await taskApiService.getTaskById(selectedTaskDetail.id);
-      setSelectedTaskDetail(updated);
-      fetchTasksData();
-    } catch (err: any) {
-      alert(err.message || 'Failed to post comment');
-    } finally {
-      setIsPostingComment(false);
-    }
-  };
+
 
   // Open AI Assistant
   const handleOpenAiAssistant = async (taskId?: string, empId?: string) => {
@@ -660,7 +680,7 @@ export const TasksPage: React.FC = () => {
           tasks={tasks}
           isLoading={isLoading}
           onRefresh={fetchTasksData}
-          onSelectTask={setSelectedTaskDetail}
+          onSelectTask={handleSelectTaskDetail}
         />
       );
     }
@@ -670,7 +690,7 @@ export const TasksPage: React.FC = () => {
         <TaskReportsView
           tasks={tasks}
           analytics={analytics}
-          onSelectTask={setSelectedTaskDetail}
+          onSelectTask={handleSelectTaskDetail}
           onAssignTask={() => {
             setActiveSubSection('assign-task');
             setViewMode('assign_task');
@@ -692,9 +712,10 @@ export const TasksPage: React.FC = () => {
           setActiveSubSection('assign-task');
           setViewMode('assign_task');
         }}
-        onSelectTask={setSelectedTaskDetail}
+        onSelectTask={handleSelectTaskDetail}
         onReassignTask={setReassignModalTask}
         onReviewTask={setReviewTaskModal}
+        onOpenComments={handleSelectTaskDetail}
       />
     );
   };
@@ -882,7 +903,14 @@ export const TasksPage: React.FC = () => {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200 text-[11px]">
                 <div>
                   <span className="text-slate-400 font-medium block text-[10px] uppercase">Assignee</span>
-                  <span className="font-semibold text-slate-900 mt-0.5 block">{selectedTaskDetail.employee_name || selectedTaskDetail.assigned_to_name}</span>
+                  <span className="font-semibold text-slate-900 mt-0.5 block">
+                    {selectedTaskDetail.employee_name || selectedTaskDetail.assigned_to_name}
+                    {selectedTaskDetail.assigned_to && (
+                      <span className="font-mono text-[10px] text-blue-600 font-bold ml-1">
+                        ({selectedTaskDetail.assigned_to})
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-400 font-medium block text-[10px] uppercase">Assigned By</span>
@@ -968,29 +996,84 @@ export const TasksPage: React.FC = () => {
 
             {/* Comments Thread */}
             <div className="space-y-2 pt-2 border-t border-slate-100">
-              <h4 className="font-semibold text-slate-900 text-xs flex items-center gap-1.5">
-                <MessageSquare size={13} className="text-slate-500" /> Comments
-              </h4>
-
-              <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                {(selectedTaskDetail.comments || []).map(cmt => (
-                  <div key={cmt.id} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200/80 space-y-0.5">
-                    <div className="flex justify-between items-center text-[10px]">
-                      <span className="font-semibold text-slate-800">{cmt.author_name}</span>
-                      <span className="text-slate-400 font-mono">{new Date(cmt.created_at).toLocaleTimeString()}</span>
-                    </div>
-                    <p className="text-slate-700 text-xs">{cmt.comment}</p>
-                  </div>
-                ))}
+              <div className="flex justify-between items-center">
+                <h4 className="font-semibold text-slate-900 text-xs flex items-center gap-1.5">
+                  <MessageSquare size={13} className="text-slate-500" /> Comments & Discussion
+                </h4>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {(selectedTaskDetail.comments || []).length} comment{((selectedTaskDetail.comments || []).length === 1 ? '' : 's')}
+                </span>
               </div>
+
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {(selectedTaskDetail.comments || []).length === 0 ? (
+                  <p className="text-slate-400 text-[11px] italic py-2 text-center">No comments yet. Start the conversation below.</p>
+                ) : (
+                  (selectedTaskDetail.comments || []).map(cmt => {
+                    const isReply = Boolean(cmt.parent_comment_id);
+                    return (
+                      <div
+                        key={cmt.id}
+                        className={`p-2.5 rounded-xl border transition ${
+                          isReply
+                            ? 'ml-6 bg-slate-50/80 border-slate-200/90'
+                            : 'bg-white border-slate-200 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center text-[10px]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-900">{cmt.author_name}</span>
+                            <span className="px-1.5 py-0.2 rounded text-[9px] bg-slate-100 text-slate-600 font-medium">
+                              {cmt.author_role || 'Member'}
+                            </span>
+                            {isReply && (
+                              <span className="text-[9px] text-blue-600 font-medium">↳ Reply</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-400 font-mono text-[9px]">{new Date(cmt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReplyingToCommentId(cmt.id);
+                                setCommentInput(`@${cmt.author_name} `);
+                              }}
+                              className="text-blue-600 hover:text-blue-800 text-[10px] font-semibold cursor-pointer"
+                            >
+                              Reply
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-slate-700 text-xs mt-1 leading-relaxed">{cmt.comment}</p>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {replyingToCommentId && (
+                <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50 text-blue-800 rounded-lg text-[10px] font-medium border border-blue-200">
+                  <span>Replying to comment #{replyingToCommentId.slice(-6)}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyingToCommentId(null);
+                      setCommentInput('');
+                    }}
+                    className="hover:text-blue-900 font-bold"
+                  >
+                    ✕ Cancel
+                  </button>
+                </div>
+              )}
 
               <form onSubmit={handleAddComment} className="flex gap-2 pt-1">
                 <input
                   type="text"
                   value={commentInput}
                   onChange={(e) => setCommentInput(e.target.value)}
-                  placeholder="Leave a comment..."
-                  className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white"
+                  placeholder={replyingToCommentId ? "Write your reply..." : "Leave a comment for this task..."}
+                  className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <Button variant="primary" size="sm" type="submit" disabled={isPostingComment || !commentInput.trim()}>
                   <Send size={12} />

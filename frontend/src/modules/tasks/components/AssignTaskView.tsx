@@ -63,6 +63,15 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const distinctProjects = useMemo(() => {
+    const s = new Set<string>();
+    ['HRMS & Payroll System', 'ERP Core Suite 2.0', 'Banking & Financial Ledger', 'Client Delivery Portal', 'HRMS Cloud Migration'].forEach(p => s.add(p));
+    projects.forEach((p: any) => {
+      if (p.name && p.name.trim()) s.add(p.name.trim());
+    });
+    return Array.from(s);
+  }, [projects]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // List strictly from live system employees
@@ -467,15 +476,9 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                     className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition appearance-none cursor-pointer pr-9"
                   >
                     <option value="">Select project</option>
-                    <option value="ERP Core Suite 2.0">ERP Core Suite 2.0</option>
-                    <option value="HRMS & Payroll System">HRMS & Payroll System</option>
-                    <option value="CRM Sales Pipeline">CRM Sales Pipeline</option>
-                    <option value="Banking & Financial Ledger">Banking & Financial Ledger</option>
-                    <option value="Inventory & Supply Chain">Inventory & Supply Chain</option>
-                    <option value="Client Delivery Portal">Client Delivery Portal</option>
-                    {projects.map(p => (
-                      <option key={p.id} value={p.name}>
-                        {p.name}
+                    {distinctProjects.map(p => (
+                      <option key={p} value={p}>
+                        {p}
                       </option>
                     ))}
                   </select>
@@ -786,8 +789,11 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                         className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-900 truncate">
-                          {emp.name}
+                        <p className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
+                          <span>{emp.name}</span>
+                          <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-100">
+                            {emp.empCode || emp.id}
+                          </span>
                         </p>
                         <p className="text-[11px] text-slate-500 truncate">
                           {emp.designation}
@@ -889,21 +895,27 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                   {selectedEmployees.length === 0 ? (
                     <span className="text-slate-400">-</span>
                   ) : (
-                    <div className="flex items-center -space-x-1.5 overflow-hidden">
-                      {selectedEmployees.slice(0, 3).map(emp => (
-                        <img
-                          key={emp.id}
-                          src={emp.avatar}
-                          alt={emp.name}
-                          title={emp.name}
-                          className="w-6 h-6 rounded-full border-2 border-white object-cover ring-1 ring-slate-200"
-                        />
-                      ))}
-                      {selectedEmployees.length > 3 && (
-                        <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[9px] font-bold text-slate-600 ring-1 ring-slate-200">
-                          +{selectedEmployees.length - 3}
-                        </div>
-                      )}
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center -space-x-1.5 overflow-hidden">
+                        {selectedEmployees.slice(0, 3).map(emp => (
+                          <img
+                            key={emp.id}
+                            src={emp.avatar}
+                            alt={emp.name}
+                            title={`${emp.name} (${emp.empCode || emp.id})`}
+                            className="w-6 h-6 rounded-full border-2 border-white object-cover ring-1 ring-slate-200"
+                          />
+                        ))}
+                        {selectedEmployees.length > 3 && (
+                          <div className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[9px] font-bold text-slate-600 ring-1 ring-slate-200">
+                            +{selectedEmployees.length - 3}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-[10px] font-medium text-slate-600">
+                        {selectedEmployees.slice(0, 2).map(emp => `${emp.name} (${emp.empCode || emp.id})`).join(', ')}
+                        {selectedEmployees.length > 2 && ` +${selectedEmployees.length - 2} more`}
+                      </div>
                     </div>
                   )}
                 </div>

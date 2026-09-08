@@ -109,6 +109,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     const status = r.status;
     const checkIn = r.check_in;
 
+    if (status === 'Not Joined' || status === 'NOT_JOINED') {
+      return <Badge variant="neutral">Not Joined</Badge>;
+    }
     if (status === 'Weekly Off' || status === 'WEEKLY_OFF') {
       return <Badge variant="neutral">Weekly Off</Badge>;
     }
@@ -346,7 +349,10 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                 let bgStyle = 'bg-rose-50/75 border-rose-200/80 text-rose-900';
                 let labelColor = 'text-rose-700';
 
-                if (status === 'Present' || status === 'PRESENT' || (checkIn && checkIn !== '-')) {
+                if (status === 'Not Joined' || status === 'NOT_JOINED') {
+                  bgStyle = 'bg-slate-50/60 border-dashed border-slate-200 text-slate-400';
+                  labelColor = 'text-slate-400 font-normal';
+                } else if (status === 'Present' || status === 'PRESENT' || (checkIn && checkIn !== '-')) {
                   bgStyle = 'bg-emerald-50/90 border-emerald-200 text-emerald-950';
                   labelColor = 'text-emerald-700 font-bold';
                   status = 'Present';

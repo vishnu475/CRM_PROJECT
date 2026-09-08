@@ -30,7 +30,11 @@ router.get('/today', async (req, res) => {
         COALESCE(TO_CHAR(r.date, 'YYYY-MM-DD'), $1::text) AS date,
         COALESCE(r.check_in, '-') AS check_in,
         COALESCE(r.check_out, '-') AS check_out,
-        COALESCE(r.status, 'Absent') AS status,
+        CASE 
+          WHEN r.check_in IS NOT NULL AND r.check_in != '-' AND r.check_in != 'OFF' THEN COALESCE(r.status, 'Present')
+          WHEN r.status IS NOT NULL THEN r.status
+          ELSE 'Absent'
+        END AS status,
         COALESCE(r.worked_hours, 0.0) AS work_hours,
         COALESCE(r.worked_hours, 0.0) AS worked_hours,
         COALESCE(r.late_minutes, 0) AS late_minutes,
@@ -38,9 +42,10 @@ router.get('/today', async (req, res) => {
        FROM employees e
        LEFT JOIN attendance_records r ON (r.employee_id = e.emp_code OR r.employee_id = e.id) AND (r.date = CURRENT_DATE OR TO_CHAR(r.date, 'YYYY-MM-DD') = $1::text)
        LEFT JOIN shifts s ON e.shift_id = s.id
-       WHERE e.status != 'Exited'
+       WHERE e.status != 'Exited' 
+         AND (e.joining_date IS NULL OR e.joining_date <= CURRENT_DATE)
        ORDER BY 
-         CASE WHEN r.check_in IS NOT NULL AND r.check_in != '-' THEN 0 ELSE 1 END,
+         CASE WHEN r.check_in IS NOT NULL AND r.check_in != '-' AND r.check_in != 'OFF' THEN 0 ELSE 1 END,
          e.emp_code ASC`,
       [today]
     );

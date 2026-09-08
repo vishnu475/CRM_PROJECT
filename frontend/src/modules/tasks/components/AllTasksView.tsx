@@ -14,7 +14,8 @@ import {
   Search,
   Eye,
   FileText,
-  UserCheck
+  UserCheck,
+  MessageSquare
 } from 'lucide-react';
 import { TaskItem, TaskPriority, TaskStatus } from '../types';
 
@@ -26,6 +27,7 @@ interface AllTasksViewProps {
   onSelectTask?: (task: TaskItem) => void;
   onReassignTask?: (task: TaskItem) => void;
   onReviewTask?: (task: TaskItem) => void;
+  onOpenComments?: (task: TaskItem) => void;
 }
 
 export const AllTasksView: React.FC<AllTasksViewProps> = ({
@@ -35,7 +37,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
   onAddTask,
   onSelectTask,
   onReassignTask,
-  onReviewTask
+  onReviewTask,
+  onOpenComments
 }) => {
   const [selectedProject, setSelectedProject] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -46,13 +49,14 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
 
   const fullList = tasks;
 
-  // Extract distinct projects
+  // Extract distinct projects (only real assigned projects)
   const availableProjects = useMemo(() => {
     const s = new Set<string>();
     fullList.forEach(t => {
-      if (t.project_name) s.add(t.project_name);
+      const p = t.project_name;
+      if (p && p.trim() && p !== 'DEFAULT' && p !== 'null') s.add(p.trim());
     });
-    return Array.from(s);
+    return Array.from(s).sort();
   }, [fullList]);
 
   // Overall KPIs
@@ -127,6 +131,20 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
       return (
         <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-600 border border-emerald-100">
           Completed
+        </span>
+      );
+    }
+    if (status === 'READY_FOR_REVIEW' || status === 'SUBMITTED') {
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 animate-pulse">
+          Ready for Review
+        </span>
+      );
+    }
+    if (status === 'CHANGES_REQUESTED' || status === 'REOPENED') {
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+          Changes Requested
         </span>
       );
     }
@@ -238,11 +256,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
               onChange={e => setSelectedProject(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer pr-8"
             >
-              <option value="ALL">All Projects</option>
-              <option value="HRMS Mobile App">HRMS Mobile App</option>
-              <option value="HRMS Backend">HRMS Backend</option>
-              <option value="HRMS Web">HRMS Web</option>
-              <option value="HRMS DevOps">HRMS DevOps</option>
+              <option value="ALL">All Assigned Projects</option>
               {availableProjects.map(p => (
                 <option key={p} value={p}>
                   {p}
@@ -334,13 +348,24 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
                   </td>
 
                   {/* Project */}
-                  <td className="py-3.5 px-4 font-medium text-slate-700 whitespace-nowrap">
-                    {task.project_name || 'HRMS General'}
+                  <td className="py-3.5 px-4 whitespace-nowrap">
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-100/90 text-slate-700 text-xs font-semibold border border-slate-200/80">
+                      {task.project_name || 'Assigned Project'}
+                    </span>
                   </td>
 
                   {/* Assigned To */}
-                  <td className="py-3.5 px-4 font-medium text-slate-800 whitespace-nowrap">
-                    {task.assigned_to_name || task.employee_name || 'Rohit Sharma'}
+                  <td className="py-3.5 px-4 whitespace-nowrap">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-900">
+                        {task.assigned_to_name || task.employee_name || 'Unassigned'}
+                      </span>
+                      {(task.assigned_to || task.employee_code) && (
+                        <span className="font-mono text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded w-fit mt-0.5 border border-blue-100">
+                          {task.assigned_to || task.employee_code}
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Progress UI */}
@@ -413,6 +438,18 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
                           <span>View Details</span>
                         </button>
 
+                        <button
+                          onClick={() => {
+                            if (onOpenComments) onOpenComments(task);
+                            else if (onSelectTask) onSelectTask(task);
+                            setActiveMenuTaskId(null);
+                          }}
+                          className="w-full px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl flex items-center gap-2.5 transition cursor-pointer"
+                        >
+                          <MessageSquare size={15} className="text-emerald-600 shrink-0" />
+                          <span>Comments</span>
+                        </button>
+
                         {(task.pdf_attachment_name || (task.attachments && task.attachments.length > 0)) && (
                           <button
                             onClick={() => {
@@ -439,7 +476,7 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
                           </button>
                         )}
 
-                        {onReviewTask && task.status === 'SUBMITTED' && (
+                        {onReviewTask && (task.status === 'SUBMITTED' || task.status === 'READY_FOR_REVIEW') && (
                           <button
                             onClick={() => {
                               onReviewTask(task);

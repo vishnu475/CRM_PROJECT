@@ -41,6 +41,15 @@ export class AttendanceEngineService {
     const todayStr = now.toISOString().split('T')[0];
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
+    if (employee.joining_date) {
+      const empJoiningDateStr = employee.joining_date instanceof Date 
+        ? employee.joining_date.toISOString().split('T')[0] 
+        : String(employee.joining_date).split('T')[0];
+      if (todayStr < empJoiningDateStr) {
+        throw new Error(`Cannot mark attendance before employee joining date (${empJoiningDateStr}).`);
+      }
+    }
+
     // 4. Check existing attendance record for today to determine if CHECK_IN or CHECK_OUT
     const recordRes = await pool.query(
       'SELECT * FROM attendance_records WHERE employee_id = $1 AND date = $2',
@@ -56,6 +65,13 @@ export class AttendanceEngineService {
       recordRes.rows[0].check_in !== '-' && 
       recordRes.rows[0].check_in !== 'OFF'
     ) {
+      if (
+        recordRes.rows[0].check_out &&
+        recordRes.rows[0].check_out !== '-' &&
+        recordRes.rows[0].check_out !== 'OFF'
+      ) {
+        throw new Error(`You have already completed check-out for today at ${recordRes.rows[0].check_out}.`);
+      }
       punchType = 'CHECK_OUT';
     }
 

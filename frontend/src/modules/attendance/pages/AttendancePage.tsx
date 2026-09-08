@@ -119,6 +119,22 @@ export const AttendancePage: React.FC = () => {
   const renderAttendanceStatusBadge = (att: DetailedAttendanceRecord) => {
     const isCheckedIn = att.checkIn && att.checkIn !== '-' && att.checkIn !== 'OFF';
     
+    if (att.status === 'Not Joined' || (att.status as any) === 'NOT_JOINED') {
+      return (
+        <span className="px-2.5 py-1 bg-slate-100 text-slate-500 border border-slate-200 font-medium rounded-lg text-[10px] inline-flex items-center gap-1">
+          Not Joined
+        </span>
+      );
+    }
+
+    if (att.status === '-' || (att.status as any) === 'Future Date') {
+      return (
+        <span className="px-2.5 py-1 bg-slate-50 text-slate-400 font-medium rounded-lg text-[10px] inline-flex items-center gap-1">
+          -
+        </span>
+      );
+    }
+
     if (att.status === 'Weekly Off' || att.status === 'WEEKLY_OFF') {
       return (
         <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-bold rounded-lg text-[10px] inline-flex items-center gap-1">

@@ -114,16 +114,26 @@ export const taskApiService = {
     return json.data;
   },
 
-  // Add Comment
-  async addComment(taskId: string, comment: string): Promise<any> {
+  // Add Comment (Supports reply and projectId)
+  async addComment(taskId: string, commentPayload: string | { comment: string; parentCommentId?: string; projectId?: string }): Promise<any> {
+    const payload = typeof commentPayload === 'string' ? { comment: commentPayload } : commentPayload;
     const res = await fetch(`/api/tasks/${taskId}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment })
+      body: JSON.stringify(payload)
     });
     const json = await res.json();
     if (!json.success) throw new Error(json.message || 'Failed to post comment');
     return json.data;
+  },
+
+  // Get Task Comments
+  async getComments(taskId: string, projectId?: string): Promise<any[]> {
+    const url = projectId ? `/api/tasks/${taskId}/comments?projectId=${encodeURIComponent(projectId)}` : `/api/tasks/${taskId}/comments`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to fetch comments');
+    return json.data || [];
   },
 
   // Get Analytics & Workload

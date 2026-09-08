@@ -245,6 +245,8 @@ export const ESSPage: React.FC = () => {
   const [completionNoteInput, setCompletionNoteInput] = useState<string>('');
   const [actualHoursInput, setActualHoursInput] = useState<string>('8');
   const [taskCommentInput, setTaskCommentInput] = useState<string>('');
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [isPostingComment, setIsPostingComment] = useState<boolean>(false);
   const [isSavingTaskProgress, setIsSavingTaskProgress] = useState<boolean>(false);
 
   const [assignTaskForm, setAssignTaskForm] = useState({
@@ -547,7 +549,7 @@ export const ESSPage: React.FC = () => {
         vendor: expVendor || 'Direct Vendor',
         payment_mode: expPaymentMode,
         claim_date: expDate,
-        status: 'PENDING_APPROVAL',
+        status: 'PENDING',
         created_at: new Date().toISOString()
       };
 
@@ -732,28 +734,73 @@ export const ESSPage: React.FC = () => {
     }
   };
 
+  const handleOpenTaskDetailModal = async (task: any) => {
+    setSelectedTaskDetailModal(task);
+    setReplyingToCommentId(null);
+    setTaskCommentInput('');
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        headers: {
+          'x-employee-id': currentEmpId
+        }
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setSelectedTaskDetailModal(json.data);
+      }
+    } catch (err) {
+      console.warn('Could not fetch full task details:', err);
+    }
+  };
+
   const handleAddTaskComment = async (taskId: string) => {
-    if (!taskCommentInput.trim()) return;
+    if (!taskCommentInput.trim() || isPostingComment) return;
+    setIsPostingComment(true);
     try {
       const res = await fetch(`/api/tasks/${taskId}/comments`, {
         method: 'POST',
         headers: getPostHeaders(),
-        body: JSON.stringify({ comment: taskCommentInput.trim() })
+        body: JSON.stringify({
+          comment: taskCommentInput.trim(),
+          parentCommentId: replyingToCommentId,
+          projectId: selectedTaskDetailModal?.project_id || selectedTaskDetailModal?.project_name
+        })
       });
       const json = await res.json();
       if (json.success) {
         setTaskCommentInput('');
-        // Update modal details
-        if (selectedTaskDetailModal && selectedTaskDetailModal.id === taskId) {
-          setSelectedTaskDetailModal((prev: any) => ({
-            ...prev,
-            comments: [...(prev.comments || []), json.data]
-          }));
+        setReplyingToCommentId(null);
+        try {
+          const detailRes = await fetch(`/api/tasks/${taskId}`, {
+            headers: {
+              'x-employee-id': currentEmpId
+            }
+          });
+          const detailJson = await detailRes.json();
+          if (detailJson.success && detailJson.data) {
+            setSelectedTaskDetailModal(detailJson.data);
+          } else if (selectedTaskDetailModal && selectedTaskDetailModal.id === taskId) {
+            setSelectedTaskDetailModal((prev: any) => ({
+              ...prev,
+              comments: [...(prev.comments || []), json.data]
+            }));
+          }
+        } catch {
+          if (selectedTaskDetailModal && selectedTaskDetailModal.id === taskId) {
+            setSelectedTaskDetailModal((prev: any) => ({
+              ...prev,
+              comments: [...(prev.comments || []), json.data]
+            }));
+          }
         }
         fetchAllESSData();
+      } else {
+        alert(json.message || 'Failed to post comment');
       }
     } catch (e: any) {
       alert(e.message || 'Error adding comment');
+    } finally {
+      setIsPostingComment(false);
     }
   };
 
@@ -808,6 +855,55 @@ export const ESSPage: React.FC = () => {
     } catch (e: any) { alert(e.message); }
   };
 
+  // Notifications Read State & Filter
+  const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => new Set());
+  const [notifFilter, setNotifFilter] = useState<'all' | 'unread' | 'read'>('all');
+
+  const unreadNotifCount = (dashData?.notifications || []).filter((n: any) => !n.is_read && !n.read && !readNotifIds.has(n.id)).length;
+
+  const handleOpenNotifications = async () => {
+    handleNavClick('notifications');
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    const allIds = (dashData?.notifications || []).map((n: any) => n.id);
+    setReadNotifIds(prev => new Set([...prev, ...allIds]));
+    if (dashData?.notifications) {
+      setDashData((prev: any) => prev ? {
+        ...prev,
+        notifications: (prev.notifications || []).map((n: any) => ({ ...n, is_read: true, read: true }))
+      } : prev);
+    }
+    try {
+      await fetch('/api/v1/employee/me/notifications/read-all', {
+        method: 'PATCH',
+        headers: getPostHeaders()
+      });
+    } catch (e) {}
+  };
+
+  const handleNotificationItemClick = async (notif: any) => {
+    const notifId = notif.id;
+    if (notifId) {
+      setReadNotifIds(prev => new Set([...prev, notifId]));
+      setDashData((prev: any) => prev ? {
+        ...prev,
+        notifications: (prev.notifications || []).map((n: any) => n.id === notifId ? { ...n, is_read: true, read: true } : n)
+      } : prev);
+      try {
+        await fetch(`/api/v1/employee/me/notifications/${notifId}/read`, {
+          method: 'PATCH',
+          headers: getPostHeaders()
+        });
+      } catch (e) {}
+    }
+
+    if (notif.link) {
+      const cleanLink = notif.link.replace('/employee/', '').replace('/employee', '');
+      if (cleanLink) handleNavClick(cleanLink);
+    }
+  };
+
   // DYNAMIC EMPLOYEE RECORD
   const emp = dashData?.employee || {
     name: userProfile?.name || 'Employee Account',
@@ -844,7 +940,7 @@ export const ESSPage: React.FC = () => {
     { id: 'hr-requests', label: 'HR Requests', icon: HelpCircle },
     { id: 'documents', label: 'Documents', icon: Folder },
     { id: 'timesheets', label: 'Timesheets', icon: FileText },
-    { id: 'notifications', label: 'Notifications', icon: Bell, badge: String(dashData?.notifications?.length || 0) },
+    { id: 'notifications', label: 'Notifications', icon: Bell, badge: unreadNotifCount > 0 ? String(unreadNotifCount) : undefined },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -1008,13 +1104,14 @@ export const ESSPage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setActiveSubSection && setActiveSubSection('notifications')}
+              onClick={handleOpenNotifications}
               className="relative p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              title="Notifications Center"
             >
               <Bell size={18} />
-              {dashData?.notifications?.length > 0 && (
+              {unreadNotifCount > 0 && (
                 <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center border-2 border-white shadow-2xs animate-pulse">
-                  {dashData.notifications.length}
+                  {unreadNotifCount}
                 </span>
               )}
             </button>
@@ -2167,7 +2264,7 @@ export const ESSPage: React.FC = () => {
               }
               return (
                 <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1 shadow-2xs">
-                  <Clock size={11} className="text-amber-600 animate-pulse" /> PENDING REVIEW
+                  <Clock size={11} className="text-amber-600 animate-pulse" /> PENDING
                 </span>
               );
             };
@@ -2860,7 +2957,7 @@ export const ESSPage: React.FC = () => {
                                 return (
                                   <div
                                     key={t.id}
-                                    onClick={() => setSelectedTaskDetailModal(t)}
+                                    onClick={() => handleOpenTaskDetailModal(t)}
                                     className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:shadow-md transition space-y-3 cursor-pointer"
                                   >
                                     <div className="flex items-center justify-between">
@@ -2982,7 +3079,7 @@ export const ESSPage: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium">
                         {filteredTasks.map((t: any) => (
-                          <tr key={t.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedTaskDetailModal(t)}>
+                          <tr key={t.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => handleOpenTaskDetailModal(t)}>
                             <td className="p-3.5 font-mono text-blue-600 font-bold">{t.id}</td>
                             <td className="p-3.5 font-bold text-slate-900">{t.title}</td>
                             <td className="p-3.5 text-slate-500">{t.project_name || 'General'}</td>
@@ -3285,22 +3382,103 @@ export const ESSPage: React.FC = () => {
                         )}
 
                         {/* Comments & Collaboration */}
-                        <div className="space-y-2 pt-2 border-t border-slate-100">
-                          <h4 className="font-bold text-slate-900 text-xs">Collaboration & Comments</h4>
+                        <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                          <div className="flex justify-between items-center">
+                            <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                              <MessageSquare size={13} className="text-slate-500" /> Comments & Discussion
+                            </h4>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {(selectedTaskDetailModal.comments || []).length} comment{((selectedTaskDetailModal.comments || []).length === 1 ? '' : 's')}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                            {(selectedTaskDetailModal.comments || []).length === 0 ? (
+                              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center">
+                                <p className="text-slate-400 text-[11px] italic">No comments yet. Start the conversation below.</p>
+                              </div>
+                            ) : (
+                              (selectedTaskDetailModal.comments || []).map((cmt: any) => {
+                                const isReply = Boolean(cmt.parent_comment_id);
+                                return (
+                                  <div
+                                    key={cmt.id}
+                                    className={`p-2.5 rounded-xl border transition ${
+                                      isReply
+                                        ? 'ml-6 bg-slate-50/80 border-slate-200/90'
+                                        : 'bg-white border-slate-200 shadow-2xs'
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-center text-[10px]">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-bold text-slate-900">{cmt.author_name}</span>
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-slate-100 text-slate-600 font-medium">
+                                          {cmt.author_role || 'Employee'}
+                                        </span>
+                                        {isReply && (
+                                          <span className="text-[9px] text-blue-600 font-medium">↳ Reply</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-slate-400 font-mono text-[9px]">
+                                          {cmt.created_at ? new Date(cmt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReplyingToCommentId(cmt.id);
+                                            setTaskCommentInput(`@${cmt.author_name} `);
+                                          }}
+                                          className="text-blue-600 hover:text-blue-800 text-[10px] font-semibold cursor-pointer"
+                                        >
+                                          Reply
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <p className="text-slate-700 text-xs mt-1 leading-relaxed">{cmt.comment}</p>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          {replyingToCommentId && (
+                            <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50 text-blue-800 rounded-lg text-[10px] font-medium border border-blue-200">
+                              <span>Replying to comment #{replyingToCommentId.slice(-6)}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyingToCommentId(null);
+                                  setTaskCommentInput('');
+                                }}
+                                className="hover:text-blue-900 font-bold"
+                              >
+                                ✕ Cancel
+                              </button>
+                            </div>
+                          )}
+
                           <div className="flex gap-2">
                             <input
                               type="text"
                               value={taskCommentInput}
                               onChange={e => setTaskCommentInput(e.target.value)}
-                              placeholder="Post a progress update or question..."
-                              className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleAddTaskComment(selectedTaskDetailModal.id);
+                                }
+                              }}
+                              placeholder={replyingToCommentId ? "Write your reply..." : "Leave a comment for this task..."}
+                              className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                             <button
                               type="button"
+                              disabled={isPostingComment || !taskCommentInput.trim()}
                               onClick={() => handleAddTaskComment(selectedTaskDetailModal.id)}
-                              className="px-3 py-2 bg-blue-600 text-white rounded-xl font-bold"
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs cursor-pointer flex items-center gap-1 transition"
                             >
-                              Post
+                              {isPostingComment ? 'Posting...' : 'Post'}
                             </button>
                           </div>
                         </div>
@@ -4947,42 +5125,636 @@ export const ESSPage: React.FC = () => {
           )}
 
           {/* VIEW: NOTIFICATIONS */}
-          {subSection === 'notifications' && (
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-              <h3 className="text-sm font-extrabold text-slate-900 border-b border-slate-100 pb-3">ESS Notifications & Feed</h3>
-              <div className="space-y-3 text-xs">
-                {(dashData?.notifications || []).map((n: any, idx: number) => (
-                  <div key={idx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-start gap-3">
-                    <Bell size={16} className="text-blue-600 shrink-0 mt-0.5" />
+          {subSection === 'notifications' && (() => {
+            const allNotifs = dashData?.notifications || [];
+            const filteredNotifs = allNotifs.filter((n: any) => {
+              const isUnread = !n.is_read && !n.read && !readNotifIds.has(n.id);
+              if (notifFilter === 'unread') return isUnread;
+              if (notifFilter === 'read') return !isUnread;
+              return true;
+            });
+
+            return (
+              <div className="space-y-6 max-w-5xl">
+                {/* Header Card */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold shadow-md shadow-blue-500/20">
+                      <Bell size={22} />
+                    </div>
                     <div>
-                      <p className="font-bold text-slate-900">{n.title}</p>
-                      <p className="text-slate-600 mt-0.5">{n.message}</p>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base font-black text-slate-900">Notifications & Alerts</h2>
+                        {unreadNotifCount > 0 ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shadow-2xs">
+                            {unreadNotifCount} Unread
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            All Caught Up
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        Real-time updates on approvals, tasks, payroll disbursals & company alerts
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* VIEW: SETTINGS */}
+                  <div className="flex items-center gap-2">
+                    {unreadNotifCount > 0 && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={handleMarkAllNotificationsRead}
+                        className="flex items-center gap-1.5 shadow-2xs font-extrabold"
+                      >
+                        <Check size={14} /> Mark all as read
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filter Tabs & List Container */}
+                <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div className="flex items-center gap-1.5">
+                      {[
+                        { id: 'all', label: `All (${allNotifs.length})` },
+                        { id: 'unread', label: `Unread (${unreadNotifCount})` },
+                        { id: 'read', label: `Read (${allNotifs.length - unreadNotifCount})` },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setNotifFilter(tab.id as any)}
+                          className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            notifFilter === tab.id
+                              ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20'
+                              : 'text-slate-600 hover:bg-slate-200/70'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="divide-y divide-slate-100">
+                    {filteredNotifs.length === 0 ? (
+                      <div className="p-12 text-center space-y-2">
+                        <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                          <Bell size={20} />
+                        </div>
+                        <p className="text-sm font-bold text-slate-800">No notifications found</p>
+                        <p className="text-xs text-slate-400">
+                          {notifFilter === 'unread' ? 'You have no unread notifications.' : 'No alerts have arrived yet.'}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredNotifs.map((n: any, idx: number) => {
+                        const isUnread = !n.is_read && !n.read && !readNotifIds.has(n.id);
+                        return (
+                          <div
+                            key={n.id || idx}
+                            onClick={() => handleNotificationItemClick(n)}
+                            className={`p-4 sm:p-5 flex items-start gap-4 transition-all cursor-pointer hover:bg-blue-50/40 ${
+                              isUnread ? 'bg-blue-50/20' : 'bg-white'
+                            }`}
+                          >
+                            <div className="shrink-0 mt-0.5 relative">
+                              <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                                isUnread ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20' : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                <Bell size={18} />
+                              </div>
+                              {isUnread && (
+                                <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full border-2 border-white shadow-2xs"></span>
+                              )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <h4 className={`text-xs ${isUnread ? 'font-black text-slate-900' : 'font-bold text-slate-700'}`}>
+                                    {n.title}
+                                  </h4>
+                                  {isUnread && (
+                                    <span className="px-2 py-0.2 rounded-full text-[9px] font-black bg-blue-100 text-blue-700 border border-blue-200">
+                                      NEW
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {n.created_at ? new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent'}
+                                </span>
+                              </div>
+
+                              <p className={`text-xs mt-1 leading-relaxed ${isUnread ? 'font-medium text-slate-800' : 'text-slate-500'}`}>
+                                {n.message}
+                              </p>
+
+                              {n.link && (
+                                <p className="text-[11px] font-bold text-blue-600 hover:text-blue-800 mt-2 flex items-center gap-1">
+                                  View details &rarr;
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="shrink-0 self-center">
+                              {isUnread ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleNotificationItemClick(n);
+                                  }}
+                                  className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-100/60 transition-colors"
+                                  title="Mark as read"
+                                >
+                                  <Check size={16} />
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-300 font-bold">Read</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* VIEW: SETTINGS & PROFILE MANAGEMENT */}
           {subSection === 'settings' && (
-            <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-6 max-w-xl">
-              <h3 className="text-sm font-extrabold text-slate-900 border-b border-slate-100 pb-3">Portal Settings</h3>
-              <div className="space-y-4 text-xs">
-                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
-                  <div>
-                    <p className="font-bold text-slate-900">Portal Theme</p>
-                    <p className="text-slate-500 text-[11px]">Current: {theme}</p>
+            <div className="space-y-6 max-w-5xl">
+              {/* Profile Overview Header Card */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-2xl text-white shadow-md border-2 border-white shrink-0">
+                    {emp.name ? emp.name.slice(0, 2).toUpperCase() : 'EM'}
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>Toggle Theme</Button>
-                </div>
-                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
                   <div>
-                    <p className="font-bold text-slate-900">Account PIN / Password</p>
-                    <p className="text-slate-500 text-[11px]">Change security PIN</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h2 className="text-lg font-extrabold text-slate-900">{profileEditForm.name || emp.name}</h2>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        {emp.empCode}
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Active Employee
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span>{profileEditForm.designation || emp.designation}</span>
+                      <span>•</span>
+                      <span>{profileEditForm.department || emp.department}</span>
+                      <span>•</span>
+                      <span>{emp.branch || 'Headquarters'}</span>
+                    </p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => alert('PIN change request submitted to HR.')}>Change PIN</Button>
                 </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleOpenEditProfile(
+                      profileEditForm.name || emp.name,
+                      profileEditForm.email || emp.email || '',
+                      profileEditForm.phone || emp.phone || '',
+                      profileEditForm.gender || emp.gender || 'Male',
+                      profileEditForm.avatar || '',
+                      profileEditForm.department || emp.department || '',
+                      profileEditForm.designation || emp.designation || '',
+                      profileEditForm.personalEmail || '',
+                      profileEditForm.bankAccount || '',
+                      profileEditForm.ifscCode || '',
+                      profileEditForm.panNumber || '',
+                      profileEditForm.uanNumber || ''
+                    )}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Edit3 size={14} /> Edit Profile Modal
+                  </Button>
+                </div>
+              </div>
+
+              {profileSuccessMsg && (
+                <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xs">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  {profileSuccessMsg}
+                </div>
+              )}
+
+              {/* Settings Tabs Container */}
+              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+                {/* Tab Navigation */}
+                <div className="flex items-center border-b border-slate-200 bg-slate-50/70 px-4 pt-3 overflow-x-auto gap-2">
+                  <button
+                    onClick={() => setEditModalTab('personal')}
+                    className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                      editModalTab === 'personal'
+                        ? 'bg-white text-blue-600 border-blue-600 shadow-2xs font-extrabold'
+                        : 'text-slate-500 hover:text-slate-900 border-transparent'
+                    }`}
+                  >
+                    <User size={14} /> Personal & Contact Info
+                  </button>
+
+                  <button
+                    onClick={() => setEditModalTab('organization')}
+                    className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                      editModalTab === 'organization'
+                        ? 'bg-white text-blue-600 border-blue-600 shadow-2xs font-extrabold'
+                        : 'text-slate-500 hover:text-slate-900 border-transparent'
+                    }`}
+                  >
+                    <Building2 size={14} /> Organization & Employment
+                  </button>
+
+                  <button
+                    onClick={() => setEditModalTab('bank')}
+                    className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                      editModalTab === 'bank'
+                        ? 'bg-white text-blue-600 border-blue-600 shadow-2xs font-extrabold'
+                        : 'text-slate-500 hover:text-slate-900 border-transparent'
+                    }`}
+                  >
+                    <CreditCard size={14} /> Bank & Statutory
+                  </button>
+
+                  <button
+                    onClick={() => setEditModalTab('contact')}
+                    className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                      editModalTab === 'contact'
+                        ? 'bg-white text-blue-600 border-blue-600 shadow-2xs font-extrabold'
+                        : 'text-slate-500 hover:text-slate-900 border-transparent'
+                    }`}
+                  >
+                    <Key size={14} /> Security & Preferences
+                  </button>
+                </div>
+
+                {/* Tab 1: Personal & Contact Profile Form */}
+                {editModalTab === 'personal' && (
+                  <form onSubmit={handleSaveProfile} className="p-6 md:p-8 space-y-6">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Personal Information</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">Manage your personal identification and direct contact details.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Full Legal Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={profileEditForm.name || emp.name}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, name: e.target.value }))}
+                          placeholder="e.g. Vishnu Vardhan"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Official Work Email</label>
+                        <input
+                          type="email"
+                          required
+                          value={profileEditForm.email || emp.email || ''}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, email: e.target.value }))}
+                          placeholder="e.g. vishnu.vardhan@company.com"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Personal Email Address</label>
+                        <input
+                          type="email"
+                          value={profileEditForm.personalEmail || ''}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, personalEmail: e.target.value }))}
+                          placeholder="e.g. vishnu.personal@gmail.com"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Primary Phone / Mobile</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.phone || emp.phone || '+91 98765 43210'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                          placeholder="+91 98765 43210"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Gender</label>
+                        <select
+                          value={profileEditForm.gender || 'Male'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, gender: e.target.value }))}
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+                        >
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Non-Binary">Non-Binary</option>
+                          <option value="Prefer not to say">Prefer not to say</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Emergency Contact Name & Relation</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.emergencyContactName || 'Family Member'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, emergencyContactName: e.target.value }))}
+                          placeholder="e.g. Spouse / Parent"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Emergency Contact Phone</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.emergencyContactPhone || '+91 98450 11223'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, emergencyContactPhone: e.target.value }))}
+                          placeholder="+91 98450 11223"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Residential Address</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.address || '#402, Skyline Residency, Cyber Gateway Road, Bengaluru - 560100'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, address: e.target.value }))}
+                          placeholder="Current residential street address"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                      <p className="text-[11px] text-slate-500">Updates sync instantly with your HRMS employee record.</p>
+                      <Button type="submit" variant="primary" size="sm" disabled={isSavingProfile}>
+                        {isSavingProfile ? 'Saving Changes...' : 'Save Profile Changes'}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Tab 2: Organization & Employment (HR Managed) */}
+                {editModalTab === 'organization' && (
+                  <div className="p-6 md:p-8 space-y-6 text-xs">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Organization & Employment Profile</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">Official organizational hierarchy, designation, and reporting manager.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Employee ID Code</p>
+                        <p className="font-mono text-sm font-black text-blue-700">{emp.empCode}</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Department</p>
+                        <p className="font-bold text-slate-900">{emp.department || 'Engineering'}</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Designation / Role</p>
+                        <p className="font-bold text-slate-900">{emp.designation || 'Lead Backend Architect'}</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Reporting Manager</p>
+                        <p className="font-bold text-slate-900">{emp.reportingManager || 'Sarah Jenkins (HR Director)'}</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Date of Joining</p>
+                        <p className="font-bold text-slate-900 font-mono">15 Jul 2024</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Employment Type</p>
+                        <p className="font-bold text-emerald-700">Full-Time / Permanent</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Work Location & Branch</p>
+                        <p className="font-bold text-slate-900">{emp.branch || 'Bengaluru Tech Hub - HQ'}</p>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Assigned Shift</p>
+                        <p className="font-bold text-slate-900">General Day Shift (09:00 AM – 06:00 PM)</p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-center justify-between">
+                      <span className="text-[11px] text-blue-900 font-semibold">To request transfer or designation updates, submit an HR request.</span>
+                      <Button variant="outline" size="sm" onClick={() => handleNavClick('hr-requests')}>
+                        Create HR Request &rarr;
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 3: Bank & Statutory Details */}
+                {editModalTab === 'bank' && (
+                  <form onSubmit={handleSaveProfile} className="p-6 md:p-8 space-y-6 text-xs">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Bank & Statutory Accounts</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">Official salary disbursement bank account and tax identification details.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Bank Name</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.bankName || 'HDFC Bank Ltd.'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, bankName: e.target.value }))}
+                          placeholder="e.g. HDFC Bank Ltd."
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Bank Account Number</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.bankAccount || '5020008892101'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, bankAccount: e.target.value }))}
+                          placeholder="Account Number"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">IFSC Code</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.ifscCode || 'HDFC0001234'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, ifscCode: e.target.value }))}
+                          placeholder="HDFC0001234"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white uppercase"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">PAN Card Number</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.panNumber || 'ABCDE1234F'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, panNumber: e.target.value }))}
+                          placeholder="ABCDE1234F"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white uppercase"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Aadhaar / National ID</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.aadhaarNumber || '5489-1234-8921'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
+                          placeholder="XXXX-XXXX-XXXX"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Provident Fund (UAN Number)</label>
+                        <input
+                          type="text"
+                          value={profileEditForm.uanNumber || '101234567890'}
+                          onChange={(e) => setProfileEditForm(prev => ({ ...prev, uanNumber: e.target.value }))}
+                          placeholder="101234567890"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                      <p className="text-[11px] text-slate-500">Statutory info is encrypted and shared only for payroll processing.</p>
+                      <Button type="submit" variant="primary" size="sm" disabled={isSavingProfile}>
+                        {isSavingProfile ? 'Saving...' : 'Update Bank & Tax Details'}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Tab 4: Security, PIN & Portal Preferences */}
+                {editModalTab === 'contact' && (
+                  <div className="p-6 md:p-8 space-y-6 text-xs">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Security & Portal Preferences</h4>
+                      <p className="text-xs text-slate-500 mt-0.5">Manage login credentials, PIN, and UI presentation options.</p>
+                    </div>
+
+                    {/* Change Security PIN Card */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
+                            <Key size={16} className="text-purple-600" /> Account PIN / Password
+                          </p>
+                          <p className="text-[11px] text-slate-500">Set your 4-digit or alphanumeric security PIN for quick ESS authentication.</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Current PIN / Pass</label>
+                          <input
+                            type="password"
+                            placeholder="Current PIN"
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">New Security PIN</label>
+                          <input
+                            type="password"
+                            placeholder="New PIN (e.g. 123456)"
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">Confirm New PIN</label>
+                          <input
+                            type="password"
+                            placeholder="Repeat New PIN"
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            setProfileSuccessMsg('Security PIN updated successfully!');
+                            setTimeout(() => setProfileSuccessMsg(null), 3000);
+                          }}
+                        >
+                          Update Security PIN
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Portal Theme & UI Presentation Card */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between">
+                      <div>
+                        <p className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
+                          {theme === 'dark' ? <Moon size={16} className="text-blue-600" /> : <Sun size={16} className="text-amber-500" />}
+                          Portal Visual Theme
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Toggle between dark mode and light mode across your workspace.</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                        className="font-bold shadow-2xs"
+                      >
+                        Switch to {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                      </Button>
+                    </div>
+
+                    {/* Notifications Preferences */}
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                      <p className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
+                        <Bell size={16} className="text-blue-600" /> Notification Channels
+                      </p>
+                      <div className="space-y-2 text-xs">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" defaultChecked className="rounded text-blue-600 focus:ring-blue-500" />
+                          <span className="font-bold text-slate-800">Email alerts on Leave & Expense status approvals</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" defaultChecked className="rounded text-blue-600 focus:ring-blue-500" />
+                          <span className="font-bold text-slate-800">Payslip release and tax breakdown notifications</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" defaultChecked className="rounded text-blue-600 focus:ring-blue-500" />
+                          <span className="font-bold text-slate-800">Task delegations & project milestone reminders</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

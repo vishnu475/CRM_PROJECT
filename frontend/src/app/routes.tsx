@@ -75,6 +75,9 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'exited', path: '/hrms/exited', label: 'Exited Employees' },
       { id: 'dashboard', path: '/hrms/dashboard', label: 'Employee Analytics' },
       { id: 'hierarchy', path: '/hrms/hierarchy', label: 'Reporting Org Chart' },
+      { id: 'interns', path: '/hrms/interns', label: 'Intern Management' },
+      { id: 'intern-management', path: '/hrms/intern-management', label: 'Intern Management' },
+      { id: 'intern-onboarding', path: '/hrms/intern-onboarding', label: 'Intern Onboarding' },
     ]
   },
   {

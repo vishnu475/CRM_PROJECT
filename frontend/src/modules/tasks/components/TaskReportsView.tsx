@@ -60,6 +60,16 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
 
   const activeTaskList = tasks;
 
+  // Extract distinct assigned projects
+  const availableProjects = useMemo(() => {
+    const s = new Set<string>();
+    tasks.forEach(t => {
+      const p = t.project_name;
+      if (p && p.trim() && p !== 'DEFAULT' && p !== 'null') s.add(p.trim());
+    });
+    return Array.from(s).sort();
+  }, [tasks]);
+
   // Filter tasks based on all active criteria
   const filteredTasks = useMemo(() => {
     return activeTaskList.filter(t => {
@@ -641,13 +651,9 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
                 onChange={e => setSelectedProjectFilter(e.target.value)}
                 className="pl-3 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-xl text-xs font-medium text-slate-700 focus:outline-none cursor-pointer appearance-none"
               >
-                <option value="ALL">All Projects</option>
-                <option value="ERP Core Suite 2.0">ERP Core Suite 2.0</option>
-                <option value="HRMS & Payroll System">HRMS & Payroll System</option>
-                <option value="Banking & Financial Ledger">Banking & Financial Ledger</option>
-                <option value="Client Delivery Portal">Client Delivery Portal</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.name}>{p.name}</option>
+                <option value="ALL">All Assigned Projects</option>
+                {availableProjects.map(p => (
+                  <option key={p} value={p}>{p}</option>
                 ))}
               </select>
               <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />

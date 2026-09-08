@@ -341,4 +341,34 @@ router.get('/me/activity-feed', async (req, res) => {
   }
 });
 
+// GET /api/v1/employee/me/notifications
+router.get('/me/notifications', async (req, res) => {
+  try {
+    const data = await ESSService.getEmployeeNotifications(req.employeeId);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/v1/employee/me/notifications/:id/read
+router.patch('/me/notifications/:id/read', async (req, res) => {
+  try {
+    const result = await ESSService.markEssNotificationRead(req.employeeId, req.params.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/v1/employee/me/notifications/read-all
+router.patch('/me/notifications/read-all', async (req, res) => {
+  try {
+    const result = await ESSService.markAllEssNotificationsRead(req.employeeId);
+    res.json({ success: true, message: 'All notifications marked as read', data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;

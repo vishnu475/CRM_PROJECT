@@ -327,13 +327,18 @@ export class ESSService {
         return rDate === dayStr;
       });
 
+      const empJoiningDate = emp.joining_date ? safeDateStr(emp.joining_date) : '';
+      const isBeforeJoining = Boolean(empJoiningDate && dayStr < empJoiningDate);
+
       let status = 'Absent';
       let checkIn = '-';
       let checkOut = '-';
       let workedHours = 0;
       let otHours = 0;
 
-      if (existing) {
+      if (isBeforeJoining) {
+        status = 'Not Joined';
+      } else if (existing) {
         checkIn = existing.check_in || '-';
         checkOut = existing.check_out || '-';
         workedHours = existing.worked_hours ? parseFloat(existing.worked_hours) : 0;
@@ -427,6 +432,15 @@ export class ESSService {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
     const nowTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    if (emp.joining_date) {
+      const empJoiningDateStr = emp.joining_date instanceof Date
+        ? emp.joining_date.toISOString().split('T')[0]
+        : String(emp.joining_date).split('T')[0];
+      if (todayStr < empJoiningDateStr) {
+        throw new Error(`Cannot mark attendance before employee joining date (${empJoiningDateStr}).`);
+      }
+    }
 
     // Validate anti-duplicate check in
     const checkRes = await pool.query(
@@ -798,7 +812,7 @@ export class ESSService {
     const res = await pool.query(
       `INSERT INTO expense_claims
          (id, employee_id, emp_name, category, amount, description, claim_date, vendor, payment_mode, receipt_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING_APPROVAL')
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING')
        RETURNING *`,
       [claimId, empCode, emp.name, category, Number(amount), description, claimDate, vendor, paymentMode, receiptUrl]
     );
@@ -808,7 +822,7 @@ export class ESSService {
       employeeId: empCode,
       employeeName: emp.name,
       entityId: claimId,
-      message: `${emp.name} (${empCode}) submitted Expense Claim of ₹${Number(amount).toLocaleString()} for ${category}`,
+      message: `${emp.name} (${empCode}) submitted expense request ${claimId} of ₹${Number(amount).toLocaleString()} for ${category} on ${claimDate}. Description: ${description || 'N/A'}`,
       priority: 'High',
       targetRole: 'Finance'
     });
@@ -1064,6 +1078,20 @@ export class ESSService {
   }
 
   /**
+   * 12B. Employee Documents (Delegated to DocumentService)
+   */
+  static async getEmployeeDocuments(employeeId) {
+    const emp = await this.resolveEmployee(employeeId);
+    const empCode = emp.emp_code || emp.id;
+    const { DocumentService } = await import('./documentService.js');
+    const result = await DocumentService.getDocuments(
+      { id: empCode, empCode, role: 'Employee', department: emp.department },
+      { section: 'my' }
+    );
+    return result.documents || [];
+  }
+
+  /**
    * 13. My Tasks Management (Delegated to TaskService)
    */
   static async getEmployeeTasks(employeeId) {
@@ -1245,6 +1273,45 @@ export class ESSService {
 
   static async markAdminNotificationRead(id) {
     await pool.query(`UPDATE admin_notifications SET read = TRUE WHERE id = $1`, [id]);
+    return { success: true };
+  }
+
+  static async markAllAdminNotificationsRead(role = 'All') {
+    if (role && role !== 'All' && role !== 'Executive') {
+      await pool.query(`UPDATE admin_notifications SET read = TRUE WHERE target_role = $1 OR target_role = 'All' OR target_role = 'HRManager'`, [role]);
+    } else {
+      await pool.query(`UPDATE admin_notifications SET read = TRUE`);
+    }
+    return { success: true };
+  }
+
+  static async getEmployeeNotifications(employeeId) {
+    const emp = await this.resolveEmployee(employeeId);
+    const empCode = emp.emp_code || emp.id;
+    const res = await pool.query(
+      `SELECT * FROM ess_notifications WHERE employee_id = $1 OR employee_id = $2 ORDER BY created_at DESC LIMIT 50`,
+      [emp.id, empCode]
+    );
+    return res.rows;
+  }
+
+  static async markEssNotificationRead(employeeId, notifId) {
+    const emp = await this.resolveEmployee(employeeId);
+    const empCode = emp.emp_code || emp.id;
+    await pool.query(
+      `UPDATE ess_notifications SET is_read = TRUE WHERE id = $1 AND (employee_id = $2 OR employee_id = $3)`,
+      [notifId, emp.id, empCode]
+    );
+    return { success: true };
+  }
+
+  static async markAllEssNotificationsRead(employeeId) {
+    const emp = await this.resolveEmployee(employeeId);
+    const empCode = emp.emp_code || emp.id;
+    await pool.query(
+      `UPDATE ess_notifications SET is_read = TRUE WHERE employee_id = $1 OR employee_id = $2`,
+      [emp.id, empCode]
+    );
     return { success: true };
   }
 

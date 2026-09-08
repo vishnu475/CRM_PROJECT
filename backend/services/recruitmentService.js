@@ -358,6 +358,7 @@ export class RecruitmentService {
              name = EXCLUDED.name,
              department = EXCLUDED.department,
              designation = EXCLUDED.designation,
+             joining_date = CURRENT_DATE,
              annual_salary = EXCLUDED.annual_salary,
              annual_ctc = EXCLUDED.annual_ctc,
              salary = EXCLUDED.salary,

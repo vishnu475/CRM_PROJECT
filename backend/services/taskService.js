@@ -616,14 +616,20 @@ export class TaskService {
     let nextStatus = status ? status.toUpperCase() : task.status;
     if (nextStatus === 'ASSIGNED') nextStatus = 'IN_PROGRESS';
 
+    if (progress === 100 && nextStatus !== 'COMPLETED') {
+      nextStatus = 'READY_FOR_REVIEW';
+    }
+
     const res = await pool.query(
       `UPDATE tasks
        SET progress_percent = $1,
-           status = $2,
+           status = $2::text,
+           submitted_at = CASE WHEN $2::text = 'READY_FOR_REVIEW' THEN COALESCE(submitted_at, CURRENT_TIMESTAMP) ELSE submitted_at END,
+           completion_note = CASE WHEN $2::text = 'READY_FOR_REVIEW' THEN COALESCE($4, completion_note) ELSE completion_note END,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3
        RETURNING *`,
-      [progress, nextStatus, taskId]
+      [progress, nextStatus, taskId, progressNote || 'Completed 100% work, submitted for review.']
     );
 
     const updatedTask = res.rows[0];
@@ -631,13 +637,23 @@ export class TaskService {
     // Log Activity
     await this.logTaskActivity({
       taskId,
-      action: 'PROGRESS_UPDATED',
+      action: progress === 100 ? 'TASK_SUBMITTED_FOR_REVIEW' : 'PROGRESS_UPDATED',
       performedBy: empCode,
       performedByName: emp.name,
       oldValue: `${task.progress_percent}% (${task.status})`,
       newValue: `${progress}% (${nextStatus})`,
       note: progressNote || `Progress updated to ${progress}%.`
     });
+
+    if (nextStatus === 'READY_FOR_REVIEW') {
+      await this.notifyAdmin({
+        type: 'TASK_100_PERCENT_REVIEW',
+        employeeId: empCode,
+        employeeName: emp.name,
+        entityId: taskId,
+        message: `${emp.name} has completed task "${task.title}" and submitted it for review.`
+      });
+    }
 
     broadcastTaskEvent({ action: 'TASK_PROGRESS_UPDATED', task: updatedTask, progressNote });
     return updatedTask;
@@ -763,7 +779,7 @@ export class TaskService {
 
     const res = await pool.query(
       `UPDATE tasks
-       SET status = 'REOPENED',
+       SET status = 'CHANGES_REQUESTED',
            reopened_at = CURRENT_TIMESTAMP,
            reopened_reason = $1,
            manager_feedback = $1,
@@ -779,18 +795,18 @@ export class TaskService {
     // Log activity
     await this.logTaskActivity({
       taskId,
-      action: 'TASK_REOPENED',
+      action: 'TASK_CHANGES_REQUESTED',
       performedBy: reviewerId,
       performedByName: reviewerName,
       oldValue: task.status,
-      newValue: 'REOPENED',
+      newValue: 'CHANGES_REQUESTED',
       note: `Changes requested by ${reviewerName}: ${managerFeedback}`
     });
 
     // Notify Employee
     await this.notifyEmployee({
       employeeId: task.assigned_to,
-      title: 'Task Reopened - Changes Requested',
+      title: 'Task Changes Requested',
       message: `Changes requested for "${task.title}": "${managerFeedback}". Please review and update.`,
       link: '/employee/tasks'
     });
@@ -866,8 +882,20 @@ export class TaskService {
   /**
    * 10. ADD COMMENT
    */
-  static async addComment(taskId, user = {}, commentText) {
+  static async addComment(taskId, user = {}, commentPayload) {
+    let commentText = typeof commentPayload === 'string' ? commentPayload : commentPayload.comment;
+    const parentCommentId = typeof commentPayload === 'object' ? commentPayload.parentCommentId || commentPayload.parent_comment_id || null : null;
+    let projectId = typeof commentPayload === 'object' ? commentPayload.projectId || commentPayload.project_id || null : null;
+
     if (!commentText || !commentText.trim()) throw new Error('Comment text cannot be empty.');
+
+    // Fetch task to resolve project_id and assigned_to if needed
+    const taskRes = await pool.query(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
+    const task = taskRes.rows.length > 0 ? taskRes.rows[0] : null;
+
+    if (!projectId && task) {
+      projectId = task.project_id || task.project_name || 'DEFAULT';
+    }
 
     const authorName = user.name || 'Employee';
     const authorId = user.empCode || user.id || 'EMP-006';
@@ -875,24 +903,60 @@ export class TaskService {
     const commentId = `TCMT-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
 
     const res = await pool.query(
-      `INSERT INTO task_comments (id, task_id, author_id, author_name, author_role, comment, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      `INSERT INTO task_comments (id, task_id, project_id, author_id, author_name, author_role, comment, parent_comment_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
        RETURNING *`,
-      [commentId, taskId, authorId, authorName, authorRole, commentText.trim()]
+      [commentId, taskId, projectId, authorId, authorName, authorRole, commentText.trim(), parentCommentId]
     );
 
     // Log Activity
     await this.logTaskActivity({
       taskId,
-      action: 'COMMENT_ADDED',
+      action: parentCommentId ? 'REPLY_ADDED' : 'COMMENT_ADDED',
       performedBy: authorId,
       performedByName: authorName,
       oldValue: null,
       newValue: null,
-      note: `Added comment: "${commentText.slice(0, 60)}..."`
+      note: `${parentCommentId ? 'Replied to comment: ' : 'Added comment: '}"${commentText.slice(0, 60)}..."`
     });
 
+    // Two-way notifications
+    if (authorRole === 'Admin' || authorRole === 'Manager' || authorRole === 'HR') {
+      if (task && task.assigned_to) {
+        await this.notifyEmployee({
+          employeeId: task.assigned_to,
+          title: parentCommentId ? 'New Reply on Task' : 'New Comment on Task',
+          message: `${authorName} commented on task "${task.title}": "${commentText.trim().slice(0, 100)}"`,
+          link: '/employee/tasks'
+        });
+      }
+    } else {
+      // Employee commented -> Notify Admin
+      await this.notifyAdmin({
+        type: 'TASK_COMMENT',
+        employeeId: authorId,
+        employeeName: authorName,
+        entityId: taskId,
+        message: `${authorName} commented on task "${task ? task.title : taskId}": "${commentText.trim().slice(0, 100)}"`
+      });
+    }
+
     return res.rows[0];
+  }
+
+  /**
+   * 10b. GET TASK COMMENTS
+   */
+  static async getTaskComments(taskId, projectId = null) {
+    let query = `SELECT * FROM task_comments WHERE task_id = $1`;
+    const params = [taskId];
+    if (projectId) {
+      params.push(projectId);
+      query += ` AND (project_id = $2 OR project_id IS NULL)`;
+    }
+    query += ` ORDER BY created_at ASC`;
+    const res = await pool.query(query, params);
+    return res.rows;
   }
 
   /**

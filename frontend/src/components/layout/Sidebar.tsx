@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard,
   Target,
@@ -95,7 +95,6 @@ export const Sidebar: React.FC = () => {
         const itemMap = new Map(DEFAULT_NAV_ITEMS.map(item => [item.id, item]));
         const ordered: NavItem[] = [];
         
-        // Add items in saved order
         for (const id of orderIds) {
           const item = itemMap.get(id as ModuleId);
           if (item) {
@@ -104,7 +103,6 @@ export const Sidebar: React.FC = () => {
           }
         }
         
-        // Append any new or unranked items
         itemMap.forEach(item => ordered.push(item));
         return ordered;
       } catch (e) {
@@ -134,7 +132,6 @@ export const Sidebar: React.FC = () => {
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = 'move';
-    // Set a clean drag preview
     e.dataTransfer.setData('text/plain', String(index));
   };
 

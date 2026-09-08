@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, LayoutGrid, List, Network, BarChart2, FileText, Shield, RefreshCw, LogOut, History, CheckCircle2, Award, Calendar, DollarSign, CreditCard, Pencil } from 'lucide-react';
+import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, LayoutGrid, List, Network, BarChart2, FileText, Shield, RefreshCw, LogOut, History, CheckCircle2, Award, Calendar, DollarSign, CreditCard, Pencil, GraduationCap } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
@@ -10,8 +10,12 @@ import { ReportingHierarchyView } from '../components/ReportingHierarchyView';
 import { EmployeeDocumentManager } from '../components/EmployeeDocumentManager';
 import { EmployeeTransferModal } from '../components/EmployeeTransferModal';
 import { AddEmployeeModal } from '../components/AddEmployeeModal';
+import { SelectPersonTypeModal } from '../components/SelectPersonTypeModal';
 import { ExtendedEmployee, EmployeeLifecycleStatus } from '../types';
 import { EmployeeDetailPage } from './EmployeeDetailPage';
+import { InternManagementPage } from './InternManagementPage';
+import { InternOnboardingPage } from './InternOnboardingPage';
+import { InternDetailPage } from './InternDetailPage';
 
 import { fetchAllEmployeesFromDB, saveEmployeeToDB, updateEmployeeInDB } from '../../../services/employeePersistence';
 
@@ -78,10 +82,20 @@ export const HrmsPage: React.FC = () => {
   }, [refreshFromDB, employees]);
 
   const { activeSubSection, setActiveSubSection } = useApp();
-  const mainTab = activeSubSection === 'dashboard' ? 'dashboard' : activeSubSection === 'hierarchy' ? 'hierarchy' : 'employees';
-  const setMainTab = (tab: 'dashboard' | 'employees' | 'hierarchy') => {
+  const subSectionLower = (activeSubSection || '').toLowerCase();
+  const mainTab: 'dashboard' | 'employees' | 'hierarchy' | 'interns' = 
+    activeSubSection === 'dashboard'
+      ? 'dashboard'
+      : activeSubSection === 'hierarchy'
+      ? 'hierarchy'
+      : subSectionLower.startsWith('intern')
+      ? 'interns'
+      : 'employees';
+
+  const setMainTab = (tab: 'dashboard' | 'employees' | 'hierarchy' | 'interns') => {
     if (tab === 'dashboard') setActiveSubSection('dashboard');
     else if (tab === 'hierarchy') setActiveSubSection('hierarchy');
+    else if (tab === 'interns') setActiveSubSection('interns');
     else setActiveSubSection('joined');
   };
   
@@ -111,6 +125,9 @@ export const HrmsPage: React.FC = () => {
   const [selectedDesig, setSelectedDesig] = useState('All');
 
   // Modals state
+  const [isSelectPersonTypeOpen, setIsSelectPersonTypeOpen] = useState(false);
+  const [isInternOnboardingOpen, setIsInternOnboardingOpen] = useState(false);
+  const [selectedInternId, setSelectedInternId] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [transferTargetEmployee, setTransferTargetEmployee] = useState<ExtendedEmployee | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<ExtendedEmployee | null>(null);
@@ -291,12 +308,56 @@ export const HrmsPage: React.FC = () => {
     }
   };
 
-  const subSectionLower = (activeSubSection || '').toLowerCase();
   if (subSectionLower.startsWith('employees/') || subSectionLower.startsWith('employee/')) {
     const targetEmpId = activeSubSection.split('/')[1];
     if (targetEmpId) {
       return <EmployeeDetailPage employeeId={targetEmpId} onBack={() => setActiveSubSection('all')} />;
     }
+  }
+
+  if (subSectionLower.startsWith('interns/') || subSectionLower.startsWith('intern/')) {
+    const targetInternId = activeSubSection.split('/')[1];
+    if (targetInternId) {
+      return (
+        <InternDetailPage
+          internId={targetInternId}
+          onBack={() => {
+            setSelectedInternId(null);
+            setActiveSubSection('interns');
+          }}
+          onNavigateToEmployee={(empId) => setActiveSubSection(`employees/${empId}`)}
+        />
+      );
+    }
+  }
+
+  if (selectedInternId) {
+    return (
+      <InternDetailPage
+        internId={selectedInternId}
+        onBack={() => {
+          setSelectedInternId(null);
+          setActiveSubSection('interns');
+        }}
+        onNavigateToEmployee={(empId) => setActiveSubSection(`employees/${empId}`)}
+      />
+    );
+  }
+
+  if (subSectionLower === 'intern-onboarding' || isInternOnboardingOpen) {
+    return (
+      <InternOnboardingPage
+        onBack={() => {
+          setIsInternOnboardingOpen(false);
+          setActiveSubSection('interns');
+        }}
+        onInternCreated={(newId) => {
+          setIsInternOnboardingOpen(false);
+          setSelectedInternId(newId);
+          setActiveSubSection(`interns/${newId}`);
+        }}
+      />
+    );
   }
 
   return (
@@ -328,7 +389,7 @@ export const HrmsPage: React.FC = () => {
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-purple-600' : 'text-purple-600'} />
             {isRefreshing ? 'Refreshing DB...' : 'Refresh DB Data'}
           </Button>
-          <Button variant="primary" size="sm" onClick={() => setIsAddModalOpen(true)}>
+          <Button variant="primary" size="sm" onClick={() => setIsSelectPersonTypeOpen(true)}>
             <Plus size={14} /> Add Employee
           </Button>
         </div>
@@ -343,6 +404,14 @@ export const HrmsPage: React.FC = () => {
           }`}
         >
           <UserCheck size={14} /> Employee Directory & Master
+        </button>
+        <button
+          onClick={() => setMainTab('interns')}
+          className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+            mainTab === 'interns' ? 'border-purple-600 text-purple-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <GraduationCap size={14} /> Intern Management
         </button>
         <button
           onClick={() => setMainTab('dashboard')}
@@ -361,6 +430,18 @@ export const HrmsPage: React.FC = () => {
           <Network size={14} /> Reporting Hierarchy Org Chart
         </button>
       </div>
+
+      {/* TAB CONTENT: INTERN MANAGEMENT */}
+      {mainTab === 'interns' && (
+        <InternManagementPage
+          onAddIntern={() => setIsInternOnboardingOpen(true)}
+          onSelectIntern={(id) => {
+            setSelectedInternId(id);
+            setActiveSubSection(`interns/${id}`);
+          }}
+          onNavigateToEmployee={(empId) => setActiveSubSection(`employees/${empId}`)}
+        />
+      )}
 
       {/* TAB CONTENT: DASHBOARD */}
       {mainTab === 'dashboard' && <EmployeeDashboard employees={extendedEmployees} />}
@@ -892,6 +973,20 @@ export const HrmsPage: React.FC = () => {
           </div>
         </Modal>
       )}
+
+      {/* SELECT PERSON TYPE MODAL (Employee vs Intern) */}
+      <SelectPersonTypeModal
+        isOpen={isSelectPersonTypeOpen}
+        onClose={() => setIsSelectPersonTypeOpen(false)}
+        onSelectType={(type) => {
+          setIsSelectPersonTypeOpen(false);
+          if (type === 'employee') {
+            setIsAddModalOpen(true);
+          } else {
+            setIsInternOnboardingOpen(true);
+          }
+        }}
+      />
     </div>
   );
 };

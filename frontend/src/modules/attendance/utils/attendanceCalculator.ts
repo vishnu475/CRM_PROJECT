@@ -334,6 +334,11 @@ export function calculateDailyAttendance(
     const leaveInfo = isEmployeeOnLeave(empId, emp.name, selectedDate, leaveRequests);
 
     const isExited = emp.status === 'Exited';
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    const empJoiningDate = emp.joiningDate || (emp as any).joining_date;
+    const empJoiningDateStr = empJoiningDate ? String(empJoiningDate).split('T')[0] : '';
+    const isBeforeJoining = Boolean(empJoiningDateStr && selectedDate < empJoiningDateStr);
+    const isFutureDate = Boolean(selectedDate > todayDateStr);
 
     let checkIn = '-';
     let checkOut = '-';
@@ -350,46 +355,48 @@ export function calculateDailyAttendance(
     const rawCheckIn = (logged as any)?.checkIn || (logged as any)?.check_in;
     const rawCheckOut = (logged as any)?.checkOut || (logged as any)?.check_out;
 
-    if (logged && rawCheckIn && rawCheckIn !== '-' && rawCheckIn !== 'OFF') {
-      checkIn = rawCheckIn;
-      checkOut = (rawCheckOut && rawCheckOut !== 'OFF') ? rawCheckOut : '-';
-    }
-
-    // Fallback to Live Attendance Events if checkIn is still '-'
-    if (checkIn === '-' && safeEvents.length > 0) {
-      const empEvents = safeEvents.filter(evt => {
-        const matchesEmp = evt.employeeId === empId || evt.employeeId === emp.id || (evt.empName && emp.name && evt.empName.toLowerCase() === emp.name.toLowerCase());
-        const eventDateStr = evt.timestamp ? evt.timestamp.split('T')[0] : selectedDate;
-        return matchesEmp && isSameDateStr(eventDateStr, selectedDate);
-      });
-
-      const inEvent = empEvents.find(e => e.eventType === 'CHECK_IN' || (e as any).punchType === 'CHECK_IN');
-      if (inEvent && inEvent.timeString) {
-        checkIn = inEvent.timeString;
+    if (!isBeforeJoining && !isFutureDate) {
+      if (logged && rawCheckIn && rawCheckIn !== '-' && rawCheckIn !== 'OFF') {
+        checkIn = rawCheckIn;
+        checkOut = (rawCheckOut && rawCheckOut !== 'OFF') ? rawCheckOut : '-';
       }
 
-      const outEvents = empEvents.filter(e => e.eventType === 'CHECK_OUT' || (e as any).punchType === 'CHECK_OUT');
-      if (outEvents.length > 0 && outEvents[outEvents.length - 1].timeString) {
-        checkOut = outEvents[outEvents.length - 1].timeString;
-      }
-    }
+      // Fallback to Live Attendance Events if checkIn is still '-'
+      if (checkIn === '-' && safeEvents.length > 0) {
+        const empEvents = safeEvents.filter(evt => {
+          const matchesEmp = evt.employeeId === empId || evt.employeeId === emp.id || (evt.empName && emp.name && evt.empName.toLowerCase() === emp.name.toLowerCase());
+          const eventDateStr = evt.timestamp ? evt.timestamp.split('T')[0] : '';
+          return matchesEmp && eventDateStr && isSameDateStr(eventDateStr, selectedDate);
+        });
 
-    if (checkIn !== '-') {
-      if (checkOut !== '-') {
-        workHours = calculateWorkedHours(checkIn, checkOut, empShift.breakDurationMins);
-      } else {
-        workHours = parseFloat((logged as any)?.workHours || (logged as any)?.worked_hours) || 0;
-      }
+        const inEvent = empEvents.find(e => e.eventType === 'CHECK_IN' || (e as any).punchType === 'CHECK_IN');
+        if (inEvent && inEvent.timeString) {
+          checkIn = inEvent.timeString;
+        }
 
-      lateMinutes = calculateLateMinutes(checkIn, empShift.startTime, empShift.gracePeriodMins);
-      isLateIn = lateMinutes > 0;
-
-      if (checkOut !== '-') {
-        earlyOutMinutes = calculateEarlyOutMinutes(checkOut, empShift.endTime);
-        isEarlyOut = earlyOutMinutes > 0;
+        const outEvents = empEvents.filter(e => e.eventType === 'CHECK_OUT' || (e as any).punchType === 'CHECK_OUT');
+        if (outEvents.length > 0 && outEvents[outEvents.length - 1].timeString) {
+          checkOut = outEvents[outEvents.length - 1].timeString;
+        }
       }
 
-      overtimeHours = parseFloat((logged as any)?.overtimeHours || (logged as any)?.overtime_hours) || calculateOvertimeHours(workHours, empShift.workHours);
+      if (checkIn !== '-') {
+        if (checkOut !== '-') {
+          workHours = calculateWorkedHours(checkIn, checkOut, empShift.breakDurationMins);
+        } else {
+          workHours = parseFloat((logged as any)?.workHours || (logged as any)?.worked_hours) || 0;
+        }
+
+        lateMinutes = calculateLateMinutes(checkIn, empShift.startTime, empShift.gracePeriodMins);
+        isLateIn = lateMinutes > 0;
+
+        if (checkOut !== '-') {
+          earlyOutMinutes = calculateEarlyOutMinutes(checkOut, empShift.endTime);
+          isEarlyOut = earlyOutMinutes > 0;
+        }
+
+        overtimeHours = parseFloat((logged as any)?.overtimeHours || (logged as any)?.overtime_hours) || calculateOvertimeHours(workHours, empShift.workHours);
+      }
     }
 
     const hasCheckIn = checkIn !== '-';
@@ -407,7 +414,11 @@ export function calculateDailyAttendance(
       isEarlyOut
     });
 
-    if (hasCheckIn && !leaveInfo.isOnLeave && !holidayInfo.isHoliday && isWorkDay) {
+    if (isBeforeJoining) {
+      derivedStatus = 'Not Joined' as any;
+    } else if (isFutureDate) {
+      derivedStatus = '-' as any;
+    } else if (hasCheckIn && !leaveInfo.isOnLeave && !holidayInfo.isHoliday && isWorkDay) {
       if (isLateIn) {
         derivedStatus = 'Late In';
       } else if (hasCheckOut && isEarlyOut) {
@@ -428,15 +439,15 @@ export function calculateDailyAttendance(
       date: selectedDate,
       shiftId: empShift.id,
       shiftName: empShift.name,
-      checkIn: isExited ? '-' : checkIn,
-      checkOut: isExited ? '-' : checkOut,
-      workHours: isExited ? 0 : workHours,
-      workedHours: isExited ? 0 : workHours,
-      overtimeHours: isExited ? 0 : overtimeHours,
-      lateMinutes: isExited ? 0 : lateMinutes,
-      earlyOutMinutes: isExited ? 0 : earlyOutMinutes,
-      isLateIn: isExited ? false : isLateIn,
-      isEarlyOut: isExited ? false : isEarlyOut,
+      checkIn: isExited || isBeforeJoining || isFutureDate ? '-' : checkIn,
+      checkOut: isExited || isBeforeJoining || isFutureDate ? '-' : checkOut,
+      workHours: isExited || isBeforeJoining || isFutureDate ? 0 : workHours,
+      workedHours: isExited || isBeforeJoining || isFutureDate ? 0 : workHours,
+      overtimeHours: isExited || isBeforeJoining || isFutureDate ? 0 : overtimeHours,
+      lateMinutes: isExited || isBeforeJoining || isFutureDate ? 0 : lateMinutes,
+      earlyOutMinutes: isExited || isBeforeJoining || isFutureDate ? 0 : earlyOutMinutes,
+      isLateIn: isExited || isBeforeJoining || isFutureDate ? false : isLateIn,
+      isEarlyOut: isExited || isBeforeJoining || isFutureDate ? false : isEarlyOut,
       status: isExited ? 'Absent' : derivedStatus,
       location,
       ipAddress,

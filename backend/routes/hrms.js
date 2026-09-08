@@ -204,6 +204,17 @@ router.patch('/notifications/:id/read', async (req, res) => {
   }
 });
 
+// PATCH /api/hrms/notifications/read-all
+router.patch('/notifications/read-all', async (req, res) => {
+  const { role } = req.body || {};
+  try {
+    await ESSService.markAllAdminNotificationsRead(role || 'All');
+    res.json({ success: true, message: 'All notifications marked as read' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET /api/hrms/employees/:employeeId/full-report — 100% Complete Dynamic Employee Report
 router.get('/employees/:employeeId/full-report', async (req, res) => {
   const { employeeId } = req.params;
@@ -330,23 +341,36 @@ router.get('/expense-claims', async (req, res) => {
 
 // POST /api/hrms/approvals/expense
 router.post('/approvals/expense', async (req, res) => {
+  const callerRole = req.user?.role || req.headers['x-user-role'] || (req.headers['x-employee-id'] ? 'Employee' : 'Admin');
+  if (callerRole === 'Employee' || callerRole === 'EMPLOYEE') {
+    return res.status(403).json({ success: false, message: 'Forbidden: Employees are not authorized to approve or reject expenses.' });
+  }
+
   const { claimId, status, reviewerName } = req.body;
   try {
+    const isApproved = status && (status.toUpperCase() === 'APPROVED' || status.toUpperCase() === 'FINANCE_APPROVED');
+    const finalStatus = isApproved ? 'FINANCE_APPROVED' : 'REJECTED';
+
     const updated = await pool.query(
-      `UPDATE expense_claims SET status = $1, approved_by = $2 WHERE id = $3 RETURNING *`,
-      [status, reviewerName || 'Finance Manager', claimId]
+      `UPDATE expense_claims SET status = $1, approved_by = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
+      [finalStatus, reviewerName || 'Finance Manager', claimId]
     );
     if (updated.rows.length === 0) return res.status(404).json({ success: false, message: 'Expense claim not found' });
     const exp = updated.rows[0];
 
+    const notifTitle = isApproved ? 'Expense Request Approved' : 'Expense Request Rejected';
+    const notifMsg = isApproved 
+      ? `Your expense request ${exp.id} has been approved.`
+      : `Your expense request ${exp.id} has been rejected.`;
+
     await ESSService.createNotification(
       exp.employee_id,
-      `Expense Claim ${status}`,
-      `Your Expense Claim of ₹${exp.amount} (${exp.category}) has been ${status.toLowerCase()}.`,
+      notifTitle,
+      notifMsg,
       '/employee/expenses'
     );
 
-    res.json({ success: true, message: `Expense claim ${status.toLowerCase()} successfully.`, data: exp });
+    res.json({ success: true, message: `Expense claim ${finalStatus} successfully.`, data: exp });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

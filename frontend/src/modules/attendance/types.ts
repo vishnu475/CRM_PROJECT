@@ -7,6 +7,8 @@ export type AttendanceLogStatus =
   | 'Half Day'
   | 'Holiday'
   | 'Weekly Off'
+  | 'Not Joined'
+  | '-'
   | 'PRESENT'
   | 'LATE_IN'
   | 'EARLY_OUT'
@@ -14,7 +16,8 @@ export type AttendanceLogStatus =
   | 'ON_LEAVE'
   | 'HALF_DAY'
   | 'HOLIDAY'
-  | 'WEEKLY_OFF';
+  | 'WEEKLY_OFF'
+  | 'NOT_JOINED';
 
 export type AttendanceSource = 'WEB_KIOSK' | 'BIOMETRIC' | 'RFID' | 'FACE' | 'QR' | 'MOBILE';
 export type AttendanceEventType = 'CHECK_IN' | 'CHECK_OUT';
