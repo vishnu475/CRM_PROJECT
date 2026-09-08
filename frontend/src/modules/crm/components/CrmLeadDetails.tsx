@@ -1,11 +1,16 @@
 import React, { useState, useMemo } from 'react';
-import { CrmView } from '../../../types';
+import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
+import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
+import { findMatchingCustomer, DuplicateCustomerMatch } from '../utils/duplicateCustomerDetection';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
-  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download
+  CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award,
+  XCircle, AlertOctagon, Rocket, Sparkles, CheckCheck, ShieldCheck, FolderKanban, Users
 } from 'lucide-react';
+import { ConvertLeadModal } from './ConvertLeadModal';
+import { CreateProjectModal } from './CreateProjectModal';
 
 interface CrmLeadDetailsProps {
   leadId: string;
@@ -17,12 +22,28 @@ type TabType = 'overview' | 'activities' | 'notes' | 'documents';
 const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 
 export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewChange }) => {
-  const { leads, activities, notes, documents, followUps, updateLead, addActivity, addNote, addFollowUp, addDocument } = useApp();
+  const { leads, customers, contacts, opportunities, activities, notes, documents, followUps, quotations, projects, updateLead, addActivity, updateActivity, addQuotation, updateQuotation, addNote, addFollowUp, addDocument, convertLead, setActiveModule } = useApp();
   
   const lead = leads.find(l => l.id === leadId);
+  const associatedContact = useMemo(() => {
+    if (!lead) return null;
+    return contacts.find(c => (c.leadId && c.leadId === lead.id) || (lead.convertedToContactId && c.id === lead.convertedToContactId)) || null;
+  }, [lead, contacts]);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showProposalModal, setShowProposalModal] = useState(false);
+  const [showWonModal, setShowWonModal] = useState(false);
+  const [showLostModal, setShowLostModal] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
+  const [convertSubmitting, setConvertSubmitting] = useState(false);
+  const [convertError, setConvertError] = useState<string | null>(null);
+  const [matchedCustomer, setMatchedCustomer] = useState<any>(null);
+  const [matchedReason, setMatchedReason] = useState<string>('');
+  const [customerChoice, setCustomerChoice] = useState<'existing' | 'new'>('existing');
   
   // Forms visibility state
   const [showActivityForm, setShowActivityForm] = useState(false);
@@ -30,11 +51,399 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [showFollowUpForm, setShowFollowUpForm] = useState(false);
   
   // Form States
-  const [activityForm, setActivityForm] = useState({ type: 'Call' as any, title: '', date: '', outcome: '' });
+  const [activityForm, setActivityForm] = useState<{
+    type: 'Call' | 'Meeting' | 'Email' | 'Task';
+    purpose: 'General' | 'Follow-up' | 'Negotiation' | 'Customer Acceptance' | 'Deal Closed';
+    title: string;
+    date: string;
+    outcome: string;
+    status: 'Completed' | 'Pending';
+  }>({
+    type: 'Call',
+    purpose: 'General',
+    title: '',
+    date: '',
+    outcome: '',
+    status: 'Completed',
+  });
   const [noteContent, setNoteContent] = useState('');
   const [followUpForm, setFollowUpForm] = useState({ type: 'Call' as any, date: '', description: '' });
+  const [proposalForm, setProposalForm] = useState({
+    amount: '',
+    date: '',
+    status: 'Draft' as 'Draft' | 'Sent',
+    sentDate: '',
+  });
+  const [wonForm, setWonForm] = useState({
+    finalAgreedAmount: '',
+    wonDate: new Date().toISOString().split('T')[0],
+    acceptanceNotes: 'Customer accepted the proposal and confirmed deal closure.',
+    recordAcceptanceActivity: true,
+  });
+  const [lostForm, setLostForm] = useState({
+    lostReason: 'Budget too high',
+    lostReasonDetails: '',
+    lostNotes: '',
+    lostDate: new Date().toISOString().split('T')[0],
+  });
+  const [convertForm, setConvertForm] = useState({
+    customerName: '',
+    customerType: 'Company' as 'Company' | 'Individual',
+    industry: '',
+    website: '',
+    contactName: '',
+    contactDesignation: '',
+    contactEmail: '',
+    contactPhone: '',
+    opportunityName: '',
+    opportunityValue: '',
+    expectedCloseDate: '',
+  });
+  const [editForm, setEditForm] = useState({
+    name: '',
+    company: '',
+    email: '',
+    phone: '',
+    requirement: '',
+    budget: '',
+    decisionMaker: '',
+    expectedCloseDate: '',
+    industry: '',
+    source: '',
+  });
 
-  const leadActivities = useMemo(() => activities.filter(a => a.relatedTo === leadId).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()), [activities, leadId]);
+  const leadQuotation = useMemo(() => {
+    if (!lead) return null;
+    return quotations.find(
+      (q) =>
+        q.customerId === lead.id ||
+        q.leadId === lead.id ||
+        q.customerName === lead.name ||
+        (q.customerId && q.customerId.includes(lead.id)) ||
+        (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
+    ) || null;
+  }, [quotations, lead]);
+
+  const openProposalModal = () => {
+    if (!lead) return;
+    const defaultAmount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || '';
+    const defaultDate = leadQuotation?.date || lead.proposalDate || new Date().toISOString().split('T')[0];
+    const defaultStatus: 'Draft' | 'Sent' = (leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') ? 'Draft' : 'Sent';
+    const defaultSentDate = leadQuotation?.sentDate || lead.proposalSentDate || (defaultStatus === 'Sent' ? new Date().toISOString().split('T')[0] : '');
+
+    setProposalForm({
+      amount: defaultAmount ? defaultAmount.toString() : '',
+      date: defaultDate,
+      status: defaultStatus,
+      sentDate: defaultSentDate,
+    });
+    setShowProposalModal(true);
+  };
+
+  const handleSaveProposal = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+    const numericAmount = parseFloat(proposalForm.amount) || 0;
+    const computedSentDate = proposalForm.status === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '';
+
+    if (leadQuotation) {
+      await updateQuotation(leadQuotation.id, {
+        amount: numericAmount,
+        date: proposalForm.date || new Date().toISOString().split('T')[0],
+        status: proposalForm.status,
+        sentDate: computedSentDate,
+      });
+    } else {
+      await addQuotation({
+        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+        customerId: lead.id,
+        leadId: lead.id,
+        customerName: lead.name,
+        date: proposalForm.date || new Date().toISOString().split('T')[0],
+        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        amount: numericAmount,
+        status: proposalForm.status,
+        sentDate: computedSentDate,
+        itemsCount: 1,
+      });
+    }
+
+    const shouldAdvance = lead.stage === 'Qualified' && proposalForm.status === 'Sent' && numericAmount > 0;
+
+    updateLead(lead.id, {
+      proposalAmount: numericAmount,
+      proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+      proposalStatus: proposalForm.status,
+      proposalSentDate: computedSentDate,
+      ...(shouldAdvance ? { stage: 'Proposal' } : {}),
+    });
+
+    setShowProposalModal(false);
+    setValidationError(null);
+  };
+
+  const handleSendProposal = async () => {
+    if (!lead) return;
+    const today = new Date().toISOString().split('T')[0];
+    const amount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || 0;
+    const date = leadQuotation?.date || lead.proposalDate || today;
+
+    if (leadQuotation) {
+      await updateQuotation(leadQuotation.id, {
+        status: 'Sent',
+        sentDate: today,
+      });
+    } else {
+      await addQuotation({
+        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+        customerId: lead.id,
+        leadId: lead.id,
+        customerName: lead.name,
+        date: date,
+        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        amount: amount,
+        status: 'Sent',
+        sentDate: today,
+        itemsCount: 1,
+      });
+    }
+
+    const shouldAdvance = lead.stage === 'Qualified' && amount > 0;
+
+    updateLead(lead.id, {
+      proposalStatus: 'Sent',
+      proposalSentDate: today,
+      proposalAmount: amount,
+      proposalDate: date,
+      ...(shouldAdvance ? { stage: 'Proposal' } : {}),
+    });
+
+    setValidationError(null);
+  };
+
+  const openWonModal = () => {
+    if (!lead) return;
+    const defaultAmount = lead.finalAgreedAmount || leadQuotation?.amount || lead.proposalAmount || lead.value || lead.budget || '';
+    const defaultWonDate = lead.wonDate || new Date().toISOString().split('T')[0];
+    setWonForm({
+      finalAgreedAmount: defaultAmount ? defaultAmount.toString() : '',
+      wonDate: defaultWonDate,
+      acceptanceNotes: 'Customer accepted the proposal and confirmed deal closure.',
+      recordAcceptanceActivity: true,
+    });
+    setShowWonModal(true);
+  };
+
+  const handleSaveWon = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+    const numericFinalAmount = parseFloat(wonForm.finalAgreedAmount) || 0;
+    const finalWonDate = wonForm.wonDate || new Date().toISOString().split('T')[0];
+
+    if (wonForm.recordAcceptanceActivity) {
+      await addActivity({
+        title: 'Customer Deal Acceptance & Agreement Signed',
+        type: 'Meeting',
+        purpose: 'Customer Acceptance',
+        relatedTo: lead.id,
+        assignedTo: lead.assignedTo,
+        dueDate: finalWonDate,
+        priority: 'High',
+        status: 'Completed',
+        outcome: wonForm.acceptanceNotes,
+      });
+    }
+
+    updateLead(lead.id, {
+      finalAgreedAmount: numericFinalAmount,
+      wonDate: finalWonDate,
+      value: numericFinalAmount,
+      stage: 'Won',
+    });
+
+    setShowWonModal(false);
+    setValidationError(null);
+  };
+
+  const openLostModal = () => {
+    if (!lead) return;
+    if (lead.stage === 'Won') {
+      setValidationError('Cannot move a "Won" lead to "Lost". Deals marked as Won are closed and finalized.');
+      return;
+    }
+    setLostForm({
+      lostReason: lead.lostReason || 'Budget too high',
+      lostReasonDetails: lead.lostReasonDetails || '',
+      lostNotes: lead.lostNotes || lead.notes || '',
+      lostDate: lead.lostDate || new Date().toISOString().split('T')[0],
+    });
+    setShowLostModal(true);
+  };
+
+  const openConvertModal = () => {
+    if (!lead) return;
+    const validation = validateLeadConversion(lead);
+    if (!validation.allowed) {
+      setValidationError(validation.reason || 'Lead is not eligible for conversion.');
+      return;
+    }
+    setValidationError(null);
+    setConvertError(null);
+
+    // Duplicate customer check
+    const match = findMatchingCustomer(lead, customers);
+    if (match.hasDuplicate && match.matchingCustomer) {
+      setMatchedCustomer(match.matchingCustomer);
+      setMatchedReason(match.matchReason || 'Strong business identifier matched an existing customer account');
+      setCustomerChoice('existing');
+    } else {
+      setMatchedCustomer(null);
+      setMatchedReason('');
+      setCustomerChoice('new');
+    }
+
+    const defaultOppSummary = lead.requirement
+      ? lead.requirement.length > 30
+        ? lead.requirement.substring(0, 27) + '...'
+        : lead.requirement
+      : 'Deal';
+
+    setConvertForm({
+      customerName: lead.company?.trim() || lead.name,
+      customerType: lead.company ? 'Company' : 'Individual',
+      industry: lead.industry || '',
+      website: lead.website || '',
+      contactName: lead.decisionMaker || lead.contactPerson || lead.name,
+      contactDesignation: lead.designation || 'Primary Contact',
+      contactEmail: lead.email || '',
+      contactPhone: lead.phone || '',
+      opportunityName: lead.company ? `${lead.company} - ${defaultOppSummary}` : `${lead.name} Deal`,
+      opportunityValue: String(lead.finalAgreedAmount || lead.value || lead.budget || 0),
+      expectedCloseDate: lead.wonDate || lead.expectedCloseDate || new Date().toISOString().split('T')[0],
+    });
+    setShowConvertModal(true);
+  };
+
+  const handleExecuteConvert = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+    setConvertSubmitting(true);
+    setConvertError(null);
+
+    const validation = validateLeadConversion(lead);
+    if (!validation.allowed) {
+      setConvertError(validation.reason || 'Lead cannot be converted.');
+      setConvertSubmitting(false);
+      return;
+    }
+
+    try {
+      const res = await convertLead(lead.id, {
+        customerName: convertForm.customerName,
+        customerType: convertForm.customerType,
+        industry: convertForm.industry,
+        website: convertForm.website,
+        contactName: convertForm.contactName,
+        contactDesignation: convertForm.contactDesignation,
+        contactEmail: convertForm.contactEmail,
+        contactPhone: convertForm.contactPhone,
+        opportunityName: convertForm.opportunityName,
+        opportunityValue: parseFloat(convertForm.opportunityValue) || 0,
+        expectedCloseDate: convertForm.expectedCloseDate,
+        useExistingCustomerId: (customerChoice === 'existing' && matchedCustomer) ? matchedCustomer.id : undefined,
+        forceNewCustomer: customerChoice === 'new',
+      });
+
+      if (!res.success) {
+        setConvertError(res.message || 'Failed to convert lead.');
+        setConvertSubmitting(false);
+        return;
+      }
+
+      setShowConvertModal(false);
+      setConvertSubmitting(false);
+      setValidationError(null);
+    } catch (err: any) {
+      setConvertError(err.message || 'An unexpected error occurred during conversion.');
+      setConvertSubmitting(false);
+    }
+  };
+
+  const handleSaveLost = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+
+    const lostReason = (lostForm.lostReason || '').trim();
+    if (!lostReason) {
+      setValidationError('Please select a valid Lost Reason.');
+      return;
+    }
+
+    if (lostReason.toLowerCase() === 'other' && !lostForm.lostReasonDetails.trim() && !lostForm.lostNotes.trim()) {
+      setValidationError('Please provide a custom explanation when selecting "Other" as the Lost Reason.');
+      return;
+    }
+
+    if (!lostForm.lostNotes.trim()) {
+      setValidationError('Please provide Lost Notes/Comments explaining why this deal was lost.');
+      return;
+    }
+
+    const finalLostDate = lostForm.lostDate || new Date().toISOString().split('T')[0];
+
+    updateLead(lead.id, {
+      stage: 'Lost',
+      lostReason: lostReason,
+      lostReasonDetails: lostForm.lostReasonDetails.trim(),
+      lostNotes: lostForm.lostNotes.trim(),
+      lostDate: finalLostDate,
+    });
+
+    setShowLostModal(false);
+    setValidationError(null);
+  };
+
+  const openEditModal = () => {
+    if (!lead) return;
+    setEditForm({
+      name: lead.name || '',
+      company: lead.company || '',
+      email: lead.email || '',
+      phone: lead.phone || '',
+      requirement: lead.requirement || lead.notes || '',
+      budget: (lead.budget !== undefined && lead.budget > 0 ? lead.budget : (lead.value || '')).toString(),
+      decisionMaker: lead.decisionMaker || lead.contactPerson || '',
+      expectedCloseDate: lead.expectedCloseDate || '',
+      industry: lead.industry || '',
+      source: lead.source || '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!lead) return;
+    const updatedBudget = parseFloat(editForm.budget) || 0;
+    const updates: Partial<Lead> = {
+      name: editForm.name,
+      company: editForm.company,
+      email: editForm.email,
+      phone: editForm.phone,
+      requirement: editForm.requirement.trim(),
+      budget: updatedBudget,
+      value: updatedBudget,
+      decisionMaker: editForm.decisionMaker.trim(),
+      contactPerson: editForm.decisionMaker.trim() || lead.contactPerson,
+      expectedCloseDate: editForm.expectedCloseDate,
+      industry: editForm.industry,
+      source: editForm.source,
+    };
+    updateLead(lead.id, updates);
+    setShowEditModal(false);
+    setValidationError(null);
+  };
+
+  const leadActivities = useMemo(() => activities.filter(a => a.relatedTo === leadId || a.relatedTo === lead?.name).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()), [activities, leadId, lead?.name]);
   const leadNotes = useMemo(() => notes.filter(n => n.relatedRecord === leadId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [notes, leadId]);
   const leadDocs = useMemo(() => documents.filter(d => d.linkedEntity === leadId), [documents, leadId]);
   
@@ -66,20 +475,70 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     onViewChange('leads');
   };
 
+  const handleStageChange = (newStage: Lead['stage']) => {
+    if (newStage === 'Lost') {
+      if (lead.stage === 'Won') {
+        setValidationError('Cannot move a "Won" lead to "Lost". Deals marked as Won are closed and finalized.');
+        return;
+      }
+      openLostModal();
+      return;
+    }
+    const validation = validateLeadStageTransition(lead, newStage, activities, quotations);
+    if (!validation.allowed) {
+      setValidationError(validation.message || 'Stage transition not allowed.');
+      return;
+    }
+    setValidationError(null);
+    updateLead(lead.id, { stage: newStage });
+  };
+
   const handleAddActivity = () => {
-    if (!activityForm.title || !activityForm.date) return;
-    addActivity({
+    if (!activityForm.title) return;
+    const actStatus = activityForm.status || 'Completed';
+    const actType = activityForm.type || 'Call';
+    const actPurpose = activityForm.purpose || 'General';
+
+    const newActivity: Omit<Activity, 'id'> = {
       title: activityForm.title,
-      type: activityForm.type,
+      type: actType,
+      purpose: actPurpose,
       relatedTo: leadId,
       assignedTo: lead.assignedTo,
-      dueDate: activityForm.date,
+      dueDate: activityForm.date || new Date().toISOString().split('T')[0],
       priority: 'Medium',
-      status: 'Completed',
+      status: actStatus,
       outcome: activityForm.outcome
-    });
-    setActivityForm({ type: 'Call', title: '', date: '', outcome: '' });
+    };
+
+    addActivity(newActivity);
+
+    // Auto-advance lead stage to 'Contacted' if in 'New' and completed interaction recorded
+    if (lead.stage === 'New' && actStatus === 'Completed' && (actType === 'Call' || actType === 'Email' || actType === 'Meeting')) {
+      updateLead(lead.id, { stage: 'Contacted' });
+    }
+
+    // Auto-advance lead stage to 'Negotiation' if in 'Proposal' and completed negotiation activity recorded
+    if (lead.stage === 'Proposal' && actStatus === 'Completed') {
+      const isNeg = isNegotiationInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
+      if (isNeg) {
+        updateLead(lead.id, { stage: 'Negotiation' });
+      }
+    }
+
+    // Auto-advance lead stage to 'Won' if in 'Negotiation' and completed customer acceptance activity recorded
+    if (lead.stage === 'Negotiation' && actStatus === 'Completed') {
+      const isAccepted = isDealAcceptedInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
+      const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
+      const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
+      if (isAccepted && hasAmount && hasDate) {
+        updateLead(lead.id, { stage: 'Won' });
+      }
+    }
+
+    setActivityForm({ type: 'Call', purpose: 'General', title: '', date: '', outcome: '', status: 'Completed' });
     setShowActivityForm(false);
+    setValidationError(null);
   };
 
   const handleAddNote = () => {
@@ -147,7 +606,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
       {/* LEAD HEADER CARD */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
           <div>
             <h1 className="text-2xl font-bold text-[#0f172a] mb-1">{lead.name}</h1>
             <div className="flex items-center text-sm text-slate-500 flex-wrap gap-2">
@@ -155,17 +614,77 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               <span className="hidden sm:inline text-slate-300">•</span>
               <span className="flex items-center"><User size={14} className="mr-1" /> {lead.contactPerson || lead.email}</span>
               <span className="hidden sm:inline text-slate-300">•</span>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                {lead.stage}
-              </span>
+              <div className="inline-flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-slate-400">Stage:</span>
+                <select
+                  value={lead.stage}
+                  onChange={(e) => handleStageChange(e.target.value as Lead['stage'])}
+                  className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  title="Change Lead Stage"
+                >
+                  {leadStages.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           
           <div className="flex items-center gap-3">
-            <button className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 flex items-center gap-2">
+            {lead.stage === 'Won' && !lead.isConverted && (
+              <button
+                onClick={openConvertModal}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm rounded-lg shadow-md transition flex items-center gap-2 transform hover:scale-[1.02]"
+                title="Convert Won Lead to Customer, Primary Contact, and Won Opportunity"
+              >
+                <Rocket size={16} className="text-amber-300" /> Convert Lead
+              </button>
+            )}
+            {lead.stage === 'Won' && (
+              lead.isProjectCreated || lead.projectId ? (
+                <button
+                  onClick={() => setActiveModule('projects')}
+                  className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-sm rounded-lg shadow-xs transition flex items-center gap-1.5"
+                  title="View associated Project in Projects & Client Delivery"
+                >
+                  <FolderKanban size={15} className="text-purple-600" /> Project Created • View Project
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowCreateProjectModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white font-bold text-sm rounded-lg shadow-md transition flex items-center gap-2 transform hover:scale-[1.02]"
+                  title="Create Project from Won Lead Requirements"
+                >
+                  <FolderKanban size={16} className="text-amber-300" /> Create Project
+                </button>
+              )
+            )}
+            {lead.stage === 'Negotiation' && (
+              <button
+                onClick={openWonModal}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-lg shadow-sm transition flex items-center gap-1.5"
+                title="Record acceptance and mark deal as Won"
+              >
+                <CheckCircle2 size={15} /> Close Deal (Mark Won)
+              </button>
+            )}
+            {lead.stage !== 'Won' && lead.stage !== 'Lost' && (
+              <button
+                onClick={openLostModal}
+                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-sm rounded-lg shadow-xs transition flex items-center gap-1.5"
+                title="Mark lead as Lost"
+              >
+                <XCircle size={15} /> Mark as Lost
+              </button>
+            )}
+            <button
+              onClick={openEditModal}
+              className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 flex items-center gap-2"
+              title="Edit lead details and qualification"
+            >
               <Edit2 size={14} /> Edit
             </button>
-            <button onClick={() => setShowActivityForm(true)} className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 flex items-center gap-2">
+            <button onClick={() => { setShowActivityForm(true); setActiveTab('activities'); }} className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 flex items-center gap-2">
               <Plus size={14} /> Add Activity
             </button>
             <div className="relative">
@@ -173,12 +692,47 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <MoreVertical size={18} />
               </button>
               {showMoreMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
-                  <button className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Assign Owner</button>
+                <div className="absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
+                  {lead.stage === 'Won' && !lead.isConverted && (
+                    <>
+                      <button
+                        onClick={() => { openConvertModal(); setShowMoreMenu(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 font-bold flex items-center gap-2"
+                      >
+                        <Rocket size={14} className="text-indigo-600" /> Convert to Customer
+                      </button>
+                      <div className="h-px bg-slate-200 my-1"></div>
+                    </>
+                  )}
+                  {lead.isConverted && (
+                    <div className="px-4 py-1.5 text-xs text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 mb-1">
+                      <CheckCheck size={14} /> Converted to Customer
+                    </div>
+                  )}
+                  {lead.stage === 'Won' && (
+                    lead.isProjectCreated || lead.projectId ? (
+                      <button
+                        onClick={() => { setActiveModule('projects'); setShowMoreMenu(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-purple-700 hover:bg-purple-50 font-bold flex items-center gap-2"
+                      >
+                        <FolderKanban size={14} className="text-purple-600" /> View Project
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { setShowCreateProjectModal(true); setShowMoreMenu(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-purple-700 hover:bg-purple-50 font-bold flex items-center gap-2"
+                      >
+                        <FolderKanban size={14} className="text-purple-600" /> Create Project
+                      </button>
+                    )
+                  )}
+                  <button onClick={openEditModal} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Edit Lead & Qualification</button>
                   <button onClick={() => { setShowFollowUpForm(true); setShowMoreMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Add Follow-up</button>
-                  <div className="h-px bg-slate-200 my-1"></div>
-                  <button className="w-full text-left px-4 py-2 text-sm text-slate-400 cursor-not-allowed" title="Coming soon">Create Opportunity</button>
-                  <button className="w-full text-left px-4 py-2 text-sm text-slate-400 cursor-not-allowed" title="Coming soon">Convert to Customer</button>
+                  {lead.stage !== 'Won' && lead.stage !== 'Lost' && (
+                    <button onClick={() => { openLostModal(); setShowMoreMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-rose-700 hover:bg-rose-50 font-medium flex items-center gap-1.5">
+                      <XCircle size={14} /> Mark Deal Lost
+                    </button>
+                  )}
                   <div className="h-px bg-slate-200 my-1"></div>
                   <button onClick={() => { setShowArchiveModal(true); setShowMoreMenu(false); }} className="w-full text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 font-medium">Archive Lead</button>
                 </div>
@@ -186,6 +740,218 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             </div>
           </div>
         </div>
+
+        {/* CONVERTED TO CUSTOMER BANNER */}
+        {lead.isConverted && (
+          <div className="mb-6 p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-300 rounded-xl flex items-start gap-4 shadow-sm animate-in fade-in duration-200">
+            <div className="p-3 bg-emerald-100 text-emerald-700 rounded-xl shrink-0 mt-0.5 shadow-xs">
+              <Award size={24} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
+                <h4 className="text-base font-bold text-emerald-950">🎉 Lead Converted Successfully</h4>
+                <span className="text-xs bg-emerald-200 text-emerald-900 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300">
+                  Status: Converted
+                </span>
+                {lead.convertedAt && (
+                  <span className="text-xs text-emerald-700 font-medium">
+                    • Converted on {new Date(lead.convertedAt).toLocaleDateString()} at {new Date(lead.convertedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-emerald-800 leading-relaxed mb-3.5">
+                This Won deal has been successfully converted into your CRM Master database. Linked records are live and navigable below:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div
+                  onClick={() => onViewChange('customers')}
+                  className="p-3 bg-white/90 hover:bg-white rounded-lg border border-emerald-200 hover:border-indigo-300 cursor-pointer transition-all shadow-xs group"
+                >
+                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center justify-between">
+                    <span>🏢 Customer Record</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-indigo-600 transition-colors">
+                    {lead.company || lead.name}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.convertedToCustomerId || 'Linked'}</div>
+                </div>
+
+                <div
+                  onClick={() => onViewChange('contacts')}
+                  className="p-3 bg-white/90 hover:bg-white rounded-lg border border-emerald-200 hover:border-indigo-300 cursor-pointer transition-all shadow-xs group"
+                >
+                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center justify-between">
+                    <span>👤 Primary Contact</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-indigo-600 transition-colors">
+                    {lead.decisionMaker || lead.contactPerson || lead.name}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.convertedToContactId || 'Linked'}</div>
+                </div>
+
+                <div
+                  onClick={() => onViewChange('opportunities')}
+                  className="p-3 bg-white/90 hover:bg-white rounded-lg border border-emerald-200 hover:border-indigo-300 cursor-pointer transition-all shadow-xs group"
+                >
+                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center justify-between">
+                    <span>💼 Won Opportunity</span>
+                    <ChevronRight size={14} className="text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-indigo-600 transition-colors">
+                    {formatINR(lead.finalAgreedAmount || lead.value || lead.budget || 0)}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono mt-0.5">{lead.convertedToOpportunityId || 'Linked'}</div>
+                </div>
+
+                {/* Linked Project Card */}
+                {lead.isProjectCreated || lead.projectId ? (
+                  <div
+                    onClick={() => setActiveModule('projects')}
+                    className="p-3 bg-white/90 hover:bg-white rounded-lg border border-purple-200 hover:border-purple-400 cursor-pointer transition-all shadow-xs group"
+                  >
+                    <div className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>📁 Client Project</span>
+                      <ChevronRight size={14} className="text-slate-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" />
+                    </div>
+                    <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-purple-600 transition-colors">
+                      {lead.projectId || 'Project Active'}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 font-semibold mt-0.5">Status: Not Started</div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => setShowCreateProjectModal(true)}
+                    className="p-3 bg-purple-50/80 hover:bg-purple-100/90 rounded-lg border border-dashed border-purple-300 hover:border-purple-500 cursor-pointer transition-all shadow-xs group"
+                  >
+                    <div className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center justify-between">
+                      <span>📁 Create Project</span>
+                      <Plus size={14} className="text-purple-600 group-hover:scale-110 transition" />
+                    </div>
+                    <div className="text-xs font-semibold text-purple-900 truncate mt-1">
+                      Start Project Delivery
+                    </div>
+                    <div className="text-[10px] text-purple-600 mt-0.5">Copy requirements &rarr;</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* LOST OPPORTUNITY BANNER */}
+        {lead.stage === 'Lost' && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-3 animate-in fade-in duration-200">
+            <div className="p-2 bg-rose-100 text-rose-600 rounded-lg shrink-0 mt-0.5">
+              <AlertOctagon size={20} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-bold text-rose-900">Opportunity Closed — Lost</h4>
+                <span className="text-xs bg-rose-100 text-rose-800 font-bold px-2.5 py-0.5 rounded-full border border-rose-200">
+                  Reason: {lead.lostReason || 'Closed Lost'}
+                </span>
+                {lead.lostDate && (
+                  <span className="text-xs text-rose-600 font-medium">
+                    • Lost on {lead.lostDate}
+                  </span>
+                )}
+              </div>
+              {lead.lostReasonDetails && (
+                <p className="text-xs text-rose-800 mt-1 font-medium">
+                  <strong>Custom Reason:</strong> {lead.lostReasonDetails}
+                </p>
+              )}
+              {lead.lostNotes && (
+                <p className="text-xs text-rose-700 mt-1 leading-relaxed bg-white/70 p-2.5 rounded-lg border border-rose-200/60">
+                  <strong>Lost Notes:</strong> {lead.lostNotes}
+                </p>
+              )}
+              <p className="text-[11px] text-rose-500 mt-1.5">
+                This opportunity is closed and excluded from the active sales pipeline.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* VALIDATION ERROR BANNER */}
+        {validationError && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-xl flex items-start justify-between gap-3 animate-in fade-in duration-200">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+              <div>
+                <p className="text-xs font-bold text-amber-900">Stage Transition Blocked</p>
+                <p className="text-xs text-amber-800 mt-0.5 leading-relaxed whitespace-pre-line">{validationError}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {validationError.toLowerCase().includes('lost') ? (
+                lead.stage !== 'Won' && (
+                  <button
+                    onClick={openLostModal}
+                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                  >
+                    <XCircle size={14} /> Provide Lost Details
+                  </button>
+                )
+              ) : validationError.toLowerCase().includes('won') || validationError.toLowerCase().includes('acceptance') || validationError.toLowerCase().includes('closure') || validationError.toLowerCase().includes('agreed amount') ? (
+                <button
+                  onClick={openWonModal}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                >
+                  🎉 Close Deal (Won)
+                </button>
+              ) : validationError.toLowerCase().includes('negotiation') ? (
+                <button
+                  onClick={() => {
+                    setActivityForm({
+                      type: 'Call',
+                      purpose: 'Negotiation',
+                      title: '',
+                      date: new Date().toISOString().split('T')[0],
+                      outcome: '',
+                      status: 'Completed',
+                    });
+                    setShowActivityForm(true);
+                    setActiveTab('activities');
+                  }}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                >
+                  🤝 Log Negotiation
+                </button>
+              ) : validationError.toLowerCase().includes('proposal') ? (
+                <button
+                  onClick={openProposalModal}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1"
+                >
+                  {leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft' ? '📤 Send Proposal' : '+ Create Proposal'}
+                </button>
+              ) : validationError.includes('qualification') || validationError.includes('Requirement') || validationError.includes('Budget') || validationError.includes('Decision Maker') || validationError.includes('Closing Date') ? (
+                <button
+                  onClick={openEditModal}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+                >
+                  + Complete Qualification
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setShowActivityForm(true); setActiveTab('activities'); }}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+                >
+                  + Log Interaction
+                </button>
+              )}
+              <button
+                onClick={() => setValidationError(null)}
+                className="text-amber-600 hover:text-amber-800 text-sm font-bold px-1"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* METRICS ROW */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6 border-t border-slate-100">
@@ -221,7 +987,10 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
         {/* STAGE PROGRESSION */}
         <div className="mt-8 pt-6 border-t border-slate-100">
-          <p className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wider">Sales Stage</p>
+          <div className="flex justify-between items-center mb-3">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Sales Stage</p>
+            <span className="text-[11px] text-slate-400">Click a stage bubble or select above to move stage</span>
+          </div>
           <div className="flex items-center justify-between relative">
             <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-slate-100 z-0"></div>
             <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-indigo-500 z-0 transition-all duration-500" style={{ width: `${Math.max(0, (currentStageIndex / (leadStages.length - 1)) * 100)}%` }}></div>
@@ -231,20 +1000,26 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               const isCurrent = idx === currentStageIndex;
               const isLost = stage === 'Lost' && isCurrent;
               
-              let bubbleColor = 'bg-slate-200 border-white text-transparent';
-              if (isPast) bubbleColor = 'bg-indigo-500 border-white text-white';
+              let bubbleColor = 'bg-slate-200 border-white text-transparent hover:border-indigo-200';
+              if (isPast) bubbleColor = 'bg-indigo-500 border-white text-white hover:bg-indigo-600';
               if (isCurrent) bubbleColor = 'bg-indigo-600 border-indigo-200 shadow-md shadow-indigo-500/30 text-white';
               if (isLost) bubbleColor = 'bg-rose-500 border-rose-200 text-white';
 
               return (
-                <div key={stage} className="relative z-10 flex flex-col items-center group">
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => handleStageChange(stage as Lead['stage'])}
+                  className="relative z-10 flex flex-col items-center group cursor-pointer focus:outline-none transition-transform hover:scale-105"
+                  title={`Click to set stage to ${stage}`}
+                >
                   <div className={`w-6 h-6 rounded-full border-4 flex items-center justify-center transition-colors ${bubbleColor}`}>
                     {isPast && <CheckCircle2 size={12} />}
                   </div>
-                  <span className={`absolute top-8 text-[10px] font-bold whitespace-nowrap ${isCurrent ? (isLost ? 'text-rose-600' : 'text-indigo-600') : 'text-slate-400'}`}>
+                  <span className={`absolute top-8 text-[10px] font-bold whitespace-nowrap transition-colors ${isCurrent ? (isLost ? 'text-rose-600' : 'text-indigo-600') : 'text-slate-400 group-hover:text-slate-700'}`}>
                     {stage}
                   </span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -299,6 +1074,144 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       {/* TAB CONTENT: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* LEAD QUALIFICATION SECTION */}
+          <div className="bg-white rounded-xl border border-indigo-100 shadow-xs p-6 md:col-span-2">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <h2 className="text-base font-bold text-[#0f172a] flex items-center">
+                <CheckCircle2 size={18} className="mr-2 text-indigo-600" /> Lead Qualification Details
+              </h2>
+              <button
+                onClick={openEditModal}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <Edit2 size={12} /> Edit Qualification
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2 p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">1. Customer Requirement</span>
+                  {!(lead.requirement || lead.notes) && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Required for Qualified</span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-800 font-medium whitespace-pre-wrap">
+                  {lead.requirement || lead.notes || <span className="text-slate-400 italic">No requirement recorded yet.</span>}
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">2. Confirmed Budget</span>
+                  {!((lead.budget && lead.budget > 0) || (lead.value && lead.value > 0)) && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Required</span>
+                  )}
+                </div>
+                <p className="text-base font-bold text-[#0f172a]">
+                  {(lead.budget && lead.budget > 0) || (lead.value && lead.value > 0) ? (
+                    formatINR(lead.budget || lead.value)
+                  ) : (
+                    <span className="text-slate-400 font-normal italic text-sm">Budget not set</span>
+                  )}
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">3. Decision Maker</span>
+                  {!(lead.decisionMaker || lead.contactPerson) && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Required</span>
+                  )}
+                </div>
+                <p className="text-base font-bold text-[#0f172a]">
+                  {lead.decisionMaker || lead.contactPerson || <span className="text-slate-400 font-normal italic text-sm">Decision maker not specified</span>}
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80 sm:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">4. Expected Closing Date</span>
+                  {!lead.expectedCloseDate && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">Required</span>
+                  )}
+                </div>
+                <p className="text-sm font-bold text-[#0f172a]">
+                  {lead.expectedCloseDate || <span className="text-slate-400 font-normal italic">Expected close date not set</span>}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* PROPOSAL & QUOTATION DETAILS SECTION */}
+          <div className="bg-white rounded-xl border border-indigo-100 shadow-xs p-6 md:col-span-2">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <h2 className="text-base font-bold text-[#0f172a] flex items-center">
+                <FileText size={18} className="mr-2 text-indigo-600" /> Proposal & Quotation Details
+              </h2>
+              <div className="flex items-center gap-2">
+                {(leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') && (
+                  <button
+                    onClick={handleSendProposal}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    title="Send proposal to customer"
+                  >
+                    <CheckCircle2 size={13} /> Send Proposal
+                  </button>
+                )}
+                <button
+                  onClick={openProposalModal}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <Edit2 size={12} /> {leadQuotation || lead.proposalAmount ? 'Edit Proposal' : '+ Create Proposal'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">1. Proposal Amount</span>
+                <p className="text-base font-bold text-[#0f172a]">
+                  {(leadQuotation?.amount && leadQuotation.amount > 0) || (lead.proposalAmount && lead.proposalAmount > 0) ? (
+                    formatINR(leadQuotation?.amount || lead.proposalAmount || 0)
+                  ) : (
+                    <span className="text-slate-400 font-normal italic text-sm">No amount set</span>
+                  )}
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">2. Proposal Date</span>
+                <p className="text-sm font-bold text-[#0f172a]">
+                  {leadQuotation?.date || lead.proposalDate || <span className="text-slate-400 font-normal italic text-sm">Not set</span>}
+                </p>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">3. Proposal Status</span>
+                <div className="mt-0.5">
+                  {(leadQuotation?.status === 'Sent' || lead.proposalStatus === 'Sent') ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Sent
+                    </span>
+                  ) : (leadQuotation || lead.proposalStatus) ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
+                      <Clock size={12} /> Draft
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 text-xs italic">No proposal</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">4. Sent Date</span>
+                <p className="text-sm font-bold text-[#0f172a]">
+                  {leadQuotation?.sentDate || lead.proposalSentDate || <span className="text-slate-400 font-normal italic text-xs">Not sent yet</span>}
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <h2 className="text-base font-bold text-[#0f172a] mb-4 flex items-center"><User size={18} className="mr-2 text-indigo-500" /> Lead Information</h2>
             <div className="space-y-4">
@@ -326,19 +1239,50 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-6">
-            <h2 className="text-base font-bold text-[#0f172a] mb-4 flex items-center"><Phone size={18} className="mr-2 text-indigo-500" /> Contact Information</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-base font-bold text-[#0f172a] flex items-center">
+                <Users size={18} className="mr-2 text-indigo-500" /> Associated Contact
+              </h2>
+              <button
+                onClick={() => onViewChange('contacts')}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1"
+                title="Open Contacts Directory"
+              >
+                View in Contacts &rarr;
+              </button>
+            </div>
             <div className="space-y-4">
               <div className="grid grid-cols-3">
+                <span className="text-sm font-semibold text-slate-500 col-span-1">Contact Name</span>
+                <span className="text-sm font-bold text-[#0f172a] col-span-2">
+                  {associatedContact?.name || lead.contactPerson || lead.decisionMaker || lead.name}
+                </span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-sm font-semibold text-slate-500 col-span-1">Designation</span>
+                <span className="text-sm font-medium text-[#0f172a] col-span-2">
+                  {associatedContact?.designation || lead.designation || 'Representative'}
+                </span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-sm font-semibold text-slate-500 col-span-1">Contact Role</span>
+                <span className="text-sm font-medium col-span-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
+                    {associatedContact?.contactRole || lead.contactRole || 'Decision Maker'}
+                  </span>
+                </span>
+              </div>
+              <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Email</span>
-                <span className="text-sm font-medium text-indigo-600 col-span-2">{lead.email}</span>
+                <span className="text-sm font-medium text-indigo-600 col-span-2">{associatedContact?.email || lead.email}</span>
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Phone</span>
-                <span className="text-sm font-medium text-[#0f172a] col-span-2">{lead.phone || '—'}</span>
+                <span className="text-sm font-medium text-[#0f172a] col-span-2">{associatedContact?.phone || lead.phone || '—'}</span>
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Alt. Phone</span>
-                <span className="text-sm font-medium text-[#0f172a] col-span-2">{lead.alternatePhone || '—'}</span>
+                <span className="text-sm font-medium text-[#0f172a] col-span-2">{associatedContact?.alternatePhone || lead.alternatePhone || '—'}</span>
               </div>
               <div className="grid grid-cols-3">
                 <span className="text-sm font-semibold text-slate-500 col-span-1">Website</span>
@@ -388,10 +1332,10 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           {showActivityForm && (
             <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-200 animate-in fade-in zoom-in-95">
               <h3 className="text-sm font-bold text-[#0f172a] mb-3">Log New Activity</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Type</label>
-                  <select value={activityForm.type} onChange={(e) => setActivityForm({...activityForm, type: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                  <select value={activityForm.type} onChange={(e) => setActivityForm({...activityForm, type: e.target.value as any})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white">
                     <option value="Call">Call</option>
                     <option value="Email">Email</option>
                     <option value="Meeting">Meeting</option>
@@ -399,16 +1343,76 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Purpose</label>
+                  <select value={activityForm.purpose} onChange={(e) => setActivityForm({...activityForm, purpose: e.target.value as any})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white font-medium">
+                    <option value="General">General Interaction</option>
+                    <option value="Follow-up">Follow-up Touchpoint</option>
+                    <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                    <option value="Customer Acceptance">🎉 Customer Acceptance / Deal Closed</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Status</label>
+                  <select value={activityForm.status} onChange={(e) => setActivityForm({...activityForm, status: e.target.value as any})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                    <option value="Completed">Completed</option>
+                    <option value="Pending">Pending</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Date</label>
-                  <input type="date" value={activityForm.date} onChange={(e) => setActivityForm({...activityForm, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                  <input type="date" value={activityForm.date} onChange={(e) => setActivityForm({...activityForm, date: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white" />
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Subject</label>
-                  <input type="text" placeholder="E.g. Discussed pricing" value={activityForm.title} onChange={(e) => setActivityForm({...activityForm, title: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                
+                {activityForm.purpose === 'Negotiation' && (
+                  <div className="sm:col-span-4 p-2.5 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex items-center gap-2 animate-in fade-in">
+                    <span className="text-base">🤝</span>
+                    <div>
+                      <strong>Negotiation Discussion:</strong> Record customer feedback or counter-offer discussing pricing, discounts, custom features, payment terms, or delivery timeline.
+                    </div>
+                  </div>
+                )}
+
+                {(activityForm.purpose === 'Customer Acceptance' || activityForm.purpose === 'Deal Closed') && (
+                  <div className="sm:col-span-4 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-center gap-2 animate-in fade-in">
+                    <span className="text-base">🎉</span>
+                    <div>
+                      <strong>Customer Deal Acceptance:</strong> Record explicit confirmation from the customer (verbal acceptance, contract signed, purchase order received) to qualify the deal for Won.
+                    </div>
+                  </div>
+                )}
+
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Subject *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={
+                      activityForm.purpose === 'Customer Acceptance'
+                        ? "E.g. Customer approved proposal & contract signed"
+                        : activityForm.purpose === 'Negotiation'
+                        ? "E.g. Commercial negotiation & discount discussion"
+                        : "E.g. Discovery Call with client"
+                    }
+                    value={activityForm.title}
+                    onChange={(e) => setActivityForm({...activityForm, title: e.target.value})}
+                    className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  />
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Outcome / Notes</label>
-                  <textarea rows={2} value={activityForm.outcome} onChange={(e) => setActivityForm({...activityForm, outcome: e.target.value})} className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Outcome / Discussion Notes</label>
+                  <textarea
+                    rows={2}
+                    placeholder={
+                      activityForm.purpose === 'Customer Acceptance'
+                        ? "E.g. Customer accepted final pricing and confirmed start date."
+                        : activityForm.purpose === 'Negotiation'
+                        ? "E.g. Customer requested a 10% price reduction and Net 45 payment terms before signing."
+                        : "What was discussed or concluded?"
+                    }
+                    value={activityForm.outcome}
+                    onChange={(e) => setActivityForm({...activityForm, outcome: e.target.value})}
+                    className="w-full p-2 border border-slate-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  ></textarea>
                 </div>
               </div>
               <div className="flex justify-end gap-2">
@@ -423,8 +1427,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               {leadActivities.map(activity => {
                 const isCall = activity.type === 'Call';
                 const isEmail = activity.type === 'Email';
-                const Icon = isCall ? Phone : (isEmail ? Mail : CheckCircle2);
-                const colorClass = isCall ? 'bg-emerald-100 text-emerald-600' : (isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600');
+                const isCompleted = activity.status === 'Completed';
+                const isDealWon = activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead);
+                const isNeg = activity.purpose === 'Negotiation' || isNegotiationInteraction(activity, lead);
+                const Icon = isDealWon ? Award : (isCall ? Phone : (isEmail ? Mail : CheckCircle2));
+                const colorClass = isCompleted
+                  ? (isDealWon ? 'bg-emerald-100 text-emerald-600' : isNeg ? 'bg-purple-100 text-purple-600' : isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
+                  : 'bg-amber-100 text-amber-600';
 
                 return (
                   <div key={activity.id} className="relative pl-6">
@@ -432,13 +1441,59 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                       <Icon size={14} />
                     </div>
                     <div>
-                      <div className="flex justify-between items-start mb-1">
-                        <p className="text-sm font-bold text-[#0f172a]">{activity.title}</p>
-                        <span className="text-xs text-slate-500">{activity.dueDate}</span>
+                      <div className="flex justify-between items-start mb-1 gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-[#0f172a]">{activity.title}</p>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            isCompleted ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {activity.status || 'Completed'}
+                          </span>
+                          {activity.purpose === 'Negotiation' && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 inline-flex items-center gap-1">
+                              🤝 Negotiation
+                            </span>
+                          )}
+                          {(activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead)) && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                              🎉 Customer Accepted
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!isCompleted && (
+                            <button
+                              onClick={() => {
+                                updateActivity(activity.id, { status: 'Completed' });
+                                if (lead.stage === 'New' && (activity.type === 'Call' || activity.type === 'Email' || activity.type === 'Meeting')) {
+                                  updateLead(lead.id, { stage: 'Contacted' });
+                                }
+                                if (lead.stage === 'Proposal' && isNegotiationInteraction({ ...activity, status: 'Completed' }, lead)) {
+                                  updateLead(lead.id, { stage: 'Negotiation' });
+                                }
+                                if (lead.stage === 'Negotiation' && isDealAcceptedInteraction({ ...activity, status: 'Completed' }, lead)) {
+                                  const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
+                                  const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
+                                  if (hasAmount && hasDate) {
+                                    updateLead(lead.id, { stage: 'Won' });
+                                  }
+                                }
+                              }}
+                              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded transition flex items-center gap-1"
+                              title="Mark this interaction completed and advance stage"
+                            >
+                              <CheckCircle2 size={12} /> Mark Completed
+                            </button>
+                          )}
+                          <span className="text-xs text-slate-500">{activity.dueDate}</span>
+                        </div>
                       </div>
                       <p className="text-xs text-slate-600 mb-2">{activity.outcome || 'No outcome recorded.'}</p>
                       <div className="flex items-center text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                         <span className="px-2 py-0.5 rounded bg-slate-100 mr-2">{activity.type}</span>
+                        {activity.purpose && activity.purpose !== 'General' && (
+                          <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 mr-2">{activity.purpose}</span>
+                        )}
                         <span>{activity.assignedTo}</span>
                       </div>
                     </div>
@@ -538,6 +1593,690 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
         </div>
       )}
 
+      {/* LOG ACTIVITY / INTERACTION MODAL */}
+      {showActivityForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Phone size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">Log Customer Interaction</h3>
+                  <p className="text-xs text-slate-500">Record a call, meeting, or email for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowActivityForm(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleAddActivity(); }} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Interaction Type *</label>
+                  <select
+                    value={activityForm.type}
+                    onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value as any })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="Call">📞 Phone Call</option>
+                    <option value="Email">✉️ Email Exchange</option>
+                    <option value="Meeting">📅 In-Person / Demo Meeting</option>
+                    <option value="Task">📋 Task / Follow-up</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Activity Purpose *</label>
+                  <select
+                    value={activityForm.purpose}
+                    onChange={(e) => setActivityForm({ ...activityForm, purpose: e.target.value as any })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="General">General Interaction</option>
+                    <option value="Follow-up">Follow-up Touchpoint</option>
+                    <option value="Negotiation">🤝 Negotiation / Customer Response</option>
+                    <option value="Customer Acceptance">🎉 Customer Acceptance / Deal Closed</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Status *</label>
+                  <select
+                    value={activityForm.status || 'Completed'}
+                    onChange={(e) => setActivityForm({ ...activityForm, status: e.target.value as any })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="Completed">✅ Completed</option>
+                    <option value="Pending">⏳ Pending / Scheduled</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* HELPER STATUS HINT */}
+              {activityForm.purpose === 'Customer Acceptance' || activityForm.purpose === 'Deal Closed' ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-base">🎉</span>
+                  <div>
+                    <span className="font-bold">Deal Won / Customer Acceptance:</span> Record customer agreement confirmation, signed proposal, or purchase order.
+                    {activityForm.status === 'Completed' && lead.stage === 'Negotiation' && (
+                      <span className="block mt-0.5 text-emerald-700 font-semibold">Completing this with a valid final agreed amount & date qualifies the deal to advance to "Won".</span>
+                    )}
+                  </div>
+                </div>
+              ) : activityForm.purpose === 'Negotiation' ? (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-base">🤝</span>
+                  <div>
+                    <span className="font-bold">Negotiation Activity:</span> Record discussion regarding pricing, discounts, custom features, payment terms, or delivery timeline.
+                    {activityForm.status === 'Completed' && lead.stage === 'Proposal' && (
+                      <span className="block mt-0.5 text-purple-700 font-semibold">Saving will advance lead to "Negotiation".</span>
+                    )}
+                  </div>
+                </div>
+              ) : activityForm.status === 'Pending' ? (
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">⏳</span>
+                  <div>
+                    <span className="font-bold">Pending / Scheduled Activity:</span> This upcoming activity will be recorded in the timeline. The lead will <strong>remain in "{lead.stage}"</strong> until the interaction is marked Completed.
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">✅</span>
+                  <div>
+                    <span className="font-bold">Completed Interaction:</span> This records a completed interaction
+                    {lead.stage === 'New' && <strong> and will automatically advance the lead to "Contacted"</strong>}.
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Subject / Discussion Topic *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder={activityForm.purpose === 'Negotiation' ? "e.g. Discussed pricing discount & payment milestones" : "e.g. Discovery call regarding CRM requirements"}
+                  value={activityForm.title}
+                  onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={activityForm.date || new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setActivityForm({ ...activityForm, date: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Outcome / Discussion Notes</label>
+                <textarea
+                  rows={3}
+                  placeholder={activityForm.purpose === 'Negotiation' ? "e.g. Customer requested a 10% price reduction and Net 45 payment terms before signing." : "Summarize key takeaways, client response, agreed next steps..."}
+                  value={activityForm.outcome}
+                  onChange={(e) => setActivityForm({ ...activityForm, outcome: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowActivityForm(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-2 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5 ${
+                    activityForm.status === 'Pending'
+                      ? 'bg-slate-700 hover:bg-slate-800'
+                      : activityForm.purpose === 'Negotiation'
+                      ? 'bg-purple-600 hover:bg-purple-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                >
+                  <CheckCircle2 size={14} />
+                  {activityForm.status === 'Pending'
+                    ? `Save Scheduled Activity (Keep in ${lead.stage})`
+                    : (lead.stage === 'New'
+                      ? 'Save & Move to Contacted'
+                      : (lead.stage === 'Proposal' && activityForm.purpose === 'Negotiation'
+                        ? 'Save & Move to Negotiation'
+                        : 'Save Interaction'))}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT LEAD & QUALIFICATION MODAL */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Edit2 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">Edit Lead & Qualification Details</h3>
+                  <p className="text-xs text-slate-500">Update qualification information for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              {/* QUALIFICATION SECTION */}
+              <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-3">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900 uppercase tracking-wider">
+                  <CheckCircle2 size={14} className="text-indigo-600" /> Qualification Requirements (Contacted → Qualified)
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    1. Customer Requirement <span className="text-indigo-600 font-normal">(Required for Qualification)</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Enterprise CRM solution with 50 user licenses, automated lead scoring, and SAP integration"
+                    value={editForm.requirement}
+                    onChange={(e) => setEditForm({ ...editForm, requirement: e.target.value })}
+                    className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      2. Budget (₹) <span className="text-indigo-600 font-normal">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="any"
+                      placeholder="e.g. 250000"
+                      value={editForm.budget}
+                      onChange={(e) => setEditForm({ ...editForm, budget: e.target.value })}
+                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      3. Decision Maker <span className="text-indigo-600 font-normal">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Rajesh Sharma (CTO)"
+                      value={editForm.decisionMaker}
+                      onChange={(e) => setEditForm({ ...editForm, decisionMaker: e.target.value })}
+                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      4. Expected Close Date <span className="text-indigo-600 font-normal">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={editForm.expectedCloseDate}
+                      onChange={(e) => setEditForm({ ...editForm, expectedCloseDate: e.target.value })}
+                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* GENERAL LEAD INFO */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Lead Name</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Company</label>
+                  <input
+                    type="text"
+                    value={editForm.company}
+                    onChange={(e) => setEditForm({ ...editForm, company: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Phone</label>
+                  <input
+                    type="text"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Industry</label>
+                  <input
+                    type="text"
+                    value={editForm.industry}
+                    onChange={(e) => setEditForm({ ...editForm, industry: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Source</label>
+                  <input
+                    type="text"
+                    value={editForm.source}
+                    onChange={(e) => setEditForm({ ...editForm, source: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} /> Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PROPOSAL MODAL */}
+      {showProposalModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">
+                    {leadQuotation || lead.proposalAmount ? 'Edit Proposal / Quotation' : 'Create & Send Proposal'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Proposal requirements for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowProposalModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProposal} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Proposal Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    placeholder="e.g. 250000"
+                    value={proposalForm.amount}
+                    onChange={(e) => setProposalForm({ ...proposalForm, amount: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Proposal Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={proposalForm.date}
+                    onChange={(e) => setProposalForm({ ...proposalForm, date: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Proposal Status <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={proposalForm.status}
+                    onChange={(e) => {
+                      const newStatus = e.target.value as 'Draft' | 'Sent';
+                      setProposalForm({
+                        ...proposalForm,
+                        status: newStatus,
+                        sentDate: newStatus === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '',
+                      });
+                    }}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="Draft">📝 Draft (Lead Remains Qualified)</option>
+                    <option value="Sent">📤 Sent to Customer (Allows Proposal Stage)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Sent Date {proposalForm.status === 'Sent' && <span className="text-rose-500">*</span>}
+                  </label>
+                  <input
+                    type="date"
+                    disabled={proposalForm.status !== 'Sent'}
+                    value={proposalForm.sentDate}
+                    onChange={(e) => setProposalForm({ ...proposalForm, sentDate: e.target.value })}
+                    className={`w-full p-2.5 border rounded-lg text-xs font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                      proposalForm.status === 'Sent' ? 'border-slate-300 bg-white text-slate-800' : 'border-slate-200 bg-slate-100 text-slate-400'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* STATUS HELPER BANNER */}
+              {proposalForm.status === 'Draft' ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">📝</span>
+                  <div>
+                    <span className="font-bold">Draft Proposal:</span> This proposal draft will be saved. The lead will <strong>remain in "Qualified"</strong> until the proposal status is set to "Sent".
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">📤</span>
+                  <div>
+                    <span className="font-bold">Sent Proposal:</span> The proposal has been sent to the customer, which <strong>allows the lead to advance to "Proposal"</strong>.
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowProposalModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <CheckCircle2 size={14} /> Save Proposal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WON / CLOSE DEAL MODAL */}
+      {showWonModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                  <Award size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">🎉 Close Deal — Mark as Won</h3>
+                  <p className="text-xs text-slate-500">Record final agreed deal terms for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowWonModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveWon} className="space-y-4">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2">
+                <span className="text-base">🤝</span>
+                <div>
+                  <span className="font-bold">Deal Closure Requirements:</span> To mark this deal Won, confirm the final agreed deal amount and closed/won date with customer acceptance confirmation.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Final Agreed Amount (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    placeholder="e.g. 275000"
+                    value={wonForm.finalAgreedAmount}
+                    onChange={(e) => setWonForm({ ...wonForm, finalAgreedAmount: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">Final negotiated commercial value</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Closed / Won Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={wonForm.wonDate}
+                    onChange={(e) => setWonForm({ ...wonForm, wonDate: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">Date customer accepted the deal</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Customer Acceptance & Deal Notes
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Customer signed proposal, approved ₹2,75,000 final cost, contract received."
+                  value={wonForm.acceptanceNotes}
+                  onChange={(e) => setWonForm({ ...wonForm, acceptanceNotes: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="recordAcceptanceActivity"
+                  checked={wonForm.recordAcceptanceActivity}
+                  onChange={(e) => setWonForm({ ...wonForm, recordAcceptanceActivity: e.target.checked })}
+                  className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
+                />
+                <label htmlFor="recordAcceptanceActivity" className="text-xs font-medium text-slate-700 cursor-pointer">
+                  Log a completed <strong>Customer Acceptance</strong> activity in the timeline
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowWonModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <Award size={14} /> Confirm Deal Won 🎉
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LOST / CLOSE DEAL MODAL */}
+      {showLostModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-rose-50 text-rose-600 rounded-lg">
+                  <AlertOctagon size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#0f172a]">Mark Opportunity as Lost</h3>
+                  <p className="text-xs text-slate-500">Record reason and notes for {lead.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLostModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveLost} className="space-y-4">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900 flex items-start gap-2">
+                <span className="text-base">ℹ️</span>
+                <div>
+                  <span className="font-bold">Lost Opportunity Record:</span> Please select a standard lost reason and provide explanatory notes. The lead and its entire communication history will remain preserved in CRM reports.
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Lost Reason <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={lostForm.lostReason}
+                    onChange={(e) => setLostForm({ ...lostForm, lostReason: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none bg-white"
+                  >
+                    {CRM_LOST_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Lost Date <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={lostForm.lostDate}
+                    onChange={(e) => setLostForm({ ...lostForm, lostDate: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {lostForm.lostReason === 'Other' && (
+                <div className="animate-in fade-in duration-150">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Custom Reason Explanation <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Specify the exact reason for losing this opportunity"
+                    value={lostForm.lostReasonDetails}
+                    onChange={(e) => setLostForm({ ...lostForm, lostReasonDetails: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lost Notes / Comments <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Provide context and summary of why the customer decided not to proceed..."
+                  value={lostForm.lostNotes}
+                  onChange={(e) => setLostForm({ ...lostForm, lostNotes: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowLostModal(false)}
+                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                >
+                  <AlertOctagon size={14} /> Confirm Mark as Lost
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* FOLLOW UP FORM MODAL */}
       {showFollowUpForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -571,6 +2310,26 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             </div>
           </div>
         </div>
+      )}
+
+      {/* CONVERT LEAD MODAL */}
+      <ConvertLeadModal
+        isOpen={showConvertModal}
+        onClose={() => setShowConvertModal(false)}
+        lead={lead || null}
+      />
+
+      {/* CREATE PROJECT MODAL */}
+      {lead && (
+        <CreateProjectModal
+          isOpen={showCreateProjectModal}
+          onClose={() => setShowCreateProjectModal(false)}
+          lead={lead}
+          customer={customers.find(c => c.id === lead.convertedToCustomerId || (lead.company && c.customerName.toLowerCase() === lead.company.toLowerCase())) || null}
+          onSuccess={(projId) => {
+            // Optional callback logic
+          }}
+        />
       )}
 
     </div>

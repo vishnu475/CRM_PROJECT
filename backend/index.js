@@ -40,6 +40,7 @@ import crmInvoicesRouter from './routes/crm_invoices.js';
 import crmProductsRouter from './routes/crm_products.js';
 import vendorsRouter from './routes/vendors.js';
 import purchaseOrdersRouter from './routes/purchase_orders.js';
+import projectsRouter from './routes/projects.js';
 
 import { authenticateUser } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -144,6 +145,7 @@ app.use('/api/crm/invoices',    crmInvoicesRouter);
 app.use('/api/crm/products',    crmProductsRouter);
 app.use('/api/vendors',         vendorsRouter);
 app.use('/api/purchase-orders', purchaseOrdersRouter);
+app.use('/api/projects',        projectsRouter);
 
 // ─── Health Check (shows both DB connections) ─────────────────────────────────
 app.get('/api/health', async (req, res) => {

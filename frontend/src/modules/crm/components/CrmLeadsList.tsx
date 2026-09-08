@@ -4,8 +4,10 @@ import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
 import { 
   Plus, Search, Filter, MoreVertical, ChevronLeft, ChevronRight, 
-  CheckCircle2, AlertCircle, Building2, User, Phone, Mail, Calendar
+  Building2, User, Mail,
+  Rocket, CheckCheck
 } from 'lucide-react';
+import { ConvertLeadModal } from './ConvertLeadModal';
 
 interface CrmLeadsListProps {
   onViewChange: (view: CrmView) => void;
@@ -26,8 +28,9 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
   // Selection State
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   
-  // Archive Modal State
+  // Archive & Convert Modal State
   const [leadToArchive, setLeadToArchive] = useState<string | null>(null);
+  const [leadToConvert, setLeadToConvert] = useState<Lead | null>(null);
 
   // Derive Active Leads
   const activeLeads = useMemo(() => leads.filter(l => l.status !== 'archived'), [leads]);
@@ -234,9 +237,35 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                   </div>
                 </td>
                 <td className="p-4">
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}>
-                    {lead.stage}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}
+                    >
+                      {lead.stage}
+                    </span>
+
+                    {lead.stage === 'Won' && !lead.isConverted && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLeadToConvert(lead);
+                        }}
+                        className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1 transition-all whitespace-nowrap transform hover:scale-105"
+                        title="Convert Won Lead to Customer, Contact & Opportunity"
+                      >
+                        <Rocket size={13} className="text-amber-300" /> Convert Lead
+                      </button>
+                    )}
+
+                    {lead.isConverted && (
+                      <span 
+                        className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1 whitespace-nowrap shadow-xs"
+                        title="Lead successfully converted to Customer Account"
+                      >
+                        <CheckCheck size={13} className="text-emerald-600" /> Converted
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="p-4">
                   <div className={`inline-flex items-center justify-center w-8 h-8 rounded-full border text-xs font-bold ${getLeadScoreColor(lead.score)}`}>
@@ -253,9 +282,27 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                   </div>
                 </td>
                 <td className="p-4 text-right">
-                  <button onClick={() => setLeadToArchive(lead.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100">
-                    <MoreVertical size={16} />
-                  </button>
+                  <div className="flex items-center justify-end gap-1.5">
+                    {lead.stage === 'Won' && !lead.isConverted && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLeadToConvert(lead);
+                        }}
+                        className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md text-xs font-bold transition flex items-center gap-1"
+                        title="Convert Lead"
+                      >
+                        <Rocket size={12} /> Convert
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setLeadToArchive(lead.id)} 
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                      title="Archive Lead"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -296,9 +343,29 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
             </div>
             
             <div className="flex items-center justify-between mt-4">
-              <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}>
-                {lead.stage}
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}
+                >
+                  {lead.stage}
+                </span>
+                {lead.stage === 'Won' && !lead.isConverted && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLeadToConvert(lead);
+                    }}
+                    className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1"
+                  >
+                    <Rocket size={13} className="text-amber-300" /> Convert Lead
+                  </button>
+                )}
+                {lead.isConverted && (
+                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1">
+                    <CheckCheck size={12} className="text-emerald-600" /> Converted
+                  </span>
+                )}
+              </div>
               <span className="text-sm font-bold text-slate-700">{formatINR(lead.value)}</span>
             </div>
             
@@ -338,6 +405,13 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
           </div>
         </div>
       )}
+
+      {/* CONVERT LEAD MODAL */}
+      <ConvertLeadModal
+        isOpen={!!leadToConvert}
+        lead={leadToConvert}
+        onClose={() => setLeadToConvert(null)}
+      />
 
     </div>
   );

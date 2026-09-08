@@ -53,7 +53,7 @@ import {
 } from '../../modules/friend_2_frontend_implementation';
 import { EmployeeWorkReportPage } from '../../modules/ess/pages/EmployeeWorkReportPage';
 import { TasksPage } from '../../modules/tasks';
-import { ProjectsPage } from '../../modules/projects';
+import { ProjectsDeliveryView } from '../../modules/projects/components/ProjectsDeliveryView';
 import { ReportsPage } from '../../modules/reports/pages/ReportsPage';
 import { DocumentsPage } from '../../modules/documents';
 
@@ -160,7 +160,7 @@ export const ModuleViews: React.FC = () => {
       return <InventoryPage />;
 
     case 'projects':
-      return <ProjectsPage />;
+      return <ProjectsDeliveryView />;
 
     case 'tasks':
       return <TasksPage />;

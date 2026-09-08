@@ -11,6 +11,7 @@ import {
   CRMProductsAPI,
   VendorsAPI,
   PurchaseOrdersAPI,
+  ProjectsAPI,
   AccountsAPI,
   BankingAPI,
   ExpensesAPI,
@@ -61,6 +62,7 @@ import {
   calculateOvertimeHours,
   calculateAttendanceStatus
 } from '../modules/attendance/utils/attendanceCalculator';
+import { findMatchingCustomer, findMatchingContact } from '../modules/crm/utils/duplicateCustomerDetection';
 
 interface AppContextType {
   activeModule: ModuleId;
@@ -90,16 +92,46 @@ interface AppContextType {
   addLead: (lead: Omit<Lead, 'id' | 'createdAt'>) => void;
   updateLead: (id: string, updates: Partial<Lead>) => void;
   deleteLead: (id: string) => void;
+  convertLead: (
+    leadId: string,
+    customData?: {
+      customerName?: string;
+      customerType?: 'Company' | 'Individual';
+      industry?: string;
+      website?: string;
+      contactName?: string;
+      contactDesignation?: string;
+      contactEmail?: string;
+      contactPhone?: string;
+      opportunityName?: string;
+      opportunityValue?: number;
+      expectedCloseDate?: string;
+      useExistingCustomerId?: string;
+      forceNewCustomer?: boolean;
+    }
+  ) => Promise<{
+    success: boolean;
+    customerId?: string;
+    contactId?: string;
+    opportunityId?: string;
+    isExistingCustomerReused?: boolean;
+    isExistingContactReused?: boolean;
+    message?: string;
+  }>;
   customers: Customer[];
   addCustomer: (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
   contacts: Contact[];
-  addContact: (contact: Omit<Contact, 'id'>) => void;
+  addContact: (contact: Omit<Contact, 'id'>) => Promise<void> | void;
+  updateContact: (id: string, updates: Partial<Contact>) => Promise<void> | void;
+  deleteContact: (id: string) => Promise<void> | void;
   opportunities: Opportunity[];
   addOpportunity: (opp: Omit<Opportunity, 'id'>) => void;
   updateOpportunity: (id: string, updates: Partial<Opportunity>) => void;
+  deleteOpportunity: (id: string) => Promise<void> | void;
   activities: Activity[];
   addActivity: (activity: Omit<Activity, 'id'>) => void;
+  updateActivity: (id: string, updates: Partial<Activity>) => void;
   followUps: FollowUp[];
   addFollowUp: (fu: Omit<FollowUp, 'id'>) => void;
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
@@ -109,6 +141,7 @@ interface AppContextType {
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   quotations: Quotation[];
   addQuotation: (quotation: Omit<Quotation, 'id'>) => Promise<void>;
+  updateQuotation: (id: string, updates: Partial<Quotation>) => Promise<void> | void;
   salesOrders: SalesOrder[];
   addSalesOrder: (so: Omit<SalesOrder, 'id'>) => Promise<void>;
   invoices: Invoice[];
@@ -148,6 +181,22 @@ interface AppContextType {
   expenseClaims: ExpenseClaim[];
   approveExpense: (id: string) => void;
   projects: Project[];
+  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
+  addProject: (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => Promise<Project | null>;
+  createProjectFromLead: (
+    leadId: string,
+    customData?: {
+      name?: string;
+      client?: string;
+      projectRequirement?: string;
+      projectNotes?: string;
+      projectManager?: string;
+      startDate?: string;
+      endDate?: string;
+      budget?: number;
+      status?: Project['status'];
+    }
+  ) => Promise<{ success: boolean; projectId?: string; message?: string }>;
   tasks: Task[];
   helpdeskTickets: HelpdeskTicket[];
   documents: DocumentFile[];
@@ -630,7 +679,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             company: r.company || '',
             email: r.email || '',
             phone: r.phone || '',
-            value: parseFloat(r.value) || 0,
+            value: parseFloat(r.value) || parseFloat(r.budget) || 0,
+            budget: parseFloat(r.budget) || parseFloat(r.value) || 0,
+            requirement: r.requirement || '',
+            notes: r.notes || '',
+            contactPerson: r.contact_person || r.decision_maker || '',
+            designation: r.designation || '',
+            contactRole: r.contact_role || 'Decision Maker',
+            alternatePhone: r.alternate_phone || '',
+            website: r.website || '',
+            industry: r.industry || '',
+            campaign: r.campaign || '',
+            decisionMaker: r.decision_maker || r.contact_person || '',
+            expectedCloseDate: r.expected_close_date || '',
+            proposalAmount: parseFloat(r.proposal_amount) || 0,
+            proposalDate: r.proposal_date || '',
+            proposalStatus: r.proposal_status || 'Draft',
+            proposalSentDate: r.proposal_sent_date || '',
+            finalAgreedAmount: parseFloat(r.final_agreed_amount) || 0,
+            wonDate: r.won_date || '',
+            dealClosedNotes: r.deal_closed_notes || '',
+            lostReason: r.lost_reason || '',
+            lostReasonDetails: r.lost_reason_details || '',
+            lostNotes: r.lost_notes || '',
+            lostDate: r.lost_date || '',
+            convertedToCustomerId: r.converted_to_customer_id || '',
+            convertedToContactId: r.converted_to_contact_id || '',
+            convertedToOpportunityId: r.converted_to_opportunity_id || '',
+            isConverted: r.is_converted === true || r.is_converted === 'true',
+            convertedAt: r.converted_at || '',
+            projectId: r.project_id || '',
+            isProjectCreated: r.is_project_created === true || r.is_project_created === 'true',
+            projectCreatedAt: r.project_created_at || '',
             stage: r.stage || 'New',
             score: parseInt(r.score) || 50,
             source: r.source || 'Manual/Other',
@@ -650,6 +730,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             industry: r.industry || '',
             ownerId: r.owner_id || '',
             status: r.status || 'Active',
+            healthSummary: r.healthSummary || undefined,
             primaryContact: {
               name: r.contact_name || '',
               email: r.contact_email || '',
@@ -660,6 +741,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               country: r.billing_country || '',
             },
             creditLimit: parseFloat(r.credit_limit) || 0,
+            convertedFromLeadId: r.converted_from_lead_id || '',
             createdAt: r.created_at || new Date().toISOString(),
             updatedAt: r.updated_at || new Date().toISOString(),
           })));
@@ -674,8 +756,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             customerId: r.customer_id || '',
             customerName: r.company || '',
             designation: r.title || '',
+            contactRole: r.contact_role || r.role || 'Other',
             email: r.email || '',
             phone: r.phone || '',
+            alternatePhone: r.alternate_phone || '',
+            notes: r.notes || '',
+            leadId: r.lead_id || '',
             owner: '',
             lastInteraction: r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
             status: 'Active' as const,
@@ -709,6 +795,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             assignedTo: r.assigned_to || '',
             dueDate: r.due_date || '',
             priority: r.priority || 'Medium',
+            purpose: r.purpose || 'General',
             status: r.status || 'Pending',
             outcome: r.outcome || '',
           })));
@@ -737,11 +824,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             id: r.id,
             quoteNumber: r.quote_number || r.id,
             customerId: r.customer_id || '',
+            leadId: r.lead_id || '',
             customerName: r.customer_name || '',
-            date: r.date ? r.date.split('T')[0] : '',
-            validUntil: r.valid_until ? r.valid_until.split('T')[0] : '',
+            date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+            validUntil: r.valid_until ? (typeof r.valid_until === 'string' ? r.valid_until.split('T')[0] : new Date(r.valid_until).toISOString().split('T')[0]) : '',
             amount: parseFloat(r.amount) || 0,
             status: r.status || 'Draft',
+            sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
             itemsCount: parseInt(r.items_count) || 1,
           })));
         }
@@ -799,6 +888,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             date: r.date ? r.date.split('T')[0] : '',
             amount: parseFloat(r.amount) || 0,
             status: r.status || 'Draft',
+          })));
+        }
+
+        // 22. Load Projects from CRM PostgreSQL
+        const projectsRes = await ProjectsAPI.getAll();
+        if (projectsRes.success && Array.isArray(projectsRes.data) && projectsRes.data.length > 0) {
+          setProjects(projectsRes.data.map((r: any) => ({
+            id: r.id,
+            code: r.code || r.id,
+            name: r.name,
+            client: r.client,
+            customerId: r.customer_id || '',
+            sourceLeadId: r.source_lead_id || '',
+            sourceOpportunityId: r.source_opportunity_id || '',
+            projectRequirement: r.project_requirement || '',
+            projectNotes: r.project_notes || '',
+            projectManager: r.project_manager || '',
+            startDate: r.start_date ? (typeof r.start_date === 'string' ? r.start_date.split('T')[0] : new Date(r.start_date).toISOString().split('T')[0]) : '',
+            endDate: r.end_date ? (typeof r.end_date === 'string' ? r.end_date.split('T')[0] : new Date(r.end_date).toISOString().split('T')[0]) : '',
+            budget: parseFloat(r.budget) || 0,
+            spent: parseFloat(r.spent) || 0,
+            progress: parseInt(r.progress) || 0,
+            status: r.status || 'Not Started',
+            createdAt: r.created_at || '',
+            updatedAt: r.updated_at || '',
           })));
         }
       } catch (err) {
@@ -1078,7 +1192,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [expenseClaims, setExpenseClaims] = useState<ExpenseClaim[]>(initialExpenseClaims);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(initialPurchaseOrders);
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors);
-  const [projects] = useState<Project[]>(initialProjects);
+  const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [tasks] = useState<Task[]>(initialTasks);
   const [helpdeskTickets] = useState<HelpdeskTicket[]>(initialHelpdeskTickets);
   const [documents, setDocuments] = useState<DocumentFile[]>(initialDocuments);
@@ -1115,6 +1229,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tempId = `LD-${Date.now()}`;
     const newLead: Lead = { ...leadData, id: tempId, createdAt: 'Just now' };
     setLeads((prev) => [newLead, ...prev]); // Optimistic
+
+    // Auto-create and link Contact if meaningful contact info is present
+    const contactPersonName = (leadData.contactPerson || leadData.name || '').trim();
+    const contactEmail = (leadData.email || '').trim();
+
+    if (contactPersonName && contactEmail) {
+      const contactTempId = `CON-${Date.now()}`;
+      const newContact: Contact = {
+        id: contactTempId,
+        name: contactPersonName,
+        customerId: '',
+        customerName: (leadData.company || leadData.name || '').trim(),
+        designation: leadData.designation || 'Representative',
+        contactRole: leadData.contactRole || 'Decision Maker',
+        email: contactEmail,
+        phone: leadData.phone || '',
+        alternatePhone: leadData.alternatePhone || '',
+        notes: leadData.notes || '',
+        owner: leadData.assignedTo || 'Unassigned',
+        lastInteraction: new Date().toISOString().split('T')[0],
+        status: 'Active',
+        leadId: tempId,
+      };
+
+      // Prevent duplicate contacts in state on double submit
+      setContacts((prev) => {
+        const alreadyExists = prev.some(
+          (c) => (c.leadId && c.leadId === tempId) ||
+                 (c.email && c.email.toLowerCase() === contactEmail.toLowerCase() && c.leadId === tempId)
+        );
+        if (alreadyExists) return prev;
+        return [newContact, ...prev];
+      });
+
+      try {
+        await ContactsAPI.create({
+          id: contactTempId,
+          name: newContact.name,
+          email: newContact.email,
+          phone: newContact.phone,
+          company: newContact.customerName,
+          customerId: null,
+          leadId: tempId,
+          title: newContact.designation,
+          contactRole: newContact.contactRole,
+          alternatePhone: newContact.alternatePhone,
+          notes: newContact.notes,
+        });
+      } catch (cErr) {
+        console.warn('⚠️ [CRM] auto-create contact from lead failed:', cErr);
+      }
+    }
+
     try {
       const res = await LeadsAPI.create({
         id: tempId,
@@ -1122,11 +1289,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         company: leadData.company,
         email: leadData.email,
         phone: leadData.phone,
-        value: leadData.value,
+        value: leadData.value || leadData.budget || 0,
+        budget: leadData.budget || leadData.value || 0,
         stage: leadData.stage,
         score: leadData.score,
         source: leadData.source,
         assignedTo: leadData.assignedTo,
+        requirement: leadData.requirement,
+        notes: leadData.notes,
+        decisionMaker: leadData.decisionMaker || leadData.contactPerson,
+        expectedCloseDate: leadData.expectedCloseDate,
+        contactPerson: leadData.contactPerson,
+        designation: leadData.designation,
+        contactRole: leadData.contactRole,
+        alternatePhone: leadData.alternatePhone,
+        website: leadData.website,
+        industry: leadData.industry,
+        campaign: leadData.campaign,
       });
       if (res.success && res.data) {
         setLeads((prev) => prev.map((l) => l.id === tempId ? { ...newLead, id: res.data.id } : l));
@@ -1137,12 +1316,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateLead = useCallback(async (id: string, updates: Partial<Lead>) => {
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l))); // Optimistic
     try {
-      await LeadsAPI.update(id, {
-        stage: updates.stage,
-        score: updates.score,
-        value: updates.value,
-        assigned_to: updates.assignedTo,
-      });
+      await LeadsAPI.update(id, updates);
     } catch (err) { console.warn('⚠️ [CRM] updateLead failed:', err); }
   }, []);
 
@@ -1151,6 +1325,496 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try { await LeadsAPI.delete(id); }
     catch (err) { console.warn('⚠️ [CRM] deleteLead failed:', err); }
   }, []);
+
+  const convertLead = useCallback(async (
+    leadId: string,
+    customData?: {
+      customerName?: string;
+      customerType?: 'Company' | 'Individual';
+      industry?: string;
+      website?: string;
+      contactName?: string;
+      contactDesignation?: string;
+      contactEmail?: string;
+      contactPhone?: string;
+      opportunityName?: string;
+      opportunityValue?: number;
+      expectedCloseDate?: string;
+      useExistingCustomerId?: string;
+      forceNewCustomer?: boolean;
+    }
+  ): Promise<{
+    success: boolean;
+    customerId?: string;
+    contactId?: string;
+    opportunityId?: string;
+    isExistingCustomerReused?: boolean;
+    isExistingContactReused?: boolean;
+    message?: string;
+  }> => {
+    const lead = leads.find((l) => l.id === leadId);
+    if (!lead) {
+      return { success: false, message: 'Lead not found.' };
+    }
+
+    if (lead.isConverted) {
+      return {
+        success: false,
+        message: 'This lead has already been converted to a Customer, Contact, and Opportunity.',
+      };
+    }
+
+    if (lead.stage !== 'Won') {
+      return {
+        success: false,
+        message: `Lead cannot be converted from stage "${lead.stage}". Conversion is only available when the Lead is Won.`,
+      };
+    }
+
+    const timestamp = Date.now();
+    const isoTimestamp = new Date().toISOString();
+    const today = isoTimestamp.split('T')[0];
+
+    // 1. Check for Duplicate / Existing Customer
+    let customerId = '';
+    let customerName = '';
+    let isExistingCustomerReused = false;
+    let newCustomerState: Customer | null = null;
+    let newCustomerPayload: any = null;
+
+    if (customData?.useExistingCustomerId) {
+      const existing = customers.find((c) => c.id === customData.useExistingCustomerId);
+      if (existing) {
+        customerId = existing.id;
+        customerName = existing.customerName;
+        isExistingCustomerReused = true;
+      }
+    }
+
+    if (!customerId && !customData?.forceNewCustomer) {
+      const match = findMatchingCustomer(lead, customers, customData);
+      if (match.hasDuplicate && match.matchingCustomer) {
+        customerId = match.matchingCustomer.id;
+        customerName = match.matchingCustomer.customerName;
+        isExistingCustomerReused = true;
+      }
+    }
+
+    if (!customerId) {
+      // Create new customer
+      customerId = `CUST-${timestamp}`;
+      customerName = customData?.customerName?.trim() || (lead.company?.trim() || lead.name.trim());
+      const customerType = customData?.customerType || (lead.company ? 'Company' : 'Individual');
+      const industry = customData?.industry || lead.industry || '';
+      const website = customData?.website || lead.website || '';
+      const contactPersonName = customData?.contactName?.trim() || (lead.decisionMaker || lead.contactPerson || lead.name).trim();
+      const designation = customData?.contactDesignation?.trim() || lead.designation || 'Primary Contact';
+      const contactEmail = customData?.contactEmail?.trim() || lead.email || '';
+      const contactPhone = customData?.contactPhone?.trim() || lead.phone || '';
+
+      newCustomerPayload = {
+        id: customerId,
+        customerCode: customerId,
+        customerName,
+        customerType,
+        industry,
+        ownerId: lead.assignedTo || '',
+        status: 'Active' as const,
+        creditLimit: 0,
+        contactName: contactPersonName,
+        contactEmail,
+        contactPhone,
+        billingCity: (lead as any).city || (lead as any).address || '',
+        billingCountry: (lead as any).country || '',
+        convertedFromLeadId: lead.id,
+      };
+
+      newCustomerState = {
+        id: customerId,
+        customerCode: customerId,
+        customerName,
+        customerType,
+        industry,
+        ownerId: lead.assignedTo || '',
+        status: 'Active',
+        primaryContact: {
+          name: contactPersonName,
+          email: contactEmail,
+          phone: contactPhone,
+          alternatePhone: lead.alternatePhone,
+        },
+        billingAddress: {
+          city: (lead as any).city || (lead as any).address || '',
+          country: (lead as any).country || '',
+        },
+        creditLimit: 0,
+        convertedFromLeadId: lead.id,
+        createdAt: isoTimestamp,
+        updatedAt: isoTimestamp,
+      };
+    }
+
+    // 2. Prepare Contact Data (Check for existing Contact on the Customer)
+    let contactId = '';
+    let isExistingContactReused = false;
+    let newContactState: Contact | null = null;
+    let newContactPayload: any = null;
+
+    const contactPersonName = customData?.contactName?.trim() || (lead.decisionMaker || lead.contactPerson || lead.name).trim();
+    const designation = customData?.contactDesignation?.trim() || lead.designation || 'Primary Contact';
+    const contactEmail = customData?.contactEmail?.trim() || lead.email || '';
+    const contactPhone = customData?.contactPhone?.trim() || lead.phone || '';
+
+    const matchedContact = findMatchingContact(lead, contacts, customerId, customData);
+    if (matchedContact) {
+      contactId = matchedContact.id;
+      isExistingContactReused = true;
+    } else {
+      contactId = `CON-${timestamp}`;
+      newContactPayload = {
+        id: contactId,
+        name: contactPersonName,
+        email: contactEmail,
+        phone: contactPhone,
+        company: customerName,
+        customerId,
+        leadId: lead.id,
+        title: designation,
+      };
+
+      newContactState = {
+        id: contactId,
+        name: contactPersonName,
+        customerId,
+        customerName,
+        designation,
+        email: contactEmail,
+        phone: contactPhone,
+        owner: lead.assignedTo || '',
+        lastInteraction: lead.wonDate || today,
+        status: 'Active',
+      };
+    }
+
+    // 3. Prepare Opportunity Data (Check for existing Opportunity on Customer to avoid duplicates on retry)
+    const defaultOppSummary = lead.requirement ? (lead.requirement.length > 40 ? `${lead.requirement.slice(0, 37)}...` : lead.requirement) : 'Deal';
+    const oppName = customData?.opportunityName?.trim() || (lead.company ? `${lead.company} - ${defaultOppSummary}` : `${lead.name} Deal`);
+    const oppValue = customData?.opportunityValue !== undefined && !isNaN(customData.opportunityValue)
+      ? customData.opportunityValue
+      : (lead.finalAgreedAmount || lead.value || lead.budget || 0);
+    const oppExpectedClose = customData?.expectedCloseDate || lead.wonDate || lead.expectedCloseDate || today;
+
+    let opportunityId = '';
+    let newOpportunityState: Opportunity | null = null;
+    let newOpportunityPayload: any = null;
+
+    const existingOpp = opportunities.find(
+      (o) => o.customerId === customerId && (o.id === lead.convertedToOpportunityId || o.name === oppName)
+    );
+
+    if (existingOpp) {
+      opportunityId = existingOpp.id;
+    } else {
+      opportunityId = `OPP-${timestamp}`;
+      newOpportunityPayload = {
+        id: opportunityId,
+        name: oppName,
+        customerId,
+        customerName,
+        value: oppValue,
+        probability: 100,
+        expectedClose: oppExpectedClose,
+        owner: lead.assignedTo || '',
+        stage: 'Won',
+      };
+
+      newOpportunityState = {
+        id: opportunityId,
+        name: oppName,
+        customerId,
+        customerName,
+        value: oppValue,
+        probability: 100,
+        expectedClose: oppExpectedClose,
+        owner: lead.assignedTo || '',
+        stage: 'Won',
+      };
+    }
+
+    // 4. Prepare Lead updates
+    const leadUpdates: Partial<Lead> = {
+      convertedToCustomerId: customerId,
+      convertedToContactId: contactId,
+      convertedToOpportunityId: opportunityId,
+      isConverted: true,
+      convertedAt: isoTimestamp,
+    };
+
+    try {
+      // Step A: Create Customer in PostgreSQL if not reused
+      if (!isExistingCustomerReused && newCustomerPayload) {
+        const custRes = await CustomersAPI.create(newCustomerPayload);
+        if (!custRes.success) {
+          throw new Error(custRes.message || 'Failed to create Customer record');
+        }
+      }
+
+      // Step B: Create Contact in PostgreSQL if not reused, or link existing contact to customer
+      if (!isExistingContactReused && newContactPayload) {
+        const contRes = await ContactsAPI.create(newContactPayload);
+        if (!contRes.success) {
+          console.warn('⚠️ Contact creation failed during conversion, proceeding with customer:', contRes.message);
+        }
+      } else if (isExistingContactReused && matchedContact) {
+        setContacts((prev) =>
+          prev.map((c) =>
+            c.id === matchedContact.id
+              ? { ...c, customerId, customerName }
+              : c
+          )
+        );
+        try {
+          await ContactsAPI.update(matchedContact.id, {
+            customerId,
+            company: customerName,
+          });
+        } catch (cErr) {
+          console.warn('⚠️ Existing contact customer link update failed:', cErr);
+        }
+      }
+
+      // Step C: Create Opportunity in PostgreSQL if not existing
+      if (newOpportunityPayload) {
+        const oppRes = await OpportunitiesAPI.create(newOpportunityPayload);
+        if (!oppRes.success) {
+          console.warn('⚠️ Opportunity creation failed during conversion, proceeding with customer:', oppRes.message);
+        }
+      }
+
+      // Step D: Update Lead in PostgreSQL
+      const leadRes = await LeadsAPI.update(leadId, leadUpdates);
+      if (!leadRes.success) {
+        console.warn('⚠️ Lead conversion stamp update failed in backend:', leadRes.message);
+      }
+
+      // Step E: Update React states
+      if (newCustomerState) {
+        setCustomers((prev) => [newCustomerState!, ...prev]);
+      }
+      if (newContactState) {
+        setContacts((prev) => [newContactState!, ...prev]);
+      }
+      if (newOpportunityState) {
+        setOpportunities((prev) => [newOpportunityState!, ...prev]);
+      }
+      setLeads((prev) =>
+        prev.map((l) => (l.id === leadId ? { ...l, ...leadUpdates } : l))
+      );
+
+      return {
+        success: true,
+        customerId,
+        contactId,
+        opportunityId,
+        isExistingCustomerReused,
+        isExistingContactReused,
+      };
+    } catch (err: any) {
+      console.error('❌ Lead conversion failed:', err);
+      return {
+        success: false,
+        message: err.message || 'An unexpected error occurred during lead conversion.',
+      };
+    }
+  }, [leads, customers, contacts, opportunities]);
+
+  const addProject = useCallback(async (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => {
+    const projectId = projectData.id || `PRJ-${Date.now().toString().slice(-4)}`;
+    const projectCode = projectData.code || projectId;
+    const today = new Date().toISOString().split('T')[0];
+
+    const newProject: Project = {
+      ...projectData,
+      id: projectId,
+      code: projectCode,
+      createdAt: today,
+      updatedAt: today,
+    };
+
+    setProjects((prev) => [newProject, ...prev]);
+
+    try {
+      const res = await ProjectsAPI.create({
+        id: newProject.id,
+        code: newProject.code,
+        name: newProject.name,
+        client: newProject.client,
+        customerId: newProject.customerId,
+        sourceLeadId: newProject.sourceLeadId,
+        sourceOpportunityId: newProject.sourceOpportunityId,
+        projectRequirement: newProject.projectRequirement,
+        projectNotes: newProject.projectNotes,
+        projectManager: newProject.projectManager,
+        startDate: newProject.startDate,
+        endDate: newProject.endDate,
+        budget: newProject.budget,
+        spent: newProject.spent,
+        progress: newProject.progress,
+        status: newProject.status,
+      });
+      if (res.success && res.data) {
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...newProject, id: res.data.id, code: res.data.code } : p)));
+        return res.data;
+      }
+    } catch (err: any) {
+      console.warn('⚠️ [Projects] Failed to persist project:', err.message);
+    }
+    return newProject;
+  }, []);
+
+  const createProjectFromLead = useCallback(async (
+    leadId: string,
+    customData?: {
+      name?: string;
+      client?: string;
+      projectRequirement?: string;
+      projectNotes?: string;
+      projectManager?: string;
+      startDate?: string;
+      endDate?: string;
+      budget?: number;
+      status?: Project['status'];
+    }
+  ): Promise<{ success: boolean; projectId?: string; message?: string }> => {
+    const lead = leads.find((l) => l.id === leadId);
+    if (!lead) {
+      return { success: false, message: 'Lead not found.' };
+    }
+
+    if (lead.stage !== 'Won') {
+      return {
+        success: false,
+        message: `Project can only be created from a "Won" lead. Current stage is "${lead.stage}".`,
+      };
+    }
+
+    if (lead.isProjectCreated || lead.projectId) {
+      return {
+        success: false,
+        projectId: lead.projectId,
+        message: 'A Project has already been created from this won lead.',
+      };
+    }
+
+    // Identify customer
+    const customer = customers.find(
+      (c) => c.id === lead.convertedToCustomerId || (lead.company && c.customerName.toLowerCase() === lead.company.toLowerCase())
+    );
+    const clientName = customData?.client || customer?.customerName || lead.company || lead.name;
+
+    // Requirement summary helper for project name
+    const reqText = (customData?.projectRequirement || lead.requirement || '').trim();
+    let reqSummary = 'Implementation Project';
+    if (reqText) {
+      const lower = reqText.toLowerCase();
+      if (lower.includes('crm') && lower.includes('hrms')) {
+        reqSummary = 'CRM and HRMS Implementation';
+      } else if (lower.includes('crm')) {
+        reqSummary = 'CRM Implementation';
+      } else if (lower.includes('hrms')) {
+        reqSummary = 'HRMS Implementation';
+      } else if (lower.includes('erp')) {
+        reqSummary = 'ERP Implementation';
+      } else if (lower.includes('payroll')) {
+        reqSummary = 'Payroll System Implementation';
+      } else if (reqText.length <= 40) {
+        reqSummary = reqText;
+      } else {
+        reqSummary = reqText.slice(0, 37).trim() + '...';
+      }
+    }
+
+    const defaultProjectName = `${clientName} - ${reqSummary}`;
+    const projectId = `PRJ-${Date.now().toString().slice(-4)}`;
+    const today = new Date().toISOString().split('T')[0];
+
+    const newProject: Project = {
+      id: projectId,
+      code: projectId,
+      name: customData?.name || defaultProjectName,
+      client: clientName,
+      customerId: lead.convertedToCustomerId || customer?.id || '',
+      sourceLeadId: lead.id,
+      sourceOpportunityId: lead.convertedToOpportunityId || '',
+      projectRequirement: customData?.projectRequirement !== undefined ? customData.projectRequirement : (lead.requirement || ''),
+      projectNotes: customData?.projectNotes !== undefined ? customData.projectNotes : (lead.notes || ''),
+      projectManager: customData?.projectManager || lead.assignedTo || (employees[0]?.name || 'Emma Watson'),
+      startDate: customData?.startDate || today,
+      endDate: customData?.endDate || lead.expectedCloseDate || '',
+      budget: customData?.budget !== undefined ? customData.budget : (lead.finalAgreedAmount || lead.value || lead.budget || 0),
+      spent: 0,
+      progress: 0,
+      status: customData?.status || 'Not Started',
+      createdAt: today,
+      updatedAt: today,
+    };
+
+    // Optimistic UI updates
+    setProjects((prev) => [newProject, ...prev]);
+    setLeads((prev) =>
+      prev.map((l) =>
+        l.id === leadId
+          ? {
+              ...l,
+              projectId: projectId,
+              isProjectCreated: true,
+              projectCreatedAt: new Date().toISOString(),
+            }
+          : l
+      )
+    );
+
+    try {
+      const res = await ProjectsAPI.create({
+        id: newProject.id,
+        code: newProject.code,
+        name: newProject.name,
+        client: newProject.client,
+        customerId: newProject.customerId,
+        sourceLeadId: newProject.sourceLeadId,
+        sourceOpportunityId: newProject.sourceOpportunityId,
+        projectRequirement: newProject.projectRequirement,
+        projectNotes: newProject.projectNotes,
+        projectManager: newProject.projectManager,
+        startDate: newProject.startDate,
+        endDate: newProject.endDate,
+        budget: newProject.budget,
+        spent: newProject.spent,
+        progress: newProject.progress,
+        status: newProject.status,
+      });
+
+      if (res.success && res.data) {
+        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...newProject, id: res.data.id, code: res.data.code } : p)));
+        setLeads((prev) =>
+          prev.map((l) =>
+            l.id === leadId
+              ? {
+                  ...l,
+                  projectId: res.data.id,
+                  isProjectCreated: true,
+                }
+              : l
+          )
+        );
+        return { success: true, projectId: res.data.id, message: 'Project created successfully from the won lead.' };
+      }
+    } catch (err: any) {
+      console.warn('⚠️ [CRM -> Projects] Failed to persist project:', err.message);
+    }
+
+    return { success: true, projectId, message: 'Project created successfully from the won lead.' };
+  }, [leads, customers, employees]);
 
   const addCustomer = useCallback(async (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => {
     const now = new Date().toISOString();
@@ -1197,8 +1861,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addContact = useCallback(async (contact: Omit<Contact, 'id'>) => {
     const tempId = `CON-${Date.now()}`;
     setContacts((prev) => [{ ...contact, id: tempId }, ...prev]); // Optimistic
-    try { await ContactsAPI.create({ id: tempId, ...contact }); }
-    catch (err) { console.warn('⚠️ [CRM] addContact failed:', err); }
+    try {
+      await ContactsAPI.create({
+        id: tempId,
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        company: contact.customerName,
+        customerId: contact.customerId,
+        leadId: contact.leadId,
+        title: contact.designation,
+      });
+    } catch (err) {
+      console.warn('⚠️ [CRM] addContact failed:', err);
+    }
+  }, []);
+
+  const updateContact = useCallback(async (id: string, updates: Partial<Contact>) => {
+    setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c))); // Optimistic
+    try {
+      await ContactsAPI.update(id, {
+        name: updates.name,
+        email: updates.email,
+        phone: updates.phone,
+        company: updates.customerName,
+        customerId: updates.customerId,
+        leadId: updates.leadId,
+        title: updates.designation,
+      });
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateContact failed:', err);
+    }
+  }, []);
+
+  const deleteContact = useCallback(async (id: string) => {
+    setContacts((prev) => prev.filter((c) => c.id !== id)); // Optimistic
+    try {
+      await ContactsAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteContact failed:', err);
+    }
   }, []);
 
   const addOpportunity = useCallback(async (opp: Omit<Opportunity, 'id'>) => {
@@ -1233,6 +1935,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { console.warn('⚠️ [CRM] updateOpportunity failed:', err); }
   }, []);
 
+  const deleteOpportunity = useCallback(async (id: string) => {
+    setOpportunities((prev) => prev.filter((o) => o.id !== id)); // Optimistic
+    try {
+      await OpportunitiesAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteOpportunity failed:', err);
+    }
+  }, []);
+
   const addActivity = useCallback(async (activity: Omit<Activity, 'id'>) => {
     const tempId = `ACT-${Date.now()}`;
     setActivities((prev) => [{ ...activity, id: tempId }, ...prev]); // Optimistic
@@ -1241,6 +1952,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: tempId,
         title: activity.title,
         type: activity.type,
+        purpose: activity.purpose || 'General',
         relatedTo: activity.relatedTo,
         assignedTo: activity.assignedTo,
         dueDate: activity.dueDate,
@@ -1249,6 +1961,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         outcome: activity.outcome,
       });
     } catch (err) { console.warn('⚠️ [CRM] addActivity failed:', err); }
+  }, []);
+
+  const updateActivity = useCallback(async (id: string, updates: Partial<Activity>) => {
+    setActivities((prev) =>
+      prev.map((act) => (act.id === id ? { ...act, ...updates } : act))
+    );
+    try {
+      await CRMActivitiesAPI.update(id, updates);
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateActivity failed:', err);
+    }
   }, []);
 
   const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
@@ -1265,6 +1988,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       await QuotationsAPI.create({ id: tempId, ...quotation });
     } catch (err) { console.warn('⚠️ [CRM] addQuotation failed:', err); }
+  }, []);
+
+  const updateQuotation = useCallback(async (id: string, updates: Partial<Quotation>) => {
+    setQuotations((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, ...updates } : q))
+    );
+    try {
+      await QuotationsAPI.update(id, updates);
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateQuotation failed:', err);
+    }
   }, []);
 
   const addSalesOrder = useCallback(async (so: Omit<SalesOrder, 'id'>) => {
@@ -1560,16 +2294,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addLead,
         updateLead,
         deleteLead,
+        convertLead,
         customers,
         addCustomer,
         updateCustomer,
         contacts,
         addContact,
+        updateContact,
+        deleteContact,
         opportunities,
         addOpportunity,
         updateOpportunity,
+        deleteOpportunity,
         activities,
         addActivity,
+        updateActivity,
         followUps,
         addFollowUp,
         updateFollowUp,
@@ -1579,6 +2318,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addProduct,
         quotations,
         addQuotation,
+        updateQuotation,
         salesOrders,
         addSalesOrder,
         invoices,
@@ -1618,6 +2358,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         expenseClaims,
         approveExpense,
         projects,
+        setProjects,
+        addProject,
+        createProjectFromLead,
         tasks,
         helpdeskTickets,
         documents,

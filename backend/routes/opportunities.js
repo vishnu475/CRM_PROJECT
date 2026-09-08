@@ -21,6 +21,17 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/opportunities/:id
+router.get('/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM opportunities WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Opportunity not found' });
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // POST /api/opportunities
 router.post('/', async (req, res) => {
   const { id, name, customerId, customerName, value, probability, expectedClose, owner, stage } = req.body;

@@ -59,6 +59,16 @@ export async function ensureCRMDatabaseAndMigrate() {
     const migrationFiles = [
       '001_crm_schema.sql',
       '002_crm_seed.sql',  // Seed initial data into crm DB
+      '003_qualification_fields.sql',
+      '004_proposal_fields.sql',
+      '005_activity_purpose.sql',
+      '006_won_fields.sql',
+      '007_lost_fields.sql',
+      '008_lead_conversion_fields.sql',
+      '009_lead_reopen_fields.sql',
+      '010_lead_notes_field.sql',
+      '011_projects_table.sql',
+      '012_contacts_lead_and_fields.sql',
     ];
 
     for (const file of migrationFiles) {

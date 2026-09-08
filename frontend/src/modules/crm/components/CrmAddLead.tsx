@@ -19,6 +19,7 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
     campaign: '',
     contactPerson: '',
     designation: '',
+    contactRole: 'Decision Maker',
     email: '',
     phone: '',
     alternatePhone: '',
@@ -33,8 +34,9 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
     state: '',
     country: '',
     postalCode: '',
-    tags: '',
+    requirement: '',
     notes: '',
+    tags: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -48,6 +50,9 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
     const newErrors: Record<string, string> = {};
     if (!formData.name.trim()) newErrors.name = 'Lead name is required.';
     if (!formData.source) newErrors.source = 'Please select a lead source.';
+    if (!formData.contactPerson.trim()) newErrors.contactPerson = 'Contact person is required.';
+    if (!formData.designation.trim()) newErrors.designation = 'Designation is required.';
+    if (!formData.contactRole) newErrors.contactRole = 'Contact role is required.';
     if (!formData.email.trim() || !/^\S+@\S+\.\S+$/.test(formData.email)) {
       newErrors.email = 'Please enter a valid email address.';
     }
@@ -80,6 +85,7 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
         campaign: formData.campaign,
         contactPerson: formData.contactPerson,
         designation: formData.designation,
+        contactRole: formData.contactRole,
         alternatePhone: formData.alternatePhone,
         website: formData.website,
         expectedCloseDate: formData.expectedCloseDate,
@@ -88,13 +94,30 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
         state: formData.state,
         country: formData.country,
         postalCode: formData.postalCode,
+        requirement: formData.requirement,
         notes: formData.notes,
+        tags: formData.tags ? formData.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       });
 
-      showToast('Lead created successfully.', 'success');
+      showToast('Lead and linked Contact created successfully.', 'success');
 
       if (addAnother) {
-        setFormData({ ...formData, name: '', company: '', email: '', phone: '', expectedDealValue: '', notes: '' });
+        setFormData({ 
+          ...formData, 
+          name: '', 
+          company: '', 
+          contactPerson: '',
+          designation: '',
+          contactRole: 'Decision Maker',
+          email: '', 
+          phone: '', 
+          alternatePhone: '',
+          website: '',
+          expectedDealValue: '', 
+          requirement: '', 
+          notes: '', 
+          tags: '' 
+        });
         setErrors({});
       } else {
         setTimeout(() => onViewChange('overview'), 1000);
@@ -131,7 +154,7 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
             <span className="text-[#0f172a]">New Lead</span>
           </div>
           <h1 className="text-2xl font-bold text-[#0f172a]">Create New Lead</h1>
-          <p className="text-sm text-slate-500 mt-1">Capture and qualify a potential customer.</p>
+          <p className="text-sm text-slate-500 mt-1">Capture and qualify a potential customer and stakeholder.</p>
         </div>
         <div className="flex space-x-3 mt-4 sm:mt-0">
           <button onClick={() => onViewChange('overview')} className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
@@ -200,29 +223,99 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
           <h2 className="text-lg font-bold text-[#0f172a] mb-6">Contact Information</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-semibold text-[#0f172a] mb-1">Contact Person</label>
-              <input type="text" name="contactPerson" value={formData.contactPerson} onChange={handleChange} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" />
+              <label className="block text-sm font-semibold text-[#0f172a] mb-1">
+                Contact Person <span className="text-rose-500">*</span>
+              </label>
+              <input 
+                type="text" 
+                name="contactPerson" 
+                value={formData.contactPerson} 
+                onChange={handleChange} 
+                className={`w-full p-2.5 bg-slate-50 border ${errors.contactPerson ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-indigo-100 focus:border-indigo-400'} rounded-lg text-sm focus:outline-none focus:ring-2 transition-all`} 
+                placeholder="e.g. Priya Sharma"
+              />
+              {errors.contactPerson && <p className="text-xs text-rose-500 mt-1">{errors.contactPerson}</p>}
             </div>
             <div>
-              <label className="block text-sm font-semibold text-[#0f172a] mb-1">Designation</label>
-              <input type="text" name="designation" value={formData.designation} onChange={handleChange} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" />
+              <label className="block text-sm font-semibold text-[#0f172a] mb-1">
+                Designation <span className="text-rose-500">*</span>
+              </label>
+              <input 
+                type="text" 
+                name="designation" 
+                value={formData.designation} 
+                onChange={handleChange} 
+                className={`w-full p-2.5 bg-slate-50 border ${errors.designation ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-indigo-100 focus:border-indigo-400'} rounded-lg text-sm focus:outline-none focus:ring-2 transition-all`} 
+                placeholder="e.g. CTO / Software Engineer"
+              />
+              {errors.designation && <p className="text-xs text-rose-500 mt-1">{errors.designation}</p>}
             </div>
             <div>
-              <label className="block text-sm font-semibold text-[#0f172a] mb-1">Email <span className="text-rose-500">*</span></label>
-              <input type="email" name="email" value={formData.email} onChange={handleChange} className={`w-full p-2.5 bg-slate-50 border ${errors.email ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-indigo-100 focus:border-indigo-400'} rounded-lg text-sm focus:outline-none focus:ring-2 transition-all`} />
+              <label className="block text-sm font-semibold text-[#0f172a] mb-1">
+                Contact Role <span className="text-rose-500">*</span>
+              </label>
+              <select 
+                name="contactRole" 
+                value={formData.contactRole} 
+                onChange={handleChange} 
+                className={`w-full p-2.5 bg-slate-50 border ${errors.contactRole ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-indigo-100 focus:border-indigo-400'} rounded-lg text-sm focus:outline-none focus:ring-2 transition-all`}
+              >
+                <option value="Decision Maker">Decision Maker</option>
+                <option value="Influencer">Influencer</option>
+                <option value="User">User</option>
+                <option value="Technical Contact">Technical Contact</option>
+                <option value="Procurement">Procurement</option>
+                <option value="Finance">Finance</option>
+                <option value="Other">Other</option>
+              </select>
+              {errors.contactRole && <p className="text-xs text-rose-500 mt-1">{errors.contactRole}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-[#0f172a] mb-1">
+                Email <span className="text-rose-500">*</span>
+              </label>
+              <input 
+                type="email" 
+                name="email" 
+                value={formData.email} 
+                onChange={handleChange} 
+                className={`w-full p-2.5 bg-slate-50 border ${errors.email ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-indigo-100 focus:border-indigo-400'} rounded-lg text-sm focus:outline-none focus:ring-2 transition-all`} 
+                placeholder="priya@company.com"
+              />
               {errors.email && <p className="text-xs text-rose-500 mt-1">{errors.email}</p>}
             </div>
             <div>
               <label className="block text-sm font-semibold text-[#0f172a] mb-1">Phone</label>
-              <input type="tel" name="phone" value={formData.phone} onChange={handleChange} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" />
+              <input 
+                type="tel" 
+                name="phone" 
+                value={formData.phone} 
+                onChange={handleChange} 
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" 
+                placeholder="+91 98765 43210"
+              />
             </div>
             <div>
               <label className="block text-sm font-semibold text-[#0f172a] mb-1">Alternate Phone</label>
-              <input type="tel" name="alternatePhone" value={formData.alternatePhone} onChange={handleChange} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" />
+              <input 
+                type="tel" 
+                name="alternatePhone" 
+                value={formData.alternatePhone} 
+                onChange={handleChange} 
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" 
+                placeholder="+91 98765 00000"
+              />
             </div>
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-sm font-semibold text-[#0f172a] mb-1">Website</label>
-              <input type="url" name="website" value={formData.website} onChange={handleChange} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" placeholder="https://" />
+              <input 
+                type="url" 
+                name="website" 
+                value={formData.website} 
+                onChange={handleChange} 
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" 
+                placeholder="https://" 
+              />
             </div>
           </div>
         </div>
@@ -302,17 +395,35 @@ export const CrmAddLead: React.FC<CrmAddLeadProps> = ({ onViewChange }) => {
           </div>
         </div>
 
-        {/* SECTION 5: ADDITIONAL INFORMATION */}
+        {/* SECTION 5: PROJECT REQUIREMENTS */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-          <h2 className="text-lg font-bold text-[#0f172a] mb-6">Additional Information</h2>
+          <h2 className="text-lg font-bold text-[#0f172a] mb-6">Project Requirements</h2>
           <div className="grid grid-cols-1 gap-6">
+            <div>
+              <label className="block text-sm font-semibold text-[#0f172a] mb-1">Project Requirement</label>
+              <textarea
+                name="requirement"
+                value={formData.requirement}
+                onChange={handleChange}
+                rows={6}
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all leading-relaxed"
+                placeholder="Describe what the customer needs, including the project scope, business requirements, modules, features, expected deliverables, etc."
+              ></textarea>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-[#0f172a] mb-1">Project Notes</label>
+              <textarea
+                name="notes"
+                value={formData.notes}
+                onChange={handleChange}
+                rows={3}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all"
+                placeholder="Enter any additional project or internal notes about this lead..."
+              ></textarea>
+            </div>
             <div>
               <label className="block text-sm font-semibold text-[#0f172a] mb-1">Tags</label>
               <input type="text" name="tags" value={formData.tags} onChange={handleChange} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" placeholder="Enter tags separated by commas" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-[#0f172a] mb-1">Notes</label>
-              <textarea name="notes" value={formData.notes} onChange={handleChange} rows={4} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all" placeholder="Enter any additional notes about this lead..."></textarea>
             </div>
             <div>
               <label className="block text-sm font-semibold text-[#0f172a] mb-2">Attachments</label>
