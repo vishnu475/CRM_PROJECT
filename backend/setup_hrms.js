@@ -58,6 +58,11 @@ export async function ensureDatabaseAndMigrate() {
       '006_central_payroll_engine.sql',
       '007_ess_portal_engine.sql',
       '008_ess_admin_two_way_integration.sql',
+      '009_admin_notifications_and_two_way_sync.sql',
+      '010_enterprise_task_management_and_performance.sql',
+      '011_task_attachments.sql',
+      '012_intern_management_complete.sql',
+      '013_enterprise_document_management_system.sql',
     ];
 
     for (const file of migrationFiles) {
