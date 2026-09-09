@@ -69,6 +69,11 @@ export async function ensureCRMDatabaseAndMigrate() {
       '010_lead_notes_field.sql',
       '011_projects_table.sql',
       '012_contacts_lead_and_fields.sql',
+      '013_sales_workflow_lifecycle.sql',
+      '014_procurement_workflow.sql',
+      '015_vendor_invoices_and_payments.sql',
+      '016_vendor_enhancements.sql',
+      '017_inventory_stock_movements.sql',
     ];
 
     for (const file of migrationFiles) {

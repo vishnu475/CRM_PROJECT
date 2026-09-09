@@ -275,45 +275,76 @@ export const CRMActivitiesAPI = {
 // CRM — QUOTATIONS
 // ────────────────────────────────────────────────────────────
 export const QuotationsAPI = {
-  getAll:  (filters?: { status?: string }) => {
-    const params = filters?.status ? `?status=${filters.status}` : '';
-    return request('GET', `/quotations${params}`);
+  getAll: (filters?: { status?: string; customerId?: string; opportunityId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.customerId) params.set('customerId', filters.customerId);
+    if (filters?.opportunityId) params.set('opportunityId', filters.opportunityId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/quotations${query}`);
   },
-  create: (data: any)  => request('POST', '/quotations', data),
+  getById: (id: string) => request('GET', `/quotations/${id}`),
+  create: (data: any) => request('POST', '/quotations', data),
   update: (id: string, data: any) => request('PATCH', `/quotations/${id}`, data),
+  delete: (id: string) => request('DELETE', `/quotations/${id}`),
 };
 
 // ────────────────────────────────────────────────────────────
 // CRM — SALES ORDERS
 // ────────────────────────────────────────────────────────────
 export const SalesOrdersAPI = {
-  getAll:  (filters?: { fulfillmentStatus?: string }) => {
-    const params = filters?.fulfillmentStatus ? `?fulfillmentStatus=${filters.fulfillmentStatus}` : '';
-    return request('GET', `/sales-orders${params}`);
+  getAll: (filters?: { fulfillmentStatus?: string; status?: string; customerId?: string; quotationId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.fulfillmentStatus) params.set('fulfillmentStatus', filters.fulfillmentStatus);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.customerId) params.set('customerId', filters.customerId);
+    if (filters?.quotationId) params.set('quotationId', filters.quotationId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/sales-orders${query}`);
   },
-  create: (data: any)  => request('POST', '/sales-orders', data),
+  getById: (id: string) => request('GET', `/sales-orders/${id}`),
+  create: (data: any) => request('POST', '/sales-orders', data),
   update: (id: string, data: any) => request('PATCH', `/sales-orders/${id}`, data),
+  delete: (id: string) => request('DELETE', `/sales-orders/${id}`),
 };
 
 // ────────────────────────────────────────────────────────────
 // CRM — INVOICES
 // ────────────────────────────────────────────────────────────
 export const CRMInvoicesAPI = {
-  getAll:  (filters?: { status?: string }) => {
-    const params = filters?.status ? `?status=${filters.status}` : '';
-    return request('GET', `/crm/invoices${params}`);
+  getAll: (filters?: { status?: string; customerId?: string; salesOrderId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.customerId) params.set('customerId', filters.customerId);
+    if (filters?.salesOrderId) params.set('salesOrderId', filters.salesOrderId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/crm/invoices${query}`);
   },
-  create: (data: any)  => request('POST', '/crm/invoices', data),
+  getById: (id: string) => request('GET', `/crm/invoices/${id}`),
+  create: (data: any) => request('POST', '/crm/invoices', data),
   update: (id: string, data: any) => request('PATCH', `/crm/invoices/${id}`, data),
+  delete: (id: string) => request('DELETE', `/crm/invoices/${id}`),
 };
 
 // ────────────────────────────────────────────────────────────
-// CRM — PRODUCTS
+// CRM — PRODUCTS & INVENTORY
 // ────────────────────────────────────────────────────────────
 export const CRMProductsAPI = {
-  getAll:  () => request('GET', '/crm/products'),
-  create:  (data: any)  => request('POST', '/crm/products', data),
-  update:  (id: string, data: any) => request('PATCH', `/crm/products/${id}`, data),
+  getAll: (filters?: { category?: string; stockStatus?: string; search?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.category) params.set('category', filters.category);
+    if (filters?.stockStatus) params.set('stockStatus', filters.stockStatus);
+    if (filters?.search) params.set('search', filters.search);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/crm/products${query}`);
+  },
+  getById: (id: string) => request('GET', `/crm/products/${id}`),
+  create: (data: any) => request('POST', '/crm/products', data),
+  update: (id: string, data: any) => request('PATCH', `/crm/products/${id}`, data),
+  adjustStock: (id: string, data: { adjustmentQuantity: number; reason: string; notes?: string; performedBy?: string; location?: string }) =>
+    request('POST', `/crm/products/${id}/adjust`, data),
+  delete: (id: string) => request('DELETE', `/crm/products/${id}`),
+  getAllMovements: (limit?: number) => request('GET', `/crm/products/movements/all${limit ? `?limit=${limit}` : ''}`),
 };
 
 // ────────────────────────────────────────────────────────────
@@ -321,6 +352,7 @@ export const CRMProductsAPI = {
 // ────────────────────────────────────────────────────────────
 export const VendorsAPI = {
   getAll:  () => request('GET', '/vendors'),
+  getById: (id: string) => request('GET', `/vendors/${id}`),
   create:  (data: any)  => request('POST', '/vendors', data),
   update:  (id: string, data: any) => request('PATCH', `/vendors/${id}`, data),
   delete:  (id: string) => request('DELETE', `/vendors/${id}`),
@@ -330,13 +362,27 @@ export const VendorsAPI = {
 // CRM — PURCHASE ORDERS
 // ────────────────────────────────────────────────────────────
 export const PurchaseOrdersAPI = {
-  getAll:  (filters?: { status?: string }) => {
-    const params = filters?.status ? `?status=${filters.status}` : '';
-    return request('GET', `/purchase-orders${params}`);
+  getAll: (filters?: { status?: string; vendorId?: string; search?: string; receiptStatus?: string; paymentStatus?: string; invoiceStatus?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.vendorId) params.set('vendorId', filters.vendorId);
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.receiptStatus) params.set('receiptStatus', filters.receiptStatus);
+    if (filters?.paymentStatus) params.set('paymentStatus', filters.paymentStatus);
+    if (filters?.invoiceStatus) params.set('invoiceStatus', filters.invoiceStatus);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/purchase-orders${query}`);
   },
-  create:  (data: any)  => request('POST', '/purchase-orders', data),
-  update:  (id: string, data: any) => request('PATCH', `/purchase-orders/${id}`, data),
-  delete:  (id: string) => request('DELETE', `/purchase-orders/${id}`),
+  getById: (id: string) => request('GET', `/purchase-orders/${id}`),
+  create: (data: any) => request('POST', '/purchase-orders', data),
+  update: (id: string, data: any) => request('PATCH', `/purchase-orders/${id}`, data),
+  receive: (id: string, data: { receipts: { itemId?: number; productId?: string; productName?: string; quantityReceived: number }[]; receivedBy?: string; notes?: string; date?: string }) =>
+    request('POST', `/purchase-orders/${id}/receive`, data),
+  invoice: (id: string, data: { invoiceNumber?: string; invoiceDate?: string; dueDate?: string; invoiceAmount?: number; taxAmount?: number; notes?: string }) =>
+    request('POST', `/purchase-orders/${id}/invoice`, data),
+  recordPayment: (id: string, data: { amount: number; paymentDate?: string; paymentMethod?: string; bankAccountId?: string; referenceNumber?: string; notes?: string }) =>
+    request('POST', `/purchase-orders/${id}/payment`, data),
+  delete: (id: string) => request('DELETE', `/purchase-orders/${id}`),
 };
 
 // ────────────────────────────────────────────────────────────

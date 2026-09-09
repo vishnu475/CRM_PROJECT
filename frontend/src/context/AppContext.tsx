@@ -138,18 +138,33 @@ interface AppContextType {
   notes: Note[];
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
   products: Product[];
-  addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  addProduct: (product: any) => Promise<Product | null>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
+  adjustProductStock: (id: string, adjustment: { adjustmentQuantity: number; reason: string; notes?: string; performedBy?: string; location?: string }) => Promise<{ success: boolean; message?: string }>;
+  deleteProduct: (id: string) => Promise<void>;
   quotations: Quotation[];
-  addQuotation: (quotation: Omit<Quotation, 'id'>) => Promise<void>;
-  updateQuotation: (id: string, updates: Partial<Quotation>) => Promise<void> | void;
+  addQuotation: (quotation: Omit<Quotation, 'id'>) => Promise<Quotation | null>;
+  updateQuotation: (id: string, updates: Partial<Quotation>) => Promise<void>;
+  deleteQuotation: (id: string) => Promise<void>;
   salesOrders: SalesOrder[];
-  addSalesOrder: (so: Omit<SalesOrder, 'id'>) => Promise<void>;
+  addSalesOrder: (so: Omit<SalesOrder, 'id'>) => Promise<SalesOrder | null>;
+  updateSalesOrder: (id: string, updates: Partial<SalesOrder>) => Promise<void>;
+  deleteSalesOrder: (id: string) => Promise<void>;
   invoices: Invoice[];
-  addInvoice: (inv: Omit<Invoice, 'id'>) => Promise<void>;
+  addInvoice: (inv: Omit<Invoice, 'id'>) => Promise<Invoice | null>;
+  updateInvoice: (id: string, updates: Partial<Invoice>) => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
   vendors: Vendor[];
-  addVendor: (vendor: Omit<Vendor, 'id'>) => Promise<void>;
+  addVendor: (vendor: Omit<Vendor, 'id'>) => Promise<Vendor | null>;
+  updateVendor: (id: string, updates: Partial<Vendor>) => Promise<void>;
+  deleteVendor: (id: string) => Promise<void>;
   purchaseOrders: PurchaseOrder[];
-  addPurchaseOrder: (po: Omit<PurchaseOrder, 'id'>) => Promise<void>;
+  addPurchaseOrder: (po: Omit<PurchaseOrder, 'id'>) => Promise<PurchaseOrder | null>;
+  updatePurchaseOrder: (id: string, updates: Partial<PurchaseOrder>) => Promise<void>;
+  deletePurchaseOrder: (id: string) => Promise<void>;
+  receivePurchaseOrderGoods: (id: string, data?: any) => Promise<{ success: boolean; data?: any; error?: string }>;
+  invoicePurchaseOrder: (id: string, data?: any) => Promise<{ success: boolean; data?: any; invoice_number?: string; error?: string }>;
+  recordPurchasePayment: (id: string, data?: any) => Promise<{ success: boolean; data?: any; error?: string }>;
   syncFromDatabase: () => Promise<void>;
   employees: Employee[];
   addEmployee: (employeeData: Partial<Employee>) => Employee;
@@ -236,6 +251,156 @@ const initialSalesOrders: SalesOrder[] = [];
 const initialInvoices: Invoice[] = [];
 const initialVendors: Vendor[] = [];
 const initialPurchaseOrders: PurchaseOrder[] = [];
+
+const mapProduct = (r: any): Product => ({
+  id: r.id,
+  sku: r.sku || r.id,
+  name: r.name,
+  category: r.category || 'General',
+  price: parseFloat(r.price) || 0,
+  costPrice: parseFloat(r.cost_price !== undefined ? r.cost_price : r.costPrice) || (parseFloat(r.price) * 0.7) || 0,
+  cost_price: parseFloat(r.cost_price !== undefined ? r.cost_price : r.costPrice) || (parseFloat(r.price) * 0.7) || 0,
+  purchasePrice: parseFloat(r.purchase_price !== undefined ? r.purchase_price : r.purchasePrice) || (parseFloat(r.price) * 0.75) || 0,
+  purchase_price: parseFloat(r.purchase_price !== undefined ? r.purchase_price : r.purchasePrice) || (parseFloat(r.price) * 0.75) || 0,
+  stock: parseInt(r.stock !== undefined ? r.stock : r.onHandStock) || 0,
+  onHandStock: parseInt(r.on_hand_stock !== undefined ? r.on_hand_stock : (r.onHandStock !== undefined ? r.onHandStock : (r.stock !== undefined ? r.stock : 0))) || 0,
+  on_hand_stock: parseInt(r.on_hand_stock !== undefined ? r.on_hand_stock : (r.onHandStock !== undefined ? r.onHandStock : (r.stock !== undefined ? r.stock : 0))) || 0,
+  reservedStock: parseInt(r.reserved_stock !== undefined ? r.reserved_stock : r.reservedStock) || 0,
+  reserved_stock: parseInt(r.reserved_stock !== undefined ? r.reserved_stock : r.reservedStock) || 0,
+  availableStock: parseInt(r.available_stock !== undefined ? r.available_stock : (r.availableStock !== undefined ? r.availableStock : (r.stock || 0))) || 0,
+  available_stock: parseInt(r.available_stock !== undefined ? r.available_stock : (r.availableStock !== undefined ? r.availableStock : (r.stock || 0))) || 0,
+  reorderLevel: parseInt(r.reorder_level !== undefined ? r.reorder_level : r.reorderLevel) || 20,
+  reorder_level: parseInt(r.reorder_level !== undefined ? r.reorder_level : r.reorderLevel) || 20,
+  reorderQuantity: parseInt(r.reorder_quantity !== undefined ? r.reorder_quantity : r.reorderQuantity) || 50,
+  reorder_quantity: parseInt(r.reorder_quantity !== undefined ? r.reorder_quantity : r.reorderQuantity) || 50,
+  stockStatus: r.stock_status || r.stockStatus || 'In Stock',
+  stock_status: r.stock_status || r.stockStatus || 'In Stock',
+  inventoryValue: parseFloat(r.inventory_value !== undefined ? r.inventory_value : r.inventoryValue) || 0,
+  inventory_value: parseFloat(r.inventory_value !== undefined ? r.inventory_value : r.inventoryValue) || 0,
+  uom: r.uom || 'Units',
+  hsnCode: r.hsn_code || r.hsnCode || '',
+  hsn_code: r.hsn_code || r.hsnCode || '',
+  taxRate: parseFloat(r.tax_rate !== undefined ? r.tax_rate : r.taxRate) || 18,
+  tax_rate: parseFloat(r.tax_rate !== undefined ? r.tax_rate : r.taxRate) || 18,
+  description: r.description || '',
+  warehouseLocation: r.warehouse_location || r.warehouseLocation || 'Main Warehouse - Bay A',
+  warehouse_location: r.warehouse_location || r.warehouseLocation || 'Main Warehouse - Bay A',
+  primaryVendorId: r.primary_vendor_id || r.primaryVendorId || '',
+  primary_vendor_id: r.primary_vendor_id || r.primaryVendorId || '',
+  primaryVendorName: r.primary_vendor_name || r.primaryVendorName || '',
+  primary_vendor_name: r.primary_vendor_name || r.primaryVendorName || '',
+  movementsCount: parseInt(r.movements_count !== undefined ? r.movements_count : r.movementsCount) || 0,
+  movements_count: parseInt(r.movements_count !== undefined ? r.movements_count : r.movementsCount) || 0,
+  createdAt: r.created_at || r.createdAt || '',
+  created_at: r.created_at || r.createdAt || '',
+  updatedAt: r.updated_at || r.updatedAt || '',
+  updated_at: r.updated_at || r.updatedAt || '',
+});
+
+const mapVendor = (r: any): Vendor => ({
+  id: r.id,
+  code: r.code || r.id,
+  name: r.name,
+  contactPerson: r.contact_person || r.contactPerson || '',
+  contact_person: r.contact_person || r.contactPerson || '',
+  email: r.email || '',
+  phone: r.phone || '',
+  category: r.category || 'General',
+  address: r.address || '',
+  gstin: r.gstin || '',
+  paymentTerms: r.payment_terms || r.paymentTerms || 'Net 30 Days',
+  payment_terms: r.payment_terms || r.paymentTerms || 'Net 30 Days',
+  status: r.status || 'Active',
+  website: r.website || '',
+  notes: r.notes || '',
+  payableBalance: parseFloat(r.payable_balance !== undefined ? r.payable_balance : r.payableBalance) || 0,
+  payable_balance: parseFloat(r.payable_balance !== undefined ? r.payable_balance : r.payableBalance) || 0,
+  rating: parseFloat(r.rating) || 5.0,
+  totalPurchases: parseFloat(r.total_purchases !== undefined ? r.total_purchases : r.totalPurchases) || 0,
+  total_purchases: parseFloat(r.total_purchases !== undefined ? r.total_purchases : r.totalPurchases) || 0,
+  totalOrders: parseInt(r.total_orders !== undefined ? r.total_orders : r.totalOrders) || 0,
+  total_orders: parseInt(r.total_orders !== undefined ? r.total_orders : r.totalOrders) || 0,
+  openOrders: parseInt(r.open_orders !== undefined ? r.open_orders : r.openOrders) || 0,
+  open_orders: parseInt(r.open_orders !== undefined ? r.open_orders : r.openOrders) || 0,
+  pendingReceipts: parseInt(r.pending_receipts !== undefined ? r.pending_receipts : r.pendingReceipts) || 0,
+  pending_receipts: parseInt(r.pending_receipts !== undefined ? r.pending_receipts : r.pendingReceipts) || 0,
+  totalPaidAmount: parseFloat(r.total_paid_amount !== undefined ? r.total_paid_amount : r.totalPaidAmount) || 0,
+  total_paid_amount: parseFloat(r.total_paid_amount !== undefined ? r.total_paid_amount : r.totalPaidAmount) || 0,
+  calculatedAmountDue: parseFloat(r.calculated_amount_due !== undefined ? r.calculated_amount_due : (r.calculatedAmountDue !== undefined ? r.calculatedAmountDue : (r.payable_balance || r.payableBalance))) || 0,
+  calculated_amount_due: parseFloat(r.calculated_amount_due !== undefined ? r.calculated_amount_due : (r.calculatedAmountDue !== undefined ? r.calculatedAmountDue : (r.payable_balance || r.payableBalance))) || 0,
+  overdueAmount: parseFloat(r.overdue_amount !== undefined ? r.overdue_amount : r.overdueAmount) || 0,
+  overdue_amount: parseFloat(r.overdue_amount !== undefined ? r.overdue_amount : r.overdueAmount) || 0,
+  purchase_orders: Array.isArray(r.purchase_orders) ? r.purchase_orders : [],
+  payments: Array.isArray(r.payments) ? r.payments : [],
+  createdAt: r.created_at || r.createdAt || '',
+  created_at: r.created_at || r.createdAt || '',
+});
+
+const mapPurchaseOrder = (r: any): PurchaseOrder => ({
+  id: r.id,
+  poNumber: r.poNumber || r.po_number || r.id,
+  po_number: r.po_number || r.poNumber || r.id,
+  vendorId: r.vendorId || r.vendor_id || '',
+  vendor_id: r.vendor_id || r.vendorId || '',
+  vendorName: r.vendorName || r.vendor_name || r.vendor_name_resolved || 'Supplier',
+  vendor_name: r.vendor_name || r.vendorName || r.vendor_name_resolved || 'Supplier',
+  vendorContact: r.vendorContact || r.contact_person || '',
+  vendor_contact: r.vendor_contact || r.contact_person || '',
+  vendorEmail: r.vendorEmail || r.vendor_email || '',
+  vendor_email: r.vendor_email || r.vendor_email || '',
+  vendorPhone: r.vendorPhone || r.vendor_phone || '',
+  vendor_phone: r.vendor_phone || r.vendor_phone || '',
+  date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+  order_date: r.order_date || r.date || '',
+  expectedDelivery: r.expectedDelivery || (r.expected_delivery ? (typeof r.expected_delivery === 'string' ? r.expected_delivery.split('T')[0] : new Date(r.expected_delivery).toISOString().split('T')[0]) : ''),
+  expected_delivery: r.expected_delivery || r.expectedDelivery || '',
+  amount: parseFloat(r.amount || r.total_amount) || 0,
+  total_amount: parseFloat(r.total_amount || r.amount) || 0,
+  subtotal: parseFloat(r.subtotal) || 0,
+  taxAmount: parseFloat(r.taxAmount || r.tax_amount) || 0,
+  tax_amount: parseFloat(r.tax_amount || r.taxAmount) || 0,
+  discountAmount: parseFloat(r.discountAmount || r.discount_amount) || 0,
+  discount_amount: parseFloat(r.discount_amount || r.discountAmount) || 0,
+  status: r.status || 'Draft',
+  receiptStatus: r.receiptStatus || r.receipt_status || 'Not Received',
+  receipt_status: r.receipt_status || r.receiptStatus || 'Not Received',
+  paymentStatus: r.paymentStatus || r.payment_status || 'Unpaid',
+  payment_status: r.payment_status || r.paymentStatus || 'Unpaid',
+  paymentTerms: r.paymentTerms || r.payment_terms || 'Net 30 Days',
+  payment_terms: r.payment_terms || r.paymentTerms || 'Net 30 Days',
+  deliveryLocation: r.deliveryLocation || r.delivery_location || '',
+  delivery_location: r.delivery_location || r.deliveryLocation || '',
+  notes: r.notes || '',
+  vendorInvoiceId: r.vendorInvoiceId || r.vendor_invoice_id || '',
+  vendor_invoice_id: r.vendor_invoice_id || r.vendorInvoiceId || '',
+  vendorInvoiceNumber: r.vendorInvoiceNumber || r.vendor_invoice_number || '',
+  vendor_invoice_number: r.vendor_invoice_number || r.vendorInvoiceNumber || '',
+  vendorInvoiceDate: r.vendorInvoiceDate || (r.vendor_invoice_date ? (typeof r.vendor_invoice_date === 'string' ? r.vendor_invoice_date.split('T')[0] : new Date(r.vendor_invoice_date).toISOString().split('T')[0]) : ''),
+  vendor_invoice_date: r.vendor_invoice_date || r.vendorInvoiceDate || '',
+  vendorInvoiceDueDate: r.vendorInvoiceDueDate || (r.vendor_invoice_due_date ? (typeof r.vendor_invoice_due_date === 'string' ? r.vendor_invoice_due_date.split('T')[0] : new Date(r.vendor_invoice_due_date).toISOString().split('T')[0]) : ''),
+  vendor_invoice_due_date: r.vendor_invoice_due_date || r.vendorInvoiceDueDate || '',
+  vendorInvoiceAmount: parseFloat(r.vendorInvoiceAmount || r.vendor_invoice_amount) || parseFloat(r.amount || r.total_amount) || 0,
+  vendor_invoice_amount: parseFloat(r.vendor_invoice_amount || r.vendorInvoiceAmount) || parseFloat(r.total_amount || r.amount) || 0,
+  paidAmount: parseFloat(r.paidAmount || r.paid_amount) || 0,
+  paid_amount: parseFloat(r.paid_amount || r.paidAmount) || 0,
+  amountDue: parseFloat(r.amountDue !== undefined ? r.amountDue : r.amount_due) || 0,
+  amount_due: parseFloat(r.amount_due !== undefined ? r.amount_due : r.amountDue) || 0,
+  lastPaymentDate: r.lastPaymentDate || (r.last_payment_date ? (typeof r.last_payment_date === 'string' ? r.last_payment_date.split('T')[0] : new Date(r.last_payment_date).toISOString().split('T')[0]) : ''),
+  last_payment_date: r.last_payment_date || r.lastPaymentDate || '',
+  lastPaymentReference: r.lastPaymentReference || r.last_payment_reference || '',
+  last_payment_reference: r.last_payment_reference || r.lastPaymentReference || '',
+  invoiceStatus: r.invoiceStatus || r.invoice_status || (r.vendor_invoice_number ? 'Invoiced' : 'No Invoice'),
+  invoice_status: r.invoice_status || r.invoiceStatus || (r.vendor_invoice_number ? 'Invoiced' : 'No Invoice'),
+  itemsCount: parseInt(r.itemsCount || r.items_count) || (Array.isArray(r.items) ? r.items.length : 1),
+  items_count: parseInt(r.items_count || r.itemsCount) || (Array.isArray(r.items) ? r.items.length : 1),
+  items: Array.isArray(r.items) ? r.items : [],
+  receipts: Array.isArray(r.receipts) ? r.receipts : [],
+  payments: Array.isArray(r.payments) ? r.payments : [],
+  createdAt: r.createdAt || r.created_at || '',
+  created_at: r.created_at || r.createdAt || '',
+  updatedAt: r.updatedAt || r.updated_at || '',
+  updated_at: r.updated_at || r.updatedAt || '',
+});
 
 // ============================================================
 // HRMS DB-FIRST: Finance/Accounts modules loaded from HRMS DB
@@ -801,20 +966,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })));
         }
 
-        // 16. Load Products Catalog from CRM PostgreSQL
+        // 16. Load Products & Stock Catalog from CRM PostgreSQL
         const productsRes = await CRMProductsAPI.getAll();
         if (productsRes.success && Array.isArray(productsRes.data)) {
-          setProducts(productsRes.data.map((r: any) => ({
-            id: r.id,
-            sku: r.sku || r.id,
-            name: r.name,
-            category: r.category || 'General',
-            price: parseFloat(r.price) || 0,
-            stock: parseInt(r.stock) || 0,
-            uom: r.uom || 'Units',
-            hsnCode: r.hsn_code || '',
-            taxRate: parseFloat(r.tax_rate) || 18,
-          })));
+          setProducts(productsRes.data.map(mapProduct));
         }
 
         // 17. Load Quotations from CRM PostgreSQL
@@ -825,12 +980,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             quoteNumber: r.quote_number || r.id,
             customerId: r.customer_id || '',
             leadId: r.lead_id || '',
+            opportunityId: r.opportunity_id || '',
+            contactId: r.contact_id || '',
             customerName: r.customer_name || '',
             date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
             validUntil: r.valid_until ? (typeof r.valid_until === 'string' ? r.valid_until.split('T')[0] : new Date(r.valid_until).toISOString().split('T')[0]) : '',
             amount: parseFloat(r.amount) || 0,
+            subtotal: parseFloat(r.subtotal) || 0,
+            taxAmount: parseFloat(r.tax_amount) || 0,
+            discountAmount: parseFloat(r.discount_amount) || 0,
             status: r.status || 'Draft',
             sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
+            acceptedDate: r.accepted_date ? (typeof r.accepted_date === 'string' ? r.accepted_date.split('T')[0] : new Date(r.accepted_date).toISOString().split('T')[0]) : '',
+            revisionNumber: parseInt(r.revision_number) || 1,
+            terms: r.terms || '',
+            notes: r.notes || '',
+            owner: r.owner || '',
+            salesOrderId: r.sales_order_id || '',
+            salesOrderNumber: r.sales_order_number || '',
             itemsCount: parseInt(r.items_count) || 1,
           })));
         }
@@ -841,10 +1008,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setSalesOrders(soRes.data.map((r: any) => ({
             id: r.id,
             soNumber: r.so_number || r.id,
+            quotationId: r.quotation_id || '',
+            quoteNumber: r.quote_number || '',
+            quotationStatus: r.quotation_status || '',
+            customerId: r.customer_id || '',
             customerName: r.customer_name || '',
-            date: r.date ? r.date.split('T')[0] : '',
+            opportunityId: r.opportunity_id || '',
+            contactId: r.contact_id || '',
+            date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
             totalAmount: parseFloat(r.total_amount) || 0,
+            subtotal: parseFloat(r.subtotal) || 0,
+            taxAmount: parseFloat(r.tax_amount) || 0,
+            discountAmount: parseFloat(r.discount_amount) || 0,
             fulfillmentStatus: r.fulfillment_status || 'Pending',
+            status: r.status || 'Confirmed',
+            paymentTerms: r.payment_terms || '',
+            deliveryNotes: r.delivery_notes || '',
+            notes: r.notes || '',
+            invoiceId: r.invoice_id || '',
+            invoiceNumber: r.invoice_number || '',
+            itemsCount: parseInt(r.items_count) || 1,
           })));
         }
 
@@ -854,41 +1037,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setInvoices(invRes.data.map((r: any) => ({
             id: r.id,
             invoiceNumber: r.invoice_number || r.id,
+            salesOrderId: r.sales_order_id || '',
+            salesOrderNumber: r.sales_order_number || '',
+            quotationId: r.quotation_id || '',
+            quoteNumber: r.quote_number || '',
+            opportunityId: r.opportunity_id || '',
+            customerId: r.customer_id || '',
             customerName: r.customer_name || '',
-            date: r.date ? r.date.split('T')[0] : '',
-            dueDate: r.due_date ? r.due_date.split('T')[0] : '',
+            date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+            dueDate: r.due_date ? (typeof r.due_date === 'string' ? r.due_date.split('T')[0] : new Date(r.due_date).toISOString().split('T')[0]) : '',
             amount: parseFloat(r.amount) || 0,
+            subtotal: parseFloat(r.subtotal) || 0,
+            taxAmount: parseFloat(r.tax_amount) || 0,
+            discountAmount: parseFloat(r.discount_amount) || 0,
             paidAmount: parseFloat(r.paid_amount) || 0,
             status: r.status || 'Draft',
+            paymentTerms: r.payment_terms || '',
+            notes: r.notes || '',
+            itemsCount: parseInt(r.items_count) || 1,
           })));
         }
 
         // 20. Load Vendors from CRM PostgreSQL
         const vndRes = await VendorsAPI.getAll();
         if (vndRes.success && Array.isArray(vndRes.data)) {
-          setVendors(vndRes.data.map((r: any) => ({
-            id: r.id,
-            code: r.code || r.id,
-            name: r.name,
-            contactPerson: r.contact_person || '',
-            email: r.email || '',
-            phone: r.phone || '',
-            payableBalance: parseFloat(r.payable_balance) || 0,
-            rating: parseFloat(r.rating) || 5,
-          })));
+          setVendors(vndRes.data.map(mapVendor));
         }
 
         // 21. Load Purchase Orders from CRM PostgreSQL
         const poRes = await PurchaseOrdersAPI.getAll();
         if (poRes.success && Array.isArray(poRes.data)) {
-          setPurchaseOrders(poRes.data.map((r: any) => ({
-            id: r.id,
-            poNumber: r.po_number || r.id,
-            vendorName: r.vendor_name || r.vendor_name_resolved || '',
-            date: r.date ? r.date.split('T')[0] : '',
-            amount: parseFloat(r.amount) || 0,
-            status: r.status || 'Draft',
-          })));
+          setPurchaseOrders(poRes.data.map(mapPurchaseOrder));
         }
 
         // 22. Load Projects from CRM PostgreSQL
@@ -1974,20 +2153,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const addProduct = useCallback(async (product: Omit<Product, 'id'>) => {
-    const tempId = `PROD-${Date.now()}`;
-    setProducts((prev) => [{ ...product, id: tempId }, ...prev]);
+  const addProduct = useCallback(async (product: any): Promise<Product | null> => {
+    const tempId = product.id || `PROD-${Date.now()}`;
+    const mapped = mapProduct({ ...product, id: tempId });
+    setProducts((prev) => [mapped, ...prev]);
     try {
-      await CRMProductsAPI.create({ id: tempId, ...product });
+      const res = await CRMProductsAPI.create({ id: tempId, ...product });
+      if (res.success && res.data) {
+        const saved = mapProduct(res.data);
+        setProducts((prev) => prev.map((p) => (p.id === tempId ? saved : p)));
+        return saved;
+      }
     } catch (err) { console.warn('⚠️ [CRM] addProduct failed:', err); }
+    return mapped;
   }, []);
 
-  const addQuotation = useCallback(async (quotation: Omit<Quotation, 'id'>) => {
-    const tempId = `QT-${Date.now()}`;
-    setQuotations((prev) => [{ ...quotation, id: tempId }, ...prev]);
+  const updateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
+    setProducts((prev) =>
+      prev.map((p) => (p.id === id ? mapProduct({ ...p, ...updates }) : p))
+    );
     try {
-      await QuotationsAPI.create({ id: tempId, ...quotation });
+      const res = await CRMProductsAPI.update(id, updates);
+      if (res.success && res.data) {
+        const updated = mapProduct(res.data);
+        setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      }
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateProduct failed:', err);
+    }
+  }, []);
+
+  const adjustProductStock = useCallback(async (id: string, adjustment: { adjustmentQuantity: number; reason: string; notes?: string; performedBy?: string; location?: string }): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await CRMProductsAPI.adjustStock(id, adjustment);
+      if (res.success && res.data) {
+        const updated = mapProduct(res.data);
+        setProducts((prev) => prev.map((p) => (p.id === id ? updated : p)));
+        return { success: true, message: res.message };
+      }
+      return { success: false, message: res.message || 'Failed to adjust stock' };
+    } catch (err: any) {
+      console.warn('⚠️ [CRM] adjustProductStock failed:', err);
+      return { success: false, message: err.message || 'Stock adjustment failed' };
+    }
+  }, []);
+
+  const deleteProduct = useCallback(async (id: string) => {
+    setProducts((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await CRMProductsAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteProduct failed:', err);
+    }
+  }, []);
+
+  const addQuotation = useCallback(async (quotation: Omit<Quotation, 'id'>): Promise<Quotation | null> => {
+    const tempId = `QT-${Date.now()}`;
+    const newQuote: Quotation = { id: tempId, ...quotation };
+    setQuotations((prev) => [newQuote, ...prev]);
+    try {
+      const res = await QuotationsAPI.create({ id: tempId, ...quotation });
+      if (res.success && res.data) {
+        const savedQuote: Quotation = {
+          ...newQuote,
+          id: res.data.id,
+          quoteNumber: res.data.quote_number || newQuote.quoteNumber,
+        };
+        setQuotations((prev) => prev.map((q) => (q.id === tempId ? savedQuote : q)));
+        return savedQuote;
+      }
     } catch (err) { console.warn('⚠️ [CRM] addQuotation failed:', err); }
+    return newQuote;
   }, []);
 
   const updateQuotation = useCallback(async (id: string, updates: Partial<Quotation>) => {
@@ -2001,36 +2237,289 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const addSalesOrder = useCallback(async (so: Omit<SalesOrder, 'id'>) => {
+  const deleteQuotation = useCallback(async (id: string) => {
+    setQuotations((prev) => prev.filter((q) => q.id !== id));
+    try {
+      await QuotationsAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteQuotation failed:', err);
+    }
+  }, []);
+
+  const addSalesOrder = useCallback(async (so: Omit<SalesOrder, 'id'>): Promise<SalesOrder | null> => {
     const tempId = `SO-${Date.now()}`;
-    setSalesOrders((prev) => [{ ...so, id: tempId }, ...prev]);
+    const newSO: SalesOrder = { id: tempId, ...so };
+    setSalesOrders((prev) => [newSO, ...prev]);
     try {
-      await SalesOrdersAPI.create({ id: tempId, ...so });
+      const res = await SalesOrdersAPI.create({ id: tempId, ...so });
+      if (res.success && res.data) {
+        const savedSO: SalesOrder = {
+          ...newSO,
+          id: res.data.id,
+          soNumber: res.data.so_number || newSO.soNumber,
+        };
+        setSalesOrders((prev) => prev.map((s) => (s.id === tempId ? savedSO : s)));
+        // Also link the quotation to this sales order in local state
+        if (so.quotationId) {
+          setQuotations((prev) =>
+            prev.map((q) =>
+              q.id === so.quotationId
+                ? { ...q, salesOrderId: savedSO.id, salesOrderNumber: savedSO.soNumber }
+                : q
+            )
+          );
+        }
+        return savedSO;
+      }
     } catch (err) { console.warn('⚠️ [CRM] addSalesOrder failed:', err); }
+    return newSO;
   }, []);
 
-  const addInvoice = useCallback(async (inv: Omit<Invoice, 'id'>) => {
+  const updateSalesOrder = useCallback(async (id: string, updates: Partial<SalesOrder>) => {
+    setSalesOrders((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+    );
+    try {
+      await SalesOrdersAPI.update(id, updates);
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateSalesOrder failed:', err);
+    }
+  }, []);
+
+  const deleteSalesOrder = useCallback(async (id: string) => {
+    setSalesOrders((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await SalesOrdersAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteSalesOrder failed:', err);
+    }
+  }, []);
+
+  const addInvoice = useCallback(async (inv: Omit<Invoice, 'id'>): Promise<Invoice | null> => {
     const tempId = `INV-${Date.now()}`;
-    setInvoices((prev) => [{ ...inv, id: tempId }, ...prev]);
+    const newInv: Invoice = { id: tempId, ...inv };
+    setInvoices((prev) => [newInv, ...prev]);
     try {
-      await CRMInvoicesAPI.create({ id: tempId, ...inv });
+      const res = await CRMInvoicesAPI.create({ id: tempId, ...inv });
+      if (res.success && res.data) {
+        const savedInv: Invoice = {
+          ...newInv,
+          id: res.data.id,
+          invoiceNumber: res.data.invoice_number || newInv.invoiceNumber,
+        };
+        setInvoices((prev) => prev.map((i) => (i.id === tempId ? savedInv : i)));
+        // Also link the sales order to this invoice in local state
+        if (inv.salesOrderId) {
+          setSalesOrders((prev) =>
+            prev.map((so) =>
+              so.id === inv.salesOrderId
+                ? { ...so, invoiceId: savedInv.id, invoiceNumber: savedInv.invoiceNumber }
+                : so
+            )
+          );
+        }
+        return savedInv;
+      }
     } catch (err) { console.warn('⚠️ [CRM] addInvoice failed:', err); }
+    return newInv;
   }, []);
 
-  const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>) => {
+  const updateInvoice = useCallback(async (id: string, updates: Partial<Invoice>) => {
+    setInvoices((prev) =>
+      prev.map((inv) => (inv.id === id ? { ...inv, ...updates } : inv))
+    );
+    try {
+      await CRMInvoicesAPI.update(id, updates);
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateInvoice failed:', err);
+    }
+  }, []);
+
+  const deleteInvoice = useCallback(async (id: string) => {
+    setInvoices((prev) => prev.filter((inv) => inv.id !== id));
+    try {
+      await CRMInvoicesAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteInvoice failed:', err);
+    }
+  }, []);
+
+  const addVendor = useCallback(async (vendor: Omit<Vendor, 'id'>): Promise<Vendor | null> => {
     const tempId = `VND-${Date.now()}`;
-    setVendors((prev) => [{ ...vendor, id: tempId }, ...prev]);
+    const newVendor: Vendor = mapVendor({ id: tempId, ...vendor });
+    setVendors((prev) => [newVendor, ...prev]);
     try {
-      await VendorsAPI.create({ id: tempId, ...vendor });
+      const res = await VendorsAPI.create({ id: tempId, ...vendor });
+      if (res.success && res.data) {
+        const savedVendor: Vendor = mapVendor(res.data);
+        setVendors((prev) => prev.map((v) => (v.id === tempId ? savedVendor : v)));
+        return savedVendor;
+      }
     } catch (err) { console.warn('⚠️ [CRM] addVendor failed:', err); }
+    return newVendor;
   }, []);
 
-  const addPurchaseOrder = useCallback(async (po: Omit<PurchaseOrder, 'id'>) => {
-    const tempId = `PO-${Date.now()}`;
-    setPurchaseOrders((prev) => [{ ...po, id: tempId }, ...prev]);
+  const updateVendor = useCallback(async (id: string, updates: Partial<Vendor>) => {
+    setVendors((prev) =>
+      prev.map((v) => (v.id === id ? { ...v, ...updates } : v))
+    );
     try {
-      await PurchaseOrdersAPI.create({ id: tempId, ...po });
+      const res = await VendorsAPI.update(id, updates);
+      if (res.success && res.data) {
+        const updated = mapVendor(res.data);
+        setVendors((prev) => prev.map((v) => (v.id === id ? { ...v, ...updated } : v)));
+      }
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateVendor failed:', err);
+    }
+  }, []);
+
+  const deleteVendor = useCallback(async (id: string) => {
+    setVendors((prev) => prev.filter((v) => v.id !== id));
+    try {
+      await VendorsAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteVendor failed:', err);
+    }
+  }, []);
+
+  const addPurchaseOrder = useCallback(async (po: Omit<PurchaseOrder, 'id'>): Promise<PurchaseOrder | null> => {
+    const tempId = `PO-${Date.now()}`;
+    const newPO: PurchaseOrder = { id: tempId, ...po };
+    setPurchaseOrders((prev) => [newPO, ...prev]);
+    try {
+      const res = await PurchaseOrdersAPI.create({ id: tempId, ...po });
+      if (res.success && res.data) {
+        const savedPO: PurchaseOrder = {
+          ...newPO,
+          id: res.data.id,
+          poNumber: res.data.po_number || newPO.poNumber,
+        };
+        setPurchaseOrders((prev) => prev.map((p) => (p.id === tempId ? savedPO : p)));
+        return savedPO;
+      }
     } catch (err) { console.warn('⚠️ [CRM] addPurchaseOrder failed:', err); }
+    return newPO;
+  }, []);
+
+  const updatePurchaseOrder = useCallback(async (id: string, updates: Partial<PurchaseOrder>) => {
+    setPurchaseOrders((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
+    );
+    try {
+      await PurchaseOrdersAPI.update(id, updates);
+    } catch (err) {
+      console.warn('⚠️ [CRM] updatePurchaseOrder failed:', err);
+    }
+  }, []);
+
+  const deletePurchaseOrder = useCallback(async (id: string) => {
+    setPurchaseOrders((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await PurchaseOrdersAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deletePurchaseOrder failed:', err);
+    }
+  }, []);
+
+  const receivePurchaseOrderGoods = useCallback(async (
+    id: string, 
+    data?: any
+  ): Promise<{ success: boolean; data?: any; error?: string }> => {
+    try {
+      const res = await PurchaseOrdersAPI.receive(id, data || {});
+      if (res.success) {
+        // Refresh products and purchase orders from database to reflect updated inventory stock and PO status
+        const [poRes, prodRes] = await Promise.all([
+          PurchaseOrdersAPI.getAll(),
+          CRMProductsAPI.getAll()
+        ]);
+        if (poRes.success && Array.isArray(poRes.data)) {
+          setPurchaseOrders(poRes.data.map(mapPurchaseOrder));
+        }
+        if (prodRes.success && Array.isArray(prodRes.data)) {
+          setProducts(prodRes.data.map((r: any) => ({
+            id: r.id,
+            sku: r.sku || r.id,
+            name: r.name,
+            category: r.category || 'General',
+            price: parseFloat(r.price) || 0,
+            stock: parseInt(r.stock) || 0,
+            uom: r.uom || 'Units',
+            hsnCode: r.hsn_code || '',
+            taxRate: parseFloat(r.tax_rate) || 18,
+          })));
+        }
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: (res as any).error || res.message || 'Failed to process goods receipt' };
+    } catch (err: any) {
+      console.warn('⚠️ [CRM] receivePurchaseOrderGoods failed:', err);
+      return { success: false, error: err.message || 'Error occurred while receiving goods' };
+    }
+  }, []);
+
+  const invoicePurchaseOrder = useCallback(async (
+    id: string, 
+    data?: any
+  ): Promise<{ success: boolean; data?: any; invoice_number?: string; error?: string }> => {
+    try {
+      const res = await PurchaseOrdersAPI.invoice(id, data || {});
+      if (res.success) {
+        const [poRes, vndRes] = await Promise.all([
+          PurchaseOrdersAPI.getAll(),
+          VendorsAPI.getAll()
+        ]);
+        if (poRes.success && Array.isArray(poRes.data)) {
+          setPurchaseOrders(poRes.data.map(mapPurchaseOrder));
+        }
+        if (vndRes.success && Array.isArray(vndRes.data)) {
+          setVendors(vndRes.data.map(mapVendor));
+        }
+        return { success: true, data: res.data, invoice_number: res.data?.vendor_invoice_number };
+      }
+      return { success: false, error: (res as any).error || res.message || 'Failed to create vendor invoice' };
+    } catch (err: any) {
+      console.warn('⚠️ [CRM] invoicePurchaseOrder failed:', err);
+      return { success: false, error: err.message || 'Error occurred while creating vendor invoice' };
+    }
+  }, []);
+
+  const recordPurchasePayment = useCallback(async (
+    id: string, 
+    data?: any
+  ): Promise<{ success: boolean; data?: any; error?: string }> => {
+    try {
+      const res = await PurchaseOrdersAPI.recordPayment(id, data || {});
+      if (res.success) {
+        const [poRes, vndRes, bankRes] = await Promise.all([
+          PurchaseOrdersAPI.getAll(),
+          VendorsAPI.getAll(),
+          BankingAPI.getAccounts()
+        ]);
+        if (poRes.success && Array.isArray(poRes.data)) {
+          setPurchaseOrders(poRes.data.map(mapPurchaseOrder));
+        }
+        if (vndRes.success && Array.isArray(vndRes.data)) {
+          setVendors(vndRes.data.map(mapVendor));
+        }
+        if (bankRes.success && Array.isArray(bankRes.data)) {
+          setBankAccounts(bankRes.data.map((r: any) => ({
+            id: r.id,
+            accountNumber: r.account_number || r.accountNumber || '',
+            bankName: r.bank_name || r.bankName || '',
+            accountType: r.account_type || r.accountType || 'Current',
+            balance: parseFloat(r.balance) || 0,
+            currency: r.currency || 'INR',
+          })));
+        }
+        return { success: true, data: res.data };
+      }
+      return { success: false, error: (res as any).error || res.message || 'Failed to record purchase payment' };
+    } catch (err: any) {
+      console.warn('⚠️ [CRM] recordPurchasePayment failed:', err);
+      return { success: false, error: err.message || 'Error occurred while recording payment' };
+    }
   }, []);
 
   const addFollowUp = (fu: Omit<FollowUp, 'id'>) => {
@@ -2042,15 +2531,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addNote = (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const now = new Date().toISOString().split('T')[0];
-    setNotes((prev) => [{ ...note, id: `NOTE-${Date.now()}`, createdAt: now, updatedAt: now }, ...prev]);
+    const newNote: Note = {
+      ...note,
+      id: `NOTE-${Date.now()}`,
+      createdAt: 'Just now',
+      updatedAt: 'Just now',
+    };
+    setNotes((prev) => [newNote, ...prev]);
   };
 
   const addDocument = (doc: Omit<DocumentFile, 'id' | 'updatedAt'>) => {
     const now = new Date().toISOString().split('T')[0];
-    setDocuments((prev) => [{ ...doc, id: `DOC-${Math.floor(100 + Math.random() * 900)}`, updatedAt: now }, ...prev]);
+    setDocuments((prev) => [{ ...doc, id: `DOC-${Date.now()}`, updatedAt: now }, ...prev]);
   };
 
+  const markNotificationRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, read: true } : item))
+    );
+  };
+
+  const approveExpense = (id: string) => {
+    setExpenseClaims((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: 'Approved' } : item))
+    );
+  };
 
   const approveLeave = (id: string) => {
     setLeaveRequests((prev) =>
@@ -2061,18 +2566,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const rejectLeave = (id: string) => {
     setLeaveRequests((prev) =>
       prev.map((item) => (item.id === id ? { ...item, status: 'Rejected' } : item))
-    );
-  };
-
-  const approveExpense = (id: string) => {
-    setExpenseClaims((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: 'Approved' } : item))
-    );
-  };
-
-  const markNotificationRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, read: true } : item))
     );
   };
 
@@ -2316,17 +2809,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addNote,
         products,
         addProduct,
+        updateProduct,
+        adjustProductStock,
+        deleteProduct,
         quotations,
         addQuotation,
         updateQuotation,
+        deleteQuotation,
         salesOrders,
         addSalesOrder,
+        updateSalesOrder,
+        deleteSalesOrder,
         invoices,
         addInvoice,
+        updateInvoice,
+        deleteInvoice,
         purchaseOrders,
         addPurchaseOrder,
+        updatePurchaseOrder,
+        deletePurchaseOrder,
+        receivePurchaseOrderGoods,
+        invoicePurchaseOrder,
+        recordPurchasePayment,
         vendors,
         addVendor,
+        updateVendor,
+        deleteVendor,
         syncFromDatabase,
         employees,
         addEmployee,

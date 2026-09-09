@@ -189,17 +189,104 @@ export interface Customer {
   updatedAt: string;
 }
 
+export type StockStatus = 'In Stock' | 'Low Stock' | 'Out of Stock';
+
+export interface StockMovement {
+  id: string;
+  productId: string;
+  product_id?: string;
+  productName: string;
+  product_name?: string;
+  sku: string;
+  movementType: 'Purchase Receipt' | 'Sales Issue' | 'Adjustment' | 'Opening Stock' | 'Return';
+  movement_type?: string;
+  quantity: number;
+  previousStock: number;
+  previous_stock?: number;
+  newStock: number;
+  new_stock?: number;
+  referenceType?: string;
+  reference_type?: string;
+  referenceId?: string;
+  reference_id?: string;
+  referenceNumber?: string;
+  reference_number?: string;
+  sourceLocation?: string;
+  source_location?: string;
+  destinationLocation?: string;
+  destination_location?: string;
+  unitCost: number;
+  unit_cost?: number;
+  totalCost: number;
+  total_cost?: number;
+  reason?: string;
+  performedBy?: string;
+  performed_by?: string;
+  notes?: string;
+  createdAt: string;
+  created_at?: string;
+}
+
 export interface Product {
   id: string;
   sku: string;
   name: string;
   category: string;
   price: number;
+  costPrice?: number;
+  cost_price?: number;
+  purchasePrice?: number;
+  purchase_price?: number;
   stock: number;
+  onHandStock?: number;
+  on_hand_stock?: number;
+  reservedStock?: number;
+  reserved_stock?: number;
+  availableStock?: number;
+  available_stock?: number;
+  reorderLevel?: number;
+  reorder_level?: number;
+  reorderQuantity?: number;
+  reorder_quantity?: number;
+  stockStatus?: StockStatus;
+  stock_status?: StockStatus;
+  inventoryValue?: number;
+  inventory_value?: number;
   uom: string;
   hsnCode: string;
+  hsn_code?: string;
   taxRate: number;
+  tax_rate?: number;
+  description?: string;
+  warehouseLocation?: string;
+  warehouse_location?: string;
+  primaryVendorId?: string;
+  primary_vendor_id?: string;
+  primaryVendorName?: string;
+  primary_vendor_name?: string;
+  movementsCount?: number;
+  movements_count?: number;
+  movements?: StockMovement[];
+  purchaseOrders?: any[];
+  salesOrders?: any[];
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
 }
+
+export interface QuotationItem {
+  id?: number | string;
+  quotationId?: string;
+  productId?: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number;
+  total: number;
+}
+
+export type QuotationStatus = 'Draft' | 'Sent' | 'Revision Requested' | 'Revised' | 'Accepted' | 'Approved' | 'Rejected' | 'Expired';
 
 export interface Quotation {
   id: string;
@@ -209,30 +296,108 @@ export interface Quotation {
   date: string;
   validUntil: string;
   amount: number;
-  status: 'Draft' | 'Sent' | 'Approved' | 'Rejected' | 'Converted';
+  subtotal?: number;
+  taxAmount?: number;
+  discountAmount?: number;
+  status: QuotationStatus;
   itemsCount: number;
   sentDate?: string;
+  acceptedDate?: string;
   leadId?: string;
+  opportunityId?: string;
+  contactId?: string;
+  revisionNumber?: number;
+  terms?: string;
+  notes?: string;
+  owner?: string;
+  salesOrderId?: string;
+  salesOrderNumber?: string;
+  items?: QuotationItem[];
 }
+
+export interface SalesOrderItem {
+  id?: number | string;
+  salesOrderId?: string;
+  sales_order_id?: string;
+  productId?: string;
+  product_id?: string;
+  productName: string;
+  product_name?: string;
+  quantity: number;
+  unitPrice: number;
+  unit_price?: number;
+  taxRate: number;
+  tax_rate?: number;
+  total: number;
+}
+
+export type SalesOrderStatus = 'Draft' | 'Confirmed' | 'Processing' | 'Delivered' | 'Completed' | 'Cancelled';
 
 export interface SalesOrder {
   id: string;
   soNumber: string;
+  so_number?: string;
+  quotationId?: string;
+  quoteNumber?: string;
+  quotationStatus?: string;
+  customerId?: string;
   customerName: string;
+  customer_name?: string;
+  opportunityId?: string;
+  contactId?: string;
   date: string;
   totalAmount: number;
-  fulfillmentStatus: 'Pending' | 'Partial' | 'Fulfilled' | 'Cancelled';
+  total_amount?: number;
+  subtotal?: number;
+  taxAmount?: number;
+  discountAmount?: number;
+  fulfillmentStatus?: 'Pending' | 'Partial' | 'Fulfilled' | 'Cancelled';
+  fulfillment_status?: 'Pending' | 'Partial' | 'Fulfilled' | 'Cancelled' | string;
+  status?: SalesOrderStatus | string;
+  paymentTerms?: string;
+  deliveryNotes?: string;
+  notes?: string;
+  itemsCount?: number;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  items?: SalesOrderItem[];
 }
+
+export interface InvoiceItem {
+  id?: number | string;
+  invoiceId?: string;
+  productId?: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number;
+  total: number;
+}
+
+export type InvoiceStatus = 'Draft' | 'Issued' | 'Paid' | 'Partially Paid' | 'Overdue' | 'Cancelled';
 
 export interface Invoice {
   id: string;
   invoiceNumber: string;
+  salesOrderId?: string;
+  salesOrderNumber?: string;
+  quotationId?: string;
+  quoteNumber?: string;
+  opportunityId?: string;
+  customerId?: string;
   customerName: string;
   date: string;
   dueDate: string;
   amount: number;
+  subtotal?: number;
+  taxAmount?: number;
+  discountAmount?: number;
   paidAmount: number;
-  status: 'Draft' | 'Issued' | 'Paid' | 'Partially Paid' | 'Overdue';
+  status: InvoiceStatus;
+  paymentTerms?: string;
+  notes?: string;
+  itemsCount?: number;
+  items?: InvoiceItem[];
 }
 
 export type EmployeeLifecycleStatus = 'Joined' | 'Probation' | 'Confirmed' | 'Active' | 'Transferred' | 'Exited';
@@ -369,24 +534,193 @@ export interface ExpenseClaim {
   status: 'Pending' | 'Approved' | 'Reimbursed' | 'Rejected';
 }
 
+export interface PurchaseOrderItem {
+  id?: number | string;
+  purchaseOrderId?: string;
+  purchase_order_id?: string;
+  productId?: string;
+  product_id?: string;
+  productName?: string;
+  item_name?: string;
+  sku?: string;
+  quantity: number;
+  receivedQuantity?: number;
+  received_quantity?: number;
+  unitPrice?: number;
+  unit_price?: number;
+  taxRate?: number;
+  tax_rate?: number;
+  discountPercent?: number;
+  discount_percent?: number;
+  total?: number;
+  total_amount?: number;
+}
+
+export interface GoodsReceipt {
+  id: string;
+  receiptNumber?: string;
+  receipt_number?: string;
+  purchaseOrderId?: string;
+  purchase_order_id?: string;
+  poNumber?: string;
+  po_number?: string;
+  date?: string;
+  received_date?: string;
+  receivedBy?: string;
+  received_by?: string;
+  deliveryNoteNumber?: string;
+  delivery_note_number?: string;
+  notes?: string;
+  items?: {
+    id?: number | string;
+    productId?: string;
+    product_id?: string;
+    productName?: string;
+    item_name?: string;
+    quantityReceived?: number;
+    received_quantity?: number;
+  }[];
+}
+
+export type PurchaseOrderStatus = 
+  | 'Draft' 
+  | 'Pending Approval' 
+  | 'Approved' 
+  | 'Ordered' 
+  | 'Partially Received' 
+  | 'Received' 
+  | 'Completed' 
+  | 'Cancelled';
+
+export interface PurchasePayment {
+  id: string;
+  purchaseOrderId?: string;
+  purchase_order_id?: string;
+  vendorId?: string;
+  vendor_id?: string;
+  vendorInvoiceNumber?: string;
+  vendor_invoice_number?: string;
+  paymentNumber?: string;
+  payment_number?: string;
+  paymentDate: string;
+  payment_date?: string;
+  amount: number;
+  paymentMethod: string;
+  payment_method?: string;
+  bankAccountId?: string;
+  bank_account_id?: string;
+  bankAccountName?: string;
+  bank_account_name?: string;
+  referenceNumber?: string;
+  reference_number?: string;
+  notes?: string;
+  createdAt?: string;
+  created_at?: string;
+}
+
 export interface PurchaseOrder {
   id: string;
-  poNumber: string;
-  vendorName: string;
-  date: string;
-  amount: number;
-  status: 'Draft' | 'Sent' | 'Received' | 'Billed' | 'Completed';
+  poNumber?: string;
+  po_number?: string;
+  vendorId?: string;
+  vendor_id?: string;
+  vendorName?: string;
+  vendor_name?: string;
+  vendorContact?: string;
+  vendor_contact?: string;
+  vendorEmail?: string;
+  vendor_email?: string;
+  vendorPhone?: string;
+  vendor_phone?: string;
+  date?: string;
+  order_date?: string;
+  expectedDelivery?: string;
+  expected_delivery?: string;
+  amount?: number;
+  total_amount?: number;
+  subtotal?: number;
+  taxAmount?: number;
+  tax_amount?: number;
+  discountAmount?: number;
+  discount_amount?: number;
+  status: PurchaseOrderStatus;
+  receiptStatus?: 'Not Received' | 'Partially Received' | 'Fully Received';
+  receipt_status?: 'Not Received' | 'Partially Received' | 'Fully Received';
+  paymentStatus?: 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue';
+  payment_status?: 'Unpaid' | 'Partially Paid' | 'Paid' | 'Overdue';
+  paymentTerms?: string;
+  payment_terms?: string;
+  deliveryLocation?: string;
+  delivery_location?: string;
+  notes?: string;
+  itemsCount?: number;
+  items_count?: number;
+  items?: PurchaseOrderItem[];
+  receipts?: GoodsReceipt[];
+  vendorInvoiceId?: string;
+  vendor_invoice_id?: string;
+  vendorInvoiceNumber?: string;
+  vendor_invoice_number?: string;
+  vendorInvoiceDate?: string;
+  vendor_invoice_date?: string;
+  vendorInvoiceDueDate?: string;
+  vendor_invoice_due_date?: string;
+  vendorInvoiceAmount?: number;
+  vendor_invoice_amount?: number;
+  paidAmount?: number;
+  paid_amount?: number;
+  amountDue?: number;
+  amount_due?: number;
+  lastPaymentDate?: string;
+  last_payment_date?: string;
+  lastPaymentReference?: string;
+  last_payment_reference?: string;
+  invoiceStatus?: 'No Invoice' | 'Invoice Pending' | 'Invoiced' | 'Overdue';
+  invoice_status?: 'No Invoice' | 'Invoice Pending' | 'Invoiced' | 'Overdue';
+  payments?: PurchasePayment[];
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
 }
 
 export interface Vendor {
   id: string;
-  code: string;
+  code?: string;
   name: string;
   contactPerson: string;
+  contact_person?: string;
   email: string;
   phone: string;
+  category?: string;
+  address?: string;
+  gstin?: string;
+  paymentTerms?: string;
+  payment_terms?: string;
+  status?: 'Active' | 'Inactive' | 'Suspended' | 'Archived';
+  website?: string;
+  notes?: string;
   payableBalance: number;
+  payable_balance?: number;
   rating: number;
+  totalPurchases?: number;
+  total_purchases?: number;
+  totalOrders?: number;
+  total_orders?: number;
+  openOrders?: number;
+  open_orders?: number;
+  pendingReceipts?: number;
+  pending_receipts?: number;
+  totalPaidAmount?: number;
+  total_paid_amount?: number;
+  calculatedAmountDue?: number;
+  calculated_amount_due?: number;
+  overdueAmount?: number;
+  overdue_amount?: number;
+  purchase_orders?: PurchaseOrder[];
+  payments?: PurchasePayment[];
+  createdAt?: string;
+  created_at?: string;
 }
 
 export interface Project {
