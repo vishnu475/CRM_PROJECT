@@ -6,9 +6,9 @@ const router = express.Router();
 
 // POST /api/attendance/events - Punch In / Punch Out from Web Kiosk
 router.post('/events', async (req, res) => {
-  const { employeeId, pin, deviceId, source } = req.body;
+  const { employeeId, pin, deviceId, source, action } = req.body;
   try {
-    const result = await AttendanceEngineService.processPunchEvent({ employeeId, pin, deviceId, source });
+    const result = await AttendanceEngineService.processPunchEvent({ employeeId, pin, deviceId, source, action });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

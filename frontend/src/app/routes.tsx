@@ -225,9 +225,27 @@ export function parseRouteFromPath(pathname: string): { module: ModuleId; subSec
   const moduleSlug = parts[0].toLowerCase();
   const subSlug = parts[1] ? parts[1].toLowerCase() : '';
 
-  // Special check for dynamic employee detail route: /hrms/employees/EMP-006 or /hrms/employee/EMP-006
+  // 1. Direct route for /employees or /employees/:id -> HRMS Employee Master
+  if (moduleSlug === 'employees') {
+    if (parts.length >= 2) {
+      return { module: 'hrms', subSection: `employees/${parts[1]}` };
+    }
+    return { module: 'hrms', subSection: 'all' };
+  }
+
+  // 2. Direct route for /hrms/employees/:id or /hrms/employee/:id
   if (moduleSlug === 'hrms' && parts.length >= 3 && (subSlug === 'employees' || subSlug === 'employee')) {
     return { module: 'hrms', subSection: `employees/${parts[2]}` };
+  }
+
+  // 3. If route is /employee/:id where :id is an employee ID (e.g. EMP-008 or numeric)
+  if (moduleSlug === 'employee' && parts.length >= 2) {
+    const candidateId = parts[1];
+    const isEmpId = candidateId.toUpperCase().startsWith('EMP-') || /^\d+$/.test(candidateId);
+    if (isEmpId) {
+      return { module: 'hrms', subSection: `employees/${candidateId}` };
+    }
+    // Otherwise it's a standard ESS subsection like /employee/dashboard, /employee/attendance, etc.
   }
 
   const routeConfig = MODULE_ROUTES.find(r => r.id === moduleSlug || r.path === `/${moduleSlug}`);

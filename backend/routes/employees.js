@@ -1,5 +1,7 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
 import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2
+import { getNextEmployeeSequence, syncEmployeeSequence } from '../utils/employeeIdGenerator.js';
 
 const router = express.Router();
 
@@ -11,61 +13,75 @@ async function logActivity(client_or_pool, { module, entity, entityId, action, o
   );
 }
 
+// GET /api/employees/next-id — Preview previous last ID and next auto-generated sequential ID
+router.get('/next-id', async (req, res) => {
+  try {
+    const seqData = await getNextEmployeeSequence(pool);
+    res.json({ success: true, ...seqData });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET /api/employees — Fetch all HRMS employees from PostgreSQL
 router.get('/', async (req, res) => {
   try {
     const { stage } = req.query;
 
-    // 1. Auto-sync candidates in Recruitment 'Employee' stage into employees master
+    // 1. Auto-sync candidates in Recruitment 'Employee' stage who already have an employee_id
     await pool.query(`
       INSERT INTO employees (
         id, emp_code, name, email, phone, department, designation, joining_date, status,
-        annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_name
+        annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_name, plain_pin
       )
       SELECT 
-        COALESCE(c.employee_id, c.candidate_no, c.id),
-        COALESCE(c.employee_id, c.candidate_no, c.id),
+        c.employee_id,
+        c.employee_id,
         c.name,
-        CONCAT(LOWER(REPLACE(c.name, ' ', '.')), '.', LOWER(COALESCE(c.candidate_no, c.id)), '@company.com'),
+        CONCAT(LOWER(REPLACE(c.name, ' ', '.')), '.', LOWER(c.employee_id), '@company.com'),
         COALESCE(c.phone, '+91 98765 00000'),
         COALESCE(c.department, 'Engineering'),
         COALESCE(c.applied_position, c.job_title, 'Senior Software Engineer'),
         CURRENT_DATE,
-        'Active',
+        'Confirmed',
         COALESCE(c.expected_salary, 400000),
         COALESCE(c.expected_salary, 400000),
         ROUND((COALESCE(c.expected_salary, 400000) / 12)::numeric, 2),
         ROUND((COALESCE(c.expected_salary, 400000) / 12 * 0.6)::numeric, 2),
         ROUND((COALESCE(c.expected_salary, 400000) / 12 * 0.4)::numeric, 2),
-        COALESCE(c.recruiter, 'Sarah Jenkins')
+        COALESCE(c.recruiter, 'Sarah Jenkins'),
+        '1234'
       FROM job_candidates c
       WHERE (c.stage = 'Employee' OR c.stage = 'Hired' OR c.status = 'CONVERTED')
+        AND c.employee_id IS NOT NULL
+        AND c.employee_id LIKE 'EMP-%'
         AND NOT EXISTS (
           SELECT 1 FROM employees e 
-          WHERE e.id = COALESCE(c.employee_id, c.candidate_no, c.id) 
-             OR e.emp_code = COALESCE(c.employee_id, c.candidate_no, c.id)
+          WHERE e.id = c.employee_id OR e.emp_code = c.employee_id
         )
       ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         department = EXCLUDED.department,
         designation = EXCLUDED.designation,
         reporting_manager_name = EXCLUDED.reporting_manager_name,
-        status = 'Active'
+        status = 'Confirmed'
     `);
 
     await pool.query(`
       INSERT INTO employee_onboarding (employee_id, current_stage, stage, joined_date)
       SELECT 
-        COALESCE(c.employee_id, c.candidate_no, c.id),
+        c.employee_id,
         'JOINED',
         'Joined',
         CURRENT_DATE
       FROM job_candidates c
       WHERE (c.stage = 'Employee' OR c.stage = 'Hired' OR c.status = 'CONVERTED')
+        AND c.employee_id IS NOT NULL
+        AND c.employee_id LIKE 'EMP-%'
       ON CONFLICT (employee_id) DO NOTHING
     `);
 
-    // 2. Query employees joined with employee_onboarding
+    // 2. Query employees joined with employee_onboarding — Ordered strictly in numerical order
     let queryStr = `
       SELECT e.id, e.emp_code, e.name, e.email, e.phone, e.dob, e.gender, e.address,
              e.department, e.designation, e.joining_date, e.status,
@@ -82,11 +98,15 @@ router.get('/', async (req, res) => {
     `;
 
     const params = [];
-    if (stage) {
-      queryStr += ` WHERE (LOWER(o.stage) = LOWER($1) OR LOWER(e.status) = LOWER($1) OR (LOWER($1) = 'joined' AND (LOWER(e.status) = 'active' OR LOWER(e.status) = 'joined')))`;
-      params.push(stage);
+    if (stage && stage !== 'All') {
+      if (stage.toLowerCase() === 'confirmed') {
+        queryStr += ` WHERE (LOWER(e.status) = 'confirmed' OR LOWER(e.status) = 'active' OR LOWER(o.stage) = 'confirmed' OR LOWER(o.stage) = 'active')`;
+      } else {
+        queryStr += ` WHERE (LOWER(e.status) = LOWER($1) OR LOWER(o.stage) = LOWER($1))`;
+        params.push(stage);
+      }
     }
-    queryStr += ` ORDER BY e.created_at DESC, e.emp_code ASC`;
+    queryStr += ` ORDER BY COALESCE(NULLIF(regexp_replace(COALESCE(e.emp_code, e.id), '[^0-9]', '', 'g'), ''), '0')::int ASC, e.emp_code ASC`;
 
     const result = await pool.query(queryStr, params);
     res.json({ success: true, data: result.rows });
@@ -99,12 +119,22 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   try {
+    const rawId = String(id).trim();
+    const numericPart = rawId.replace(/\D/g, '');
+    const numericVal = numericPart ? parseInt(numericPart, 10) : null;
+    const formattedCode = numericVal !== null ? `EMP-${String(numericVal).padStart(3, '0')}` : rawId;
+
     const result = await pool.query(`
       SELECT *, 
         COALESCE(annual_salary, annual_ctc, ROUND((salary * 12)::numeric, 2)) AS annual_salary,
         COALESCE(annual_salary, annual_ctc, ROUND((salary * 12)::numeric, 2)) AS annual_ctc
-      FROM employees WHERE id = $1 OR emp_code = $1
-    `, [id]);
+      FROM employees 
+      WHERE LOWER(id) = LOWER($1) 
+         OR LOWER(emp_code) = LOWER($1)
+         OR LOWER(id) = LOWER($2)
+         OR LOWER(emp_code) = LOWER($2)
+      LIMIT 1
+    `, [rawId, formattedCode]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Employee not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -112,7 +142,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/employees — Add new employee (DB transaction + activity log)
+// POST /api/employees — Add new employee with sequential ID and login credentials
 router.post('/', async (req, res) => {
   const { name, email, phone, department, designation, joiningDate, salary, annualSalary, annualCtc, basicSalary, allowances,
           pin, panNumber, uanNumber, bankAccount, ifscCode, reportingManagerId, reportingManagerName,
@@ -121,13 +151,13 @@ router.post('/', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Get next employee code from sequence
-    const seqRes = await client.query(
-      `UPDATE number_sequences SET current_value = current_value + 1 WHERE id = 'seq-emp' RETURNING current_value, prefix`
-    );
-    const nextVal = seqRes.rows[0]?.current_value || Math.floor(Math.random() * 900) + 100;
-    const prefix = seqRes.rows[0]?.prefix || 'EMP';
-    const empCode = `${prefix}-${String(nextVal).padStart(3, '0')}`;
+    // Generate next sequential employee code strictly based on MAX(existing employee IDs) + 1 with row lock
+    const seqData = await getNextEmployeeSequence(client, true);
+    const empCode = seqData.nextEmpCode;
+
+    // Login Credentials: Plain PIN and Bcrypt hash for employee portal login
+    const defaultPin = pin ? String(pin).trim() : '1234';
+    const pinHash = await bcrypt.hash(defaultPin, 10);
 
     // ANNUAL SALARY IS SOURCE OF TRUTH
     let finalAnnual = Number(annualSalary || annualCtc || 0);
@@ -139,13 +169,15 @@ router.post('/', async (req, res) => {
     const finalBasic = Math.round((finalMonthly * 0.6) * 100) / 100;
     const finalAllowances = Math.round((finalMonthly * 0.4) * 100) / 100;
 
+    const initialStatus = status || 'Joined';
+
     const result = await client.query(`
       INSERT INTO employees 
         (id, emp_code, name, email, phone, department, designation, joining_date,
          status, annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_id, reporting_manager_name,
-         pan_number, uan_number, bank_account, ifsc_code, plain_pin, branch, employment_type)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
-      ON CONFLICT (email) DO UPDATE SET
+         pan_number, uan_number, bank_account, ifsc_code, plain_pin, pin, pin_hash, branch, employment_type)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+      ON CONFLICT (id) DO UPDATE SET
         name = EXCLUDED.name,
         department = EXCLUDED.department,
         designation = EXCLUDED.designation,
@@ -155,55 +187,150 @@ router.post('/', async (req, res) => {
         basic_salary = EXCLUDED.basic_salary,
         allowances = EXCLUDED.allowances,
         status = EXCLUDED.status,
+        plain_pin = EXCLUDED.plain_pin,
+        pin = EXCLUDED.pin,
+        pin_hash = EXCLUDED.pin_hash,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
     `, [
       empCode, empCode, name, email, phone || null, department, designation,
       joiningDate || new Date().toISOString().split('T')[0],
-      status || 'Joined',
+      initialStatus,
       finalAnnual, finalAnnual, finalMonthly, finalBasic, finalAllowances,
       reportingManagerId || 'EMP-001',
       reportingManagerName || 'Sarah Jenkins',
       panNumber || null, uanNumber || null, bankAccount || null, ifscCode || null,
-      pin || '1234',
+      defaultPin, defaultPin, pinHash,
       branch || null,
       employmentType || 'Full-time'
     ]);
 
-    // Insert into employee_onboarding pipeline table
+    // Insert into employee_onboarding pipeline table with initial status
     await client.query(`
       INSERT INTO employee_onboarding (employee_id, current_stage, stage, joined_date)
-      VALUES ($1, 'JOINED', 'Joined', CURRENT_DATE)
-      ON CONFLICT (employee_id) DO UPDATE SET current_stage = 'JOINED', stage = 'Joined', updated_at = CURRENT_TIMESTAMP
-    `, [empCode]);
+      VALUES ($1, UPPER($2), $2, CURRENT_DATE)
+      ON CONFLICT (employee_id) DO UPDATE SET current_stage = UPPER($2), stage = $2, updated_at = CURRENT_TIMESTAMP
+    `, [empCode, initialStatus]);
 
     // Auto-create leave balances for new employee
     const currentYear = new Date().getFullYear();
-    await client.query(`
-      INSERT INTO leave_balances (employee_id, leave_type_name, year, total_allocated, used, pending, available)
-      VALUES
-        ($1, 'Casual Leave', $2, 12, 0, 0, 12),
-        ($1, 'Sick Leave', $2, 10, 0, 0, 10),
-        ($1, 'Privilege Leave', $2, 15, 0, 0, 15)
-      ON CONFLICT (employee_id, leave_type_name, year) DO NOTHING
-    `, [empCode, currentYear]);
+    const defaultLeaves = [
+      { code: 'CL', name: 'Casual Leave', allowance: 12 },
+      { code: 'SL', name: 'Sick Leave', allowance: 10 },
+      { code: 'PL', name: 'Privilege Leave', allowance: 15 }
+    ];
+    for (const lt of defaultLeaves) {
+      await client.query(`
+        INSERT INTO leave_balances (id, employee_id, leave_type_id, leave_type_name, total_allocated, allocated, used, pending, available, balance, year)
+        VALUES ($1, $2, $3, $4, $5, $5, 0, 0, $5, $5, $6)
+        ON CONFLICT DO NOTHING
+      `, [`LB-${empCode}-${lt.code}`, empCode, `lt-${lt.code.toLowerCase()}`, lt.name, lt.allowance, currentYear]);
+    }
 
     // Assign default shift roster
     await client.query(`
-      INSERT INTO shift_rosters (employee_id, shift_id, effective_from)
-      VALUES ($1, 'SHF-GEN', CURRENT_DATE)
+      INSERT INTO shift_rosters (id, employee_id, shift_id, date, is_weekly_off)
+      VALUES ($1, $2, 'SHF-GEN', CURRENT_DATE, false)
       ON CONFLICT DO NOTHING
-    `, [empCode]);
+    `, [`SR-${empCode}-${new Date().toISOString().split('T')[0]}`, empCode]);
 
     // Activity log
     await logActivity(client, {
       module: 'hrms', entity: 'employee', entityId: empCode,
-      action: 'employee_created', newValue: `${name} | ${department} | ${designation}`,
+      action: 'employee_created', newValue: `${name} | ${department} | ${designation} | ${initialStatus}`,
       performedBy: reportingManagerName || 'HR Admin'
     });
 
+    // Sync number_sequences atomically with the newly created employee ID
+    const assignedNum = parseInt(empCode.replace(/\D/g, ''), 10);
+    await syncEmployeeSequence(client, assignedNum);
+
     await client.query('COMMIT');
-    res.status(201).json({ success: true, data: result.rows[0] || { id: empCode, emp_code: empCode, name } });
+    res.status(201).json({
+      success: true,
+      employeeId: empCode,
+      name: result.rows[0]?.name || name,
+      status: result.rows[0]?.status || initialStatus,
+      data: result.rows[0] || { id: empCode, emp_code: empCode, name, status: initialStatus }
+    });
+  } catch (err) {
+    console.error('POST /api/employees error:', err);
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, message: err.message, stack: err.stack });
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /api/employees/:id/status — Update employee lifecycle status strictly in-place
+router.patch('/:id/status', async (req, res) => {
+  const { id } = req.params;
+  const { status, stage, reason, reviewerName } = req.body;
+  const newStatus = status || stage;
+
+  if (!newStatus) {
+    return res.status(400).json({ success: false, message: 'Status is required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Verify employee exists
+    const empRes = await client.query(
+      `SELECT * FROM employees WHERE id = $1 OR emp_code = $1`,
+      [id]
+    );
+    if (empRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Employee not found.' });
+    }
+
+    const currentEmp = empRes.rows[0];
+    const targetCode = currentEmp.emp_code || currentEmp.id;
+    const oldStatus = currentEmp.status || 'Joined';
+
+    // Update status in employees table — NEVER creates a new record or changes ID
+    const updateRes = await client.query(
+      `UPDATE employees SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 OR emp_code = $2 RETURNING *`,
+      [newStatus, targetCode]
+    );
+    const updatedEmployee = updateRes.rows[0];
+
+    // Update or insert into employee_onboarding pipeline table
+    await client.query(
+      `INSERT INTO employee_onboarding (employee_id, current_stage, stage, updated_at)
+       VALUES ($1, UPPER($2), $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (employee_id) DO UPDATE SET current_stage = UPPER($2), stage = $2, updated_at = CURRENT_TIMESTAMP`,
+      [targetCode, newStatus]
+    );
+
+    // Audit log in employee_history
+    await client.query(
+      `INSERT INTO employee_history (employee_id, change_type, old_status, new_status, reason, changed_by)
+       VALUES ($1, 'Lifecycle Status Change', $2, $3, $4, $5)`,
+      [targetCode, oldStatus, newStatus, reason || `Lifecycle status moved to ${newStatus}`, reviewerName || 'HR Admin']
+    );
+
+    // Activity log
+    await logActivity(client, {
+      module: 'hrms',
+      entity: 'employee',
+      entityId: targetCode,
+      action: 'lifecycle_status_updated',
+      oldValue: oldStatus,
+      newValue: newStatus,
+      performedBy: reviewerName || 'HR Admin'
+    });
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      employeeId: targetCode,
+      name: updatedEmployee.name,
+      status: newStatus,
+      data: updatedEmployee
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ success: false, message: err.message });
@@ -212,8 +339,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/employees/:id — Update employee fields
-router.put('/:id', async (req, res) => {
+// Helper handler for updating arbitrary employee fields
+const handleUpdateEmployee = async (req, res) => {
   const { id } = req.params;
   const fields = req.body;
   const client = await pool.connect();
@@ -222,10 +349,16 @@ router.put('/:id', async (req, res) => {
 
     // Get old employee for activity log
     const oldEmp = await client.query('SELECT * FROM employees WHERE id = $1 OR emp_code = $1', [id]);
-    const old = oldEmp.rows[0] || {};
+    if (oldEmp.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Employee not found.' });
+    }
+    const old = oldEmp.rows[0];
+    const targetId = old.emp_code || old.id || id;
 
     const colMap = {
       empCode: 'emp_code', joiningDate: 'joining_date', basicSalary: 'basic_salary',
+      annualSalary: 'annual_salary', annualCtc: 'annual_ctc',
       reportingManagerId: 'reporting_manager_id', reportingManagerName: 'reporting_manager_name',
       panNumber: 'pan_number', uanNumber: 'uan_number', bankAccount: 'bank_account',
       ifscCode: 'ifsc_code', employmentType: 'employment_type'
@@ -235,6 +368,7 @@ router.put('/:id', async (req, res) => {
     const values = [];
     let idx = 1;
     for (const [key, val] of Object.entries(fields)) {
+      if (key === 'id' || key === 'emp_code' || key === 'empCode') continue; // Employee ID is strictly immutable!
       const col = colMap[key] || key;
       updates.push(`${col} = $${idx}`);
       values.push(val);
@@ -242,7 +376,7 @@ router.put('/:id', async (req, res) => {
     }
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
 
-    values.push(id);
+    values.push(targetId);
     const result = await client.query(
       `UPDATE employees SET ${updates.join(', ')} WHERE id = $${idx} OR emp_code = $${idx} RETURNING *`,
       values
@@ -250,14 +384,14 @@ router.put('/:id', async (req, res) => {
 
     if (fields.status) {
       await client.query(`
-        INSERT INTO employee_onboarding (employee_id, stage, updated_at)
-        VALUES ($1, $2, CURRENT_TIMESTAMP)
-        ON CONFLICT (employee_id) DO UPDATE SET stage = EXCLUDED.stage, updated_at = CURRENT_TIMESTAMP
-      `, [id, fields.status]);
+        INSERT INTO employee_onboarding (employee_id, current_stage, stage, updated_at)
+        VALUES ($1, UPPER($2), $2, CURRENT_TIMESTAMP)
+        ON CONFLICT (employee_id) DO UPDATE SET current_stage = UPPER($2), stage = $2, updated_at = CURRENT_TIMESTAMP
+      `, [targetId, fields.status]);
     }
 
     await logActivity(client, {
-      module: 'hrms', entity: 'employee', entityId: id,
+      module: 'hrms', entity: 'employee', entityId: targetId,
       action: 'employee_updated',
       oldValue: JSON.stringify({ status: old.status, department: old.department }),
       newValue: JSON.stringify(fields),
@@ -266,6 +400,41 @@ router.put('/:id', async (req, res) => {
 
     await client.query('COMMIT');
     res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+};
+
+// PUT /api/employees/:id — Update employee fields
+router.put('/:id', handleUpdateEmployee);
+
+// PATCH /api/employees/:id — Update employee fields (PATCH support)
+router.patch('/:id', handleUpdateEmployee);
+
+// DELETE /api/employees/:id — Mark employee as Exited
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE employees SET status = 'Exited', updated_at = CURRENT_TIMESTAMP WHERE id = $1 OR emp_code = $1 RETURNING *`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Employee not found.' });
+    }
+    await logActivity(client, {
+      module: 'hrms', entity: 'employee', entityId: id,
+      action: 'employee_deleted_or_exited', oldValue: result.rows[0]?.status,
+      newValue: 'Exited', performedBy: 'HR Admin'
+    });
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Employee marked as Exited', data: result.rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ success: false, message: err.message });

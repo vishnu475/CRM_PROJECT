@@ -6,7 +6,7 @@ export class AttendanceEngineService {
   /**
    * Process raw punch event from Web Kiosk or Hardware Device
    */
-  static async processPunchEvent({ employeeId, pin, deviceId = 'WEB-KIOSK-01', source = 'WEB_KIOSK' }) {
+  static async processPunchEvent({ employeeId, pin, deviceId = 'WEB-KIOSK-01', source = 'WEB_KIOSK', action }) {
     if (!employeeId || !pin) {
       throw new Error('Employee ID and PIN are required.');
     }
@@ -56,23 +56,85 @@ export class AttendanceEngineService {
       [employee.emp_code, todayStr]
     );
 
+    const existingRec = recordRes.rows.length > 0 ? recordRes.rows[0] : null;
+    const hasCheckedIn = existingRec && existingRec.check_in && existingRec.check_in !== '-' && existingRec.check_in !== 'OFF';
+    const hasCheckedOut = existingRec && existingRec.check_out && existingRec.check_out !== '-' && existingRec.check_out !== 'OFF';
+
     let punchType = 'CHECK_IN';
     let record = null;
 
-    if (
-      recordRes.rows.length > 0 && 
-      recordRes.rows[0].check_in && 
-      recordRes.rows[0].check_in !== '-' && 
-      recordRes.rows[0].check_in !== 'OFF'
-    ) {
-      if (
-        recordRes.rows[0].check_out &&
-        recordRes.rows[0].check_out !== '-' &&
-        recordRes.rows[0].check_out !== 'OFF'
-      ) {
-        throw new Error(`You have already completed check-out for today at ${recordRes.rows[0].check_out}.`);
+    if (action === 'CHECK_IN') {
+      if (hasCheckedIn) {
+        // Employee is already checked in for today - idempotent return to avoid accidental checkout
+        return {
+          success: true,
+          message: `Already checked in for today at ${existingRec.check_in}.`,
+          event: {
+            id: `EVT-${Date.now()}`,
+            employeeId: employee.emp_code,
+            employeeName: employee.name,
+            department: employee.department,
+            designation: employee.designation,
+            punchType: 'CHECK_IN',
+            timestamp: now.toISOString(),
+            timeString: existingRec.check_in,
+            source,
+            deviceId,
+            record: existingRec
+          }
+        };
+      }
+      punchType = 'CHECK_IN';
+    } else if (action === 'CHECK_OUT') {
+      if (!hasCheckedIn) {
+        throw new Error('Cannot check out: Employee has not checked in today yet.');
+      }
+      if (hasCheckedOut) {
+        throw new Error(`You have already completed check-out for today at ${existingRec.check_out}.`);
       }
       punchType = 'CHECK_OUT';
+    } else {
+      // Auto-toggle mode (e.g. kiosk without explicit action button)
+      if (hasCheckedIn) {
+        if (hasCheckedOut) {
+          throw new Error(`You have already completed check-out for today at ${existingRec.check_out}.`);
+        }
+
+        // Guard against rapid duplicate punches (within 60 seconds of CHECK_IN)
+        const recentEventsRes = await pool.query(
+          `SELECT * FROM attendance_events 
+           WHERE employee_id = $1 AND event_type = 'CHECK_IN' 
+           ORDER BY timestamp DESC LIMIT 1`,
+          [employee.emp_code]
+        );
+        if (recentEventsRes.rows.length > 0) {
+          const lastEventTime = new Date(recentEventsRes.rows[0].timestamp).getTime();
+          const elapsedSecs = (Date.now() - lastEventTime) / 1000;
+          if (elapsedSecs < 60) {
+            return {
+              success: true,
+              message: `Already checked in for today at ${existingRec.check_in}.`,
+              event: {
+                id: recentEventsRes.rows[0].id,
+                employeeId: employee.emp_code,
+                employeeName: employee.name,
+                department: employee.department,
+                designation: employee.designation,
+                punchType: 'CHECK_IN',
+                timestamp: recentEventsRes.rows[0].timestamp,
+                timeString: existingRec.check_in,
+                source,
+                deviceId,
+                record: existingRec
+              }
+            };
+          }
+        }
+
+        punchType = 'CHECK_OUT';
+      } else {
+        punchType = 'CHECK_IN';
+      }
     }
 
     // 5. Log raw event into attendance_events table with exact punchType (CHECK_IN vs CHECK_OUT)

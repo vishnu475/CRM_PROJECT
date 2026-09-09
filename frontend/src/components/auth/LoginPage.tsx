@@ -14,66 +14,35 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const knownEmployees: Record<string, { empCode: string; name: string; email: string; department: string; designation: string }> = {
-    '23341a4219@gmrit.edu.in': { empCode: 'EMP-008', name: 'Ramesh', email: '23341a4219@gmrit.edu.in', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
-    'emp-008': { empCode: 'EMP-008', name: 'Ramesh', email: '23341a4219@gmrit.edu.in', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
-    'ramesh': { empCode: 'EMP-008', name: 'Ramesh', email: '23341a4219@gmrit.edu.in', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
-    
-    'ashok@company.com': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
-    'vvardhan1235@gmail.com': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
-    'emp-006': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
-    'ashok': { empCode: 'EMP-006', name: 'ashok', email: 'vvardhan1235@gmail.com', department: 'Product Management', designation: 'Senior Full Stack Engineer' },
-
-    'sarah.jenkins@company.com': { empCode: 'EMP-001', name: 'Sarah Jenkins', email: 'sarah.jenkins@company.com', department: 'Engineering', designation: 'VP of Engineering' },
-    'emp-001': { empCode: 'EMP-001', name: 'Sarah Jenkins', email: 'sarah.jenkins@company.com', department: 'Engineering', designation: 'VP of Engineering' },
-    'sarah': { empCode: 'EMP-001', name: 'Sarah Jenkins', email: 'sarah.jenkins@company.com', department: 'Engineering', designation: 'VP of Engineering' },
-
-    'michael.vance@company.com': { empCode: 'EMP-002', name: 'Michael Vance', email: 'michael.vance@company.com', department: 'Sales', designation: 'Sales Director' },
-    'emp-002': { empCode: 'EMP-002', name: 'Michael Vance', email: 'michael.vance@company.com', department: 'Sales', designation: 'Sales Director' },
-    
-    'priya.sharma@company.com': { empCode: 'EMP-003', name: 'Priya Sharma', email: 'priya.sharma@company.com', department: 'HR', designation: 'HR Operations Lead' },
-    'emp-003': { empCode: 'EMP-003', name: 'Priya Sharma', email: 'priya.sharma@company.com', department: 'HR', designation: 'HR Operations Lead' },
-    
-    'rahul.verma@company.com': { empCode: 'EMP-004', name: 'Rahul Verma', email: 'rahul.verma@company.com', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
-    'emp-004': { empCode: 'EMP-004', name: 'Rahul Verma', email: 'rahul.verma@company.com', department: 'Engineering', designation: 'Senior Full Stack Engineer' },
-
-    'vishnu.vardhan@company.com': { empCode: 'EMP-005', name: 'Vishnu Vardhan', email: 'vishnu.vardhan@company.com', department: 'Engineering', designation: 'Lead Backend Architect' },
-    'emp-005': { empCode: 'EMP-005', name: 'Vishnu Vardhan', email: 'vishnu.vardhan@company.com', department: 'Engineering', designation: 'Lead Backend Architect' }
-  };
+  const [error, setError] = useState<string | null>(null);
 
   const handleRoleChange = (selectedRole: string) => {
     setRole(selectedRole);
-    if (selectedRole === 'Employee') {
-      setEmail('ashok@company.com');
-      setPassword('123456');
-    } else {
-      setEmail('admin@company.com');
-      setPassword('admin123');
-    }
+    setError(null);
+    setEmail('');
+    setPassword('');
   };
-
-  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-    const inputKey = (email || '').toLowerCase().trim();
 
-    const isAdminLogin = role !== 'Employee';
-    const isEmployeeInput =
-      role === 'Employee' ||
-      inputKey.includes('@gmrit') ||
-      inputKey.includes('ashok') ||
-      inputKey.includes('ramesh') ||
-      (inputKey.startsWith('emp-') && inputKey !== 'emp-001' && inputKey !== 'emp-002');
+    const inputKey = (email || '').trim();
+    const pinKey = (password || '').trim();
+
+    if (!inputKey || !pinKey) {
+      setError(role === 'Employee' ? 'Please enter your Employee ID and PIN.' : 'Please enter your credentials.');
+      setIsLoading(false);
+      return;
+    }
 
     try {
-      // 1. Attempt Real Backend API Authentication
+      // 1. Strict Backend API Authentication against PostgreSQL employees table
       const apiRes = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId: email, pin: password })
+        body: JSON.stringify({ employeeId: inputKey, pin: pinKey })
       });
       const data = await apiRes.json();
 
@@ -82,8 +51,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         if (data.token) {
           localStorage.setItem('crm_token', data.token);
         }
-        
-        const effectiveRole = isAdminLogin ? (role as any) : (emp.role || 'Employee');
+
+        const effectiveRole = role === 'Executive' ? 'Executive' : (emp.role || 'Employee');
 
         if (setUserProfile) {
           setUserProfile({
@@ -92,11 +61,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             name: emp.name,
             email: emp.email,
             role: effectiveRole,
-            roleTitle: emp.designation || (isAdminLogin ? 'Administrator' : 'Employee'),
+            roleTitle: emp.designation || (effectiveRole === 'Executive' ? 'Administrator' : 'Employee'),
             department: emp.department || 'General'
           });
         }
-        
+
         if (effectiveRole === 'Employee') {
           setUserRole('Employee');
           if (setActiveModule) setActiveModule('employee', 'dashboard');
@@ -108,74 +77,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         }
         setIsAuthenticated(true);
         window.dispatchEvent(new Event('popstate'));
-        setIsLoading(false);
-        return;
-      }
-    } catch (err) {
-      console.warn('[LOGIN] Backend Auth Fallback:', err);
-    }
-
-    // 2. Fallback to Local Employee Record Resolution if offline / demo
-    try {
-      let matched = knownEmployees[inputKey];
-      
-      // Fuzzy fallbacks for Vishnu Vardhan (EMP-005)
-      if (!matched && (inputKey.includes('vishnu') || inputKey === 'emp-005' || inputKey === 'emp005')) {
-        matched = knownEmployees['vishnu.vardhan@company.com'];
-      }
-      // Fuzzy fallbacks for Ashok (EMP-006)
-      if (!matched && (inputKey.includes('ashok') || inputKey.includes('vvardhan1235') || inputKey === 'emp-006' || inputKey === 'emp006')) {
-        matched = knownEmployees['ashok@company.com'];
-      }
-      // Fuzzy fallbacks for Ramesh (EMP-008)
-      if (!matched && (inputKey.includes('ramesh') || inputKey === 'emp-008' || inputKey === 'emp008')) {
-        matched = knownEmployees['23341a4219@gmrit.edu.in'];
-      }
-      // Fuzzy fallbacks for Sarah (EMP-001)
-      if (!matched && (inputKey.includes('sarah') || inputKey === 'emp-001' || inputKey === 'emp001')) {
-        matched = knownEmployees['sarah.jenkins@company.com'];
-      }
-      // Fuzzy fallbacks for Michael (EMP-002)
-      if (!matched && (inputKey.includes('michael') || inputKey === 'emp-002' || inputKey === 'emp002')) {
-        matched = knownEmployees['michael.vance@company.com'];
-      }
-      // Fuzzy fallbacks for Priya (EMP-003)
-      if (!matched && (inputKey.includes('priya') || inputKey === 'emp-003' || inputKey === 'emp003')) {
-        matched = knownEmployees['priya.sharma@company.com'];
-      }
-      // Fuzzy fallbacks for Rahul (EMP-004)
-      if (!matched && (inputKey.includes('rahul') || inputKey === 'emp-004' || inputKey === 'emp004')) {
-        matched = knownEmployees['rahul.verma@company.com'];
-      }
-
-      if (!isAdminLogin && (matched || isEmployeeInput)) {
-        const target = matched || knownEmployees['ashok@company.com'];
-        if (setUserProfile) {
-          setUserProfile({
-            id: target.empCode,
-            empCode: target.empCode,
-            name: target.name,
-            email: target.email,
-            role: 'Employee',
-            roleTitle: target.designation,
-            department: target.department
-          });
-        }
-        setUserRole('Employee');
-        if (setActiveModule) setActiveModule('employee', 'dashboard');
-        window.history.pushState({}, '', '/employee/dashboard');
       } else {
-        setUserRole(role as any);
-        if (setActiveModule) setActiveModule('dashboard');
-        window.history.pushState({}, '', '/dashboard');
+        // Display clear error from backend (e.g. "Employee ID does not exist. Please enter a valid Employee ID.")
+        setError(data.message || 'Employee ID does not exist. Please enter a valid Employee ID.');
       }
-
-      setIsAuthenticated(true);
-      window.dispatchEvent(new Event('popstate'));
     } catch (err: any) {
-      setError(err.message || 'Unable to sign in. Please try again.');
+      setError('Unable to connect to authentication server. Please try again.');
     } finally {
-      setIsLoading(false); // MANDATORY - Spinner MUST stop whether login succeeds or fails!
+      setIsLoading(false);
     }
   };
 
@@ -280,7 +189,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             <form onSubmit={handleLogin} className="space-y-6">
               
               <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 ml-1">Email Address or Employee ID</label>
+                <label className="text-sm font-bold text-slate-700 ml-1">
+                  {role === 'Employee' ? 'Employee ID' : 'Email Address or Employee ID'}
+                </label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-3.5 text-slate-400" size={20} />
                   <input
@@ -288,7 +199,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com or EMP-006"
+                    placeholder={role === 'Employee' ? 'Enter Employee ID (e.g. EMP-008 or 8)' : 'you@company.com or EMP-001'}
                     className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm"
                   />
                 </div>
@@ -296,7 +207,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
               <div className="space-y-2">
                 <div className="flex justify-between items-center ml-1">
-                  <label className="text-sm font-bold text-slate-700">Password</label>
+                  <label className="text-sm font-bold text-slate-700">
+                    {role === 'Employee' ? 'Employee PIN / Password' : 'Password'}
+                  </label>
                   <a href="#" className="text-xs font-bold text-[#2563eb] hover:text-blue-800 transition-colors">Forgot Password?</a>
                 </div>
                 <div className="relative">
@@ -306,7 +219,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
+                    placeholder={role === 'Employee' ? 'Enter your PIN' : 'Enter your password'}
                     className="w-full pl-12 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm"
                   />
                   <button 

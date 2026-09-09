@@ -6,45 +6,78 @@ const JWT_SECRET = process.env.JWT_SECRET || 'crm_hrms_super_secret_jwt_key_2026
 
 export class AuthService {
   static async loginEmployee(employeeId, pin) {
-    if (!employeeId || !pin) {
-      throw new Error('Employee ID and PIN are required.');
+    if (!employeeId || pin === undefined || pin === null || String(pin).trim() === '') {
+      const err = new Error('Employee ID and PIN/password are required.');
+      err.statusCode = 400;
+      throw err;
     }
 
-    // Find employee in DB by emp_code, id, or email
+    const trimmedId = String(employeeId).trim();
+    const trimmedPin = String(pin).trim();
+
+    // Support numeric employee IDs (e.g., '7', '8', 'EMP-007', 'EMP-008') as well as exact emp_code, id, email
+    const isEmail = trimmedId.includes('@');
+    const numericPart = !isEmail ? trimmedId.replace(/\D/g, '') : '';
+    const numericVal = numericPart ? parseInt(numericPart, 10) : null;
+
+    // 1. Query database for that Employee ID
     const res = await pool.query(
-      'SELECT * FROM employees WHERE LOWER(emp_code) = LOWER($1) OR id = $1 OR LOWER(email) = LOWER($1) OR LOWER(email) LIKE LOWER($2)',
-      [employeeId, `${employeeId}%`]
+      `SELECT * FROM employees 
+       WHERE LOWER(emp_code) = LOWER($1) 
+          OR LOWER(id) = LOWER($1) 
+          OR LOWER(email) = LOWER($1)
+          OR ($2::bigint IS NOT NULL AND (
+               COALESCE(NULLIF(regexp_replace(emp_code, '[^0-9]', '', 'g'), ''), '0')::bigint = $2::bigint
+            OR COALESCE(NULLIF(regexp_replace(id, '[^0-9]', '', 'g'), ''), '0')::bigint = $2::bigint
+          ))
+       LIMIT 1`,
+      [trimmedId, numericVal]
     );
+
+    // 2. If employee does not exist in database, reject with explicit error message
     if (res.rows.length === 0) {
-      throw new Error('Invalid Employee ID or PIN.');
+      const err = new Error('Employee ID does not exist. Please enter a valid Employee ID.');
+      err.statusCode = 401;
+      throw err;
     }
 
     const employee = res.rows[0];
 
+    // 3. Status check: Exited accounts cannot log in
     if (employee.status === 'Exited') {
-      throw new Error('Account inactive / Employee Exited.');
+      const err = new Error('Account inactive / Employee Exited.');
+      err.statusCode = 401;
+      throw err;
     }
 
-    // Verify PIN with bcrypt or fallback to plain_pin comparison if initial
+    // 4. Validate credentials against real employee record in database
     let isPinMatch = false;
-    if (employee.pin_hash && employee.pin_hash.startsWith('$2b$')) {
-      isPinMatch = await bcrypt.compare(String(pin), employee.pin_hash);
+    if (employee.pin_hash && (employee.pin_hash.startsWith('$2a$') || employee.pin_hash.startsWith('$2b$'))) {
+      isPinMatch = await bcrypt.compare(trimmedPin, employee.pin_hash);
     }
     
-    // Fallback for initial seeded plain PIN '1234'
-    if (!isPinMatch && (employee.plain_pin === String(pin) || String(pin) === '1234')) {
-      isPinMatch = true;
-      // Upgrade employee pin to bcrypt hash automatically
-      const newHash = await bcrypt.hash(String(pin), 10);
-      await pool.query('UPDATE employees SET pin_hash = $1 WHERE id = $2', [newHash, employee.id]);
+    // Check stored plain PIN for this employee if bcrypt didn't match or wasn't set
+    if (!isPinMatch) {
+      if (
+        (employee.plain_pin && String(employee.plain_pin).trim() === trimmedPin) ||
+        (employee.pin && String(employee.pin).trim() === trimmedPin)
+      ) {
+        isPinMatch = true;
+        // Upgrade employee pin to bcrypt hash automatically in DB
+        const newHash = await bcrypt.hash(trimmedPin, 10);
+        await pool.query('UPDATE employees SET pin_hash = $1 WHERE id = $2', [newHash, employee.id]);
+      }
     }
 
     if (!isPinMatch) {
-      throw new Error('Invalid Employee ID or PIN.');
+      const err = new Error('Invalid credentials');
+      err.statusCode = 401;
+      throw err;
     }
 
-    // Determine user role & permissions
-    const role = employee.designation.includes('Director') || employee.designation.includes('VP') ? 'Executive' 
+    // 5. Determine user role & permissions from employee record
+    const designation = employee.designation || '';
+    const role = (designation.includes('Director') || designation.includes('VP') || designation.includes('Admin')) ? 'Executive' 
       : employee.department === 'HR' ? 'HRAdmin'
       : employee.department === 'Sales' ? 'SalesExecutive'
       : 'Employee';
@@ -91,3 +124,4 @@ export class AuthService {
     return await bcrypt.hash(String(plainPin), 10);
   }
 }
+

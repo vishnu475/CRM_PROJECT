@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { hrmsPool, crmPool } from './db/pool.js';
 import { initWebSocketServer } from './utils/websocket.js';
+// Reload trigger: sequential-employee-id-flow-v2
 
 // ─── HRMS Routes (Friend 2 — Employees, Payroll, Attendance) ────────────────
 import authRouter from './routes/auth.js';
@@ -110,6 +111,7 @@ import { documentTypesRouter, documentCategoriesRouter } from './routes/document
 
 // ─── HRMS API Routes (Friend 2) ───────────────────────────────────────────────
 app.use('/api/auth',                authRouter);
+app.use('/auth',                    authRouter);
 app.use('/api/employees',           employeesRouter);
 app.use('/api/hrms',                hrmsRouter);
 app.use('/api/tasks',               tasksRouter);

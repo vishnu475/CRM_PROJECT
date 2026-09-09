@@ -133,11 +133,11 @@ export function useAttendanceKiosk() {
       setFailedAttempts(0);
       const evt = data.event;
 
-      // Sync React state
+      // Sync React state (skip redundant backend POST since Kiosk already sent the punch event)
       if (evt.punchType === 'CHECK_IN') {
-        checkIn(evt.employeeId);
+        checkIn(evt.employeeId, 'HQ Office', '192.168.1.50', true);
       } else if (evt.punchType === 'CHECK_OUT') {
-        checkOut(evt.employeeId);
+        checkOut(evt.employeeId, true);
       }
 
       // Add to Live Stream Feed immediately

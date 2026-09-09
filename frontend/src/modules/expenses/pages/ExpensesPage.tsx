@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Receipt,
   Plus,
@@ -41,6 +41,7 @@ import { Select } from '../../../components/common/Select';
 import { ExpenseDashboard } from '../components/ExpenseDashboard';
 import { ExpenseCategoryManager } from '../components/ExpenseCategoryManager';
 import { ExtendedExpenseClaim, ExpenseApprovalStage } from '../types';
+import { DocumentPreviewModal } from '../../../components/common/DocumentPreviewModal';
 
 export const ExpensesPage: React.FC = () => {
   const { employees = [], activeSubSection, setActiveSubSection } = useApp();
@@ -66,6 +67,19 @@ export const ExpensesPage: React.FC = () => {
   const [selectedClaimForAction, setSelectedClaimForAction] = useState<ExtendedExpenseClaim | null>(null);
   const [actionNotesInput, setActionNotesInput] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [previewReceipt, setPreviewReceipt] = useState<{ isOpen: boolean; fileUrl?: string; fileName?: string } | null>(null);
+
+  const handleOpenReceipt = (fileUrl?: string, fileName?: string) => {
+    if (!fileUrl) {
+      alert('No receipt proof was attached to this claim.');
+      return;
+    }
+    setPreviewReceipt({
+      isOpen: true,
+      fileUrl,
+      fileName: fileName || 'Expense_Tax_Invoice.pdf'
+    });
+  };
 
   // New Claim Form State
   const [newClaim, setNewClaim] = useState({
@@ -79,6 +93,26 @@ export const ExpensesPage: React.FC = () => {
     vendor: 'Uber India',
     paymentMode: 'Personal Credit Card'
   });
+  const [adminReceiptName, setAdminReceiptName] = useState<string | null>(null);
+  const [adminReceiptUrl, setAdminReceiptUrl] = useState<string>('');
+  const adminFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleAdminReceiptChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size exceeds maximum allowed 10MB.');
+      return;
+    }
+
+    setAdminReceiptName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAdminReceiptUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Fetch Live Claims from PostgreSQL
   const fetchClaimsFromDB = useCallback(async () => {
@@ -95,6 +129,16 @@ export const ExpensesPage: React.FC = () => {
           else if (rawStatus.includes('MANAGER')) stage = 'Manager Approved';
           else if (rawStatus.includes('REJECT')) stage = 'Rejected';
 
+          const rUrl = row.receipt_url || '';
+          let rName = row.receipt_file_name;
+          if (!rName) {
+            if (rUrl.startsWith('data:image') || /\.(jpg|jpeg|png|webp|gif)/i.test(rUrl)) {
+              rName = `${row.claim_number || row.id}_Receipt.jpg`;
+            } else {
+              rName = `${row.claim_number || row.id}_Tax_Invoice.pdf`;
+            }
+          }
+
           return {
             id: row.id,
             claimNumber: row.claim_number || row.id,
@@ -105,7 +149,8 @@ export const ExpensesPage: React.FC = () => {
             costCenter: row.cost_center || `${row.department || 'General'} Ops`,
             amount: Number(row.amount || 0),
             description: row.description || `${row.category} expenditure`,
-            receiptFileName: row.receipt_url ? 'Bill_Receipt_Verified.pdf' : 'Tax_Invoice.pdf',
+            receiptFileName: rName,
+            receiptUrl: rUrl,
             appliedDate: row.claim_date ? row.claim_date.split('T')[0] : (row.created_at ? row.created_at.split('T')[0] : '2026-08-24'),
             stage,
             managerNotes: row.approved_by ? `Reviewed by ${row.approved_by}` : undefined,
@@ -148,11 +193,14 @@ export const ExpensesPage: React.FC = () => {
           description: newClaim.description || `${newClaim.category} expense`,
           vendor: newClaim.vendor,
           paymentMode: newClaim.paymentMode,
-          claimDate: new Date().toISOString().split('T')[0]
+          claimDate: new Date().toISOString().split('T')[0],
+          receiptUrl: adminReceiptUrl || ''
         })
       });
 
       setIsSubmitModalOpen(false);
+      setAdminReceiptName(null);
+      setAdminReceiptUrl('');
       setRefreshMessage('New expense claim logged successfully!');
       setTimeout(() => setRefreshMessage(null), 3000);
       fetchClaimsFromDB();
@@ -165,7 +213,7 @@ export const ExpensesPage: React.FC = () => {
   const handleUpdateApprovalStage = async (claimId: string, nextStage: ExpenseApprovalStage, statusText: string) => {
     setIsProcessingAction(true);
     try {
-      await fetch('/api/hrms/approvals/expense', {
+      const res = await fetch('/api/hrms/approvals/expense', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -174,6 +222,11 @@ export const ExpensesPage: React.FC = () => {
           reviewerName: 'Admin / Finance Desk'
         })
       });
+
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.message || 'Error updating approval');
+      }
 
       setClaims(prev => prev.map(c => c.id === claimId ? {
         ...c,
@@ -187,6 +240,7 @@ export const ExpensesPage: React.FC = () => {
       setActionNotesInput('');
       setRefreshMessage(`Claim status updated to ${nextStage}!`);
       setTimeout(() => setRefreshMessage(null), 3000);
+      fetchClaimsFromDB();
     } catch (e: any) {
       alert(e.message || 'Error updating approval');
     } finally {
@@ -449,9 +503,16 @@ export const ExpensesPage: React.FC = () => {
                           ₹{exp.amount.toLocaleString()}
                         </td>
                         <td className="p-3.5">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 font-bold text-[11px] border border-blue-100">
-                            <Paperclip size={11} /> {exp.receiptFileName || 'Bill_Receipt.pdf'}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReceipt(exp.receiptUrl, exp.receiptFileName)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] border border-blue-200 transition-colors cursor-pointer group shadow-2xs"
+                            title="Click to preview real PDF / receipt bill"
+                          >
+                            <Paperclip size={12} className="text-blue-600 group-hover:scale-110 transition-transform shrink-0" />
+                            <span className="underline decoration-blue-300 underline-offset-2 max-w-[130px] truncate">{exp.receiptFileName || 'Bill_Receipt.pdf'}</span>
+                            <Eye size={11} className="text-blue-500 opacity-80 shrink-0 ml-0.5" />
+                          </button>
                         </td>
                         <td className="p-3.5">
                           <Badge variant={getStageBadgeVariant(exp.stage)}>{exp.stage}</Badge>
@@ -533,11 +594,60 @@ export const ExpensesPage: React.FC = () => {
 
           <Input label="Business Purpose / Justification" placeholder="Explain the expense reason..." value={newClaim.description} onChange={(e) => setNewClaim({ ...newClaim, description: e.target.value })} />
 
-          <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between text-xs text-blue-900">
-            <span className="font-bold flex items-center gap-1.5">
-              <Paperclip size={14} /> Sample Tax Invoice Attached
-            </span>
-            <span className="font-mono text-[10px]">Verified 100%</span>
+          <div>
+            <label className="font-extrabold text-slate-700 block mb-1 text-xs">Proof of Expense / Bill Receipt</label>
+            <input
+              type="file"
+              ref={adminFileInputRef}
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.docx"
+              className="hidden"
+              onChange={handleAdminReceiptChange}
+            />
+            {adminReceiptName ? (
+              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-2xl flex items-center justify-between text-xs text-blue-900">
+                <span className="font-bold flex items-center gap-1.5 truncate">
+                  <Paperclip size={14} className="text-blue-600 shrink-0" />
+                  <span className="truncate">{adminReceiptName}</span>
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => adminFileInputRef.current?.click()}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-bold px-1.5 py-0.5"
+                  >
+                    Change
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAdminReceiptName(null); setAdminReceiptUrl(''); }}
+                    className="text-slate-400 hover:text-rose-600 p-0.5"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => adminFileInputRef.current?.click()}
+                className="p-3.5 bg-slate-50 border border-dashed border-slate-300 hover:border-blue-500 rounded-2xl flex items-center justify-between text-xs cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Upload size={16} className="text-blue-500" />
+                  <span className="font-bold">Choose Receipt or Tax Invoice (PDF, JPG, PNG)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAdminReceiptName('Sample_Tax_Invoice.pdf');
+                    setAdminReceiptUrl('');
+                  }}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[10px] font-bold"
+                >
+                  + Sample Bill
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -572,12 +682,16 @@ export const ExpensesPage: React.FC = () => {
 
             {/* Attached Proof Box */}
             <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText size={16} className="text-blue-600" />
-                <span className="font-bold text-blue-900">{selectedClaimForAction.receiptFileName}</span>
+              <div className="flex items-center gap-2 truncate">
+                <FileText size={16} className="text-blue-600 shrink-0" />
+                <span className="font-bold text-blue-900 truncate">{selectedClaimForAction.receiptFileName}</span>
               </div>
-              <button onClick={() => window.print()} className="text-blue-600 hover:text-blue-800 font-extrabold flex items-center gap-1 cursor-pointer">
-                <Eye size={13} /> View / Print
+              <button
+                type="button"
+                onClick={() => handleOpenReceipt(selectedClaimForAction.receiptUrl, selectedClaimForAction.receiptFileName)}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer transition-colors shrink-0"
+              >
+                <Eye size={13} /> View Real PDF / Bill
               </button>
             </div>
 
@@ -591,24 +705,24 @@ export const ExpensesPage: React.FC = () => {
 
             {/* Action Buttons based on stage */}
             <div className="flex flex-wrap gap-2 justify-end pt-3 border-t border-slate-100">
-              {selectedClaimForAction.stage === 'Submitted' && (
+              {(selectedClaimForAction.stage === 'Submitted' || selectedClaimForAction.stage === 'Rejected') && (
                 <Button
                   variant="primary"
                   disabled={isProcessingAction}
                   onClick={() => handleUpdateApprovalStage(selectedClaimForAction.id, 'Manager Approved', 'MANAGER_APPROVED')}
                 >
-                  <Check size={14} /> Level 1: Manager Approve &rarr;
+                  <Check size={14} /> {selectedClaimForAction.stage === 'Rejected' ? 'Re-Approve (Level 1: Manager)' : 'Level 1: Manager Approve'} &rarr;
                 </Button>
               )}
 
-              {selectedClaimForAction.stage === 'Manager Approved' && (
+              {(selectedClaimForAction.stage === 'Manager Approved' || selectedClaimForAction.stage === 'Rejected') && (
                 <Button
                   variant="primary"
                   disabled={isProcessingAction}
                   className="bg-emerald-600 hover:bg-emerald-700"
                   onClick={() => handleUpdateApprovalStage(selectedClaimForAction.id, 'Finance Approved', 'FINANCE_APPROVED')}
                 >
-                  <CheckCircle2 size={14} /> Level 2: Finance Final Approve &rarr;
+                  <CheckCircle2 size={14} /> {selectedClaimForAction.stage === 'Rejected' ? 'Direct Finance Approve' : 'Level 2: Finance Final Approve'} &rarr;
                 </Button>
               )}
 
@@ -637,6 +751,18 @@ export const ExpensesPage: React.FC = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* REAL DOCUMENT PREVIEW MODAL */}
+      {previewReceipt?.isOpen && (
+        <DocumentPreviewModal
+          isOpen={previewReceipt.isOpen}
+          onClose={() => setPreviewReceipt(null)}
+          fileName={previewReceipt.fileName}
+          fileUrl={previewReceipt.fileUrl}
+          taskTitle="Expense Receipt & Tax Invoice"
+          projectName="HRMS Expenses"
+        />
       )}
     </div>
   );

@@ -21,9 +21,14 @@ export class RecruitmentController {
 
   static async updateCandidateStage(req, res) {
     const { id } = req.params;
-    const { stage } = req.body;
+    const { stage, notes, comment, performedBy } = req.body;
     try {
-      const result = await RecruitmentService.updateCandidateStage(id, stage);
+      const result = await RecruitmentService.updateCandidateStage(
+        id,
+        stage,
+        notes || comment || null,
+        performedBy || req.user?.name || 'HR Admin'
+      );
       res.json({
         success: true,
         message: `Candidate stage updated to ${stage}`,

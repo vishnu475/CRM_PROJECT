@@ -1,21 +1,30 @@
 import { pool } from '../db/pool.js';
+import { generateExpenseInvoicePdf } from '../utils/pdfGenerator.js';
 
 export class ESSService {
   /**
    * Helper: Resolve Employee Record safely from employeeId or empCode
    */
   static async resolveEmployee(employeeId) {
-    let searchId = employeeId;
-    if (!searchId || searchId === 'usr_1' || searchId === 'undefined' || searchId === 'null') {
-      searchId = 'EMP-006';
+    let searchId = String(employeeId || '').trim();
+    if (!searchId || searchId === 'undefined' || searchId === 'null') {
+      throw new Error('Employee ID is required');
     }
+
+    const numericPart = searchId.replace(/\D/g, '');
+    const numericVal = numericPart ? parseInt(numericPart, 10) : null;
+    const formattedCode = numericVal !== null ? `EMP-${String(numericVal).padStart(3, '0')}` : searchId;
+
     const res = await pool.query(
-      `SELECT * FROM employees WHERE emp_code = $1 OR id = $1`,
-      [searchId]
+      `SELECT * FROM employees 
+       WHERE LOWER(emp_code) = LOWER($1) 
+          OR LOWER(id) = LOWER($1) 
+          OR LOWER(emp_code) = LOWER($2) 
+          OR LOWER(id) = LOWER($2)
+       LIMIT 1`,
+      [searchId, formattedCode]
     );
     if (res.rows.length === 0) {
-      const fallback = await pool.query(`SELECT * FROM employees WHERE emp_code = 'EMP-006' OR status != 'Exited' ORDER BY created_at ASC LIMIT 1`);
-      if (fallback.rows.length > 0) return fallback.rows[0];
       throw new Error(`Employee profile not found for ${employeeId}`);
     }
     return res.rows[0];
@@ -797,24 +806,44 @@ export class ESSService {
       vendor = 'Direct Vendor',
       paymentMode = 'Personal Card',
       receiptUrl = '',
+      receiptFileName = '',
       claimDate = new Date().toISOString().split('T')[0]
     } = data;
     const claimId = `EXP-${empCode}-${Date.now().toString().slice(-6)}`;
+
+    let finalReceiptUrl = receiptUrl;
+    let finalFileName = receiptFileName || `${claimId}_Tax_Invoice.pdf`;
+
+    // If receiptUrl is an unsplash stock image placeholder or empty, generate a real corporate expense tax invoice PDF
+    if (!finalReceiptUrl || finalReceiptUrl.includes('unsplash')) {
+      finalReceiptUrl = generateExpenseInvoicePdf({
+        claimNumber: claimId,
+        empName: emp.name,
+        empId: empCode,
+        vendor: vendor || 'Direct Merchant',
+        category,
+        amount,
+        date: claimDate,
+        description: description || `${category} expenditure`
+      });
+      finalFileName = `${claimId}_Tax_Invoice.pdf`;
+    }
 
     await pool.query(`
       ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS vendor VARCHAR(150);
       ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(100);
       ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS receipt_url TEXT;
+      ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS receipt_file_name VARCHAR(255);
       ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS claim_date DATE;
       ALTER TABLE expense_claims ADD COLUMN IF NOT EXISTS description TEXT;
     `).catch(() => {});
 
     const res = await pool.query(
       `INSERT INTO expense_claims
-         (id, employee_id, emp_name, category, amount, description, claim_date, vendor, payment_mode, receipt_url, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING')
+         (id, employee_id, emp_name, category, amount, description, claim_date, vendor, payment_mode, receipt_url, receipt_file_name, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'PENDING')
        RETURNING *`,
-      [claimId, empCode, emp.name, category, Number(amount), description, claimDate, vendor, paymentMode, receiptUrl]
+      [claimId, empCode, emp.name, category, Number(amount), description, claimDate, vendor, paymentMode, finalReceiptUrl, finalFileName]
     );
 
     await this.createAdminNotification({
@@ -878,8 +907,8 @@ export class ESSService {
       const revId = `PERF-${empCode}-2026-Q3`;
       const newRev = await pool.query(
         `INSERT INTO performance_reviews 
-           (id, employee_id, employee_name, review_period, goals, kpi_scores, status)
-         VALUES ($1, $2, $3, 'Q3 2026', 'Complete enterprise module integrations and maintain high code quality.', '{"code_quality": 4.5, "productivity": 4.6, "teamwork": 4.8}'::jsonb, 'Self Review')
+           (id, employee_id, employee_name, review_period, self_rating, self_review_notes, status)
+         VALUES ($1, $2, $3, 'Q3 2026', 4.5, 'Complete enterprise module integrations and maintain high code quality.', 'Self Review')
          RETURNING *`,
         [revId, empCode, emp.name]
       );
@@ -1208,8 +1237,8 @@ export class ESSService {
       pool.query(`SELECT id, leave_type as title, status, start_date as created_at FROM leave_requests WHERE employee_id = $1 OR employee_id = $2 LIMIT 3`, [emp.id, empCode]),
       pool.query(`SELECT id, category as title, status, amount, created_at FROM expense_claims WHERE employee_id = $1 OR emp_name = $2 LIMIT 3`, [empCode, emp.name]),
       pool.query(`SELECT id, requested_department as title, status, created_at FROM transfer_requests WHERE employee_id = $1 OR employee_id = $2 LIMIT 3`, [emp.id, empCode]),
-      pool.query(`SELECT id, month || '/' || year as title, net_pay, 'Paid' as status, created_at FROM payslips WHERE employee_id = $1 OR employee_id = $2 LIMIT 3`, [emp.id, empCode]),
-      pool.query(`SELECT id, task_name as title, status, submitted_at as created_at FROM timesheets WHERE employee_id = $1 OR employee_id = $2 LIMIT 3`, [emp.id, empCode]),
+      pool.query(`SELECT id, month || '/' || year as title, net_pay, 'Paid' as status, COALESCE(generated_at, payment_date, NOW()) as created_at FROM payslips WHERE employee_id = $1 OR employee_id = $2 LIMIT 3`, [emp.id, empCode]),
+      pool.query(`SELECT id, COALESCE(task_name, project_name, 'Task') as title, status, COALESCE(created_at, date::timestamp, NOW()) as created_at FROM timesheets WHERE employee_id = $1 OR employee_id = $2 LIMIT 3`, [emp.id, empCode]),
     ]);
 
     const feed = [];

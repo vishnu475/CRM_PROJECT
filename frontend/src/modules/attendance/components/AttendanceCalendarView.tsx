@@ -46,9 +46,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
 
     if (emp) {
       const matchingLeave = leaveRequests.find((lr: any) => {
-        const safeLrName = (lr.empName || '').toLowerCase();
-        const safeEmpName = (emp.name || '').toLowerCase();
-        const isEmp = (lr.empId && lr.empId === emp.id) || (Boolean(safeLrName) && Boolean(safeEmpName) && safeLrName === safeEmpName);
+        const isEmp = Boolean(lr.empId && (lr.empId === emp.id || lr.empId === emp.empCode || lr.empId.toLowerCase() === empId.toLowerCase()));
         if (!isEmp || lr.status !== 'Approved') return false;
         const start = new Date(lr.startDate).getTime();
         const end = new Date(lr.endDate).getTime();

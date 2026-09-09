@@ -147,11 +147,11 @@ export function useRecruitment() {
   }, [reloadCandidatesFromDB]);
 
   // Update candidate stage in PostgreSQL & React state
-  const updateCandidateStage = useCallback(async (candidateId: string, newStage: CandidateStage) => {
+  const updateCandidateStage = useCallback(async (candidateId: string, newStage: CandidateStage, notes?: string) => {
     setCandidates(prev =>
-      prev.map(c => (c.id === candidateId || c.candidateNo === candidateId ? { ...c, stage: newStage } : c))
+      prev.map(c => (c.id === candidateId || c.candidateNo === candidateId ? { ...c, stage: newStage, ...(notes ? { notes } : {}) } : c))
     );
-    await RecruitmentService.updateCandidateStage(candidateId, newStage);
+    await RecruitmentService.updateCandidateStage(candidateId, newStage, notes);
     await reloadCandidatesFromDB();
     if (newStage === 'Employee' || newStage === 'Hired') {
       await reloadEmployeesFromDB();

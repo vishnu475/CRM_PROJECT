@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   CalendarDays,
@@ -160,6 +160,33 @@ export const ESSPage: React.FC = () => {
   const [expPaymentMode, setExpPaymentMode] = useState('Personal Credit Card');
   const [expReceiptName, setExpReceiptName] = useState<string | null>(null);
   const [expReceiptUrl, setExpReceiptUrl] = useState<string>('');
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const receiptFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleReceiptFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size exceeds maximum allowed 10MB.');
+      return;
+    }
+
+    setExpReceiptName(file.name);
+    setIsReadingFile(true);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setExpReceiptUrl(reader.result as string);
+      setIsReadingFile(false);
+    };
+    reader.onerror = () => {
+      alert('Error reading file from disk.');
+      setIsReadingFile(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const [isSubmittingExp, setIsSubmittingExp] = useState(false);
   const [expSuccessMsg, setExpSuccessMsg] = useState<string | null>(null);
   const [expFilterStatus, setExpFilterStatus] = useState<string>('ALL');
@@ -521,6 +548,10 @@ export const ESSPage: React.FC = () => {
   const handleApplyExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!expAmount || Number(expAmount) <= 0) return;
+    if (isReadingFile) {
+      alert('Please wait a moment, receipt file is still loading...');
+      return;
+    }
     setIsSubmittingExp(true);
     try {
       const claimPayload = {
@@ -529,7 +560,8 @@ export const ESSPage: React.FC = () => {
         description: expDescription || `${expCategory} claim for ${expVendor || 'office purpose'}`,
         vendor: expVendor || 'Direct Vendor',
         paymentMode: expPaymentMode,
-        receiptUrl: expReceiptUrl || (expReceiptName ? 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=80' : ''),
+        receiptUrl: expReceiptUrl || '',
+        receiptFileName: expReceiptName || '',
         claimDate: expDate
       };
 
@@ -2241,7 +2273,14 @@ export const ESSPage: React.FC = () => {
 
             const getExpenseStatusBadge = (status: string) => {
               const s = (status || '').toUpperCase();
-              if (s.includes('APPROV') || s.includes('FINANCE')) {
+              if (s.includes('MANAGER')) {
+                return (
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1 shadow-2xs">
+                    <CheckCircle2 size={11} className="text-amber-600" /> MANAGER APPROVED
+                  </span>
+                );
+              }
+              if (s.includes('FINANCE') || s === 'APPROVED' || s.includes('APPROV')) {
                 return (
                   <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-2xs">
                     <CheckCircle2 size={11} className="text-emerald-600" /> FINANCE APPROVED
@@ -2263,8 +2302,8 @@ export const ESSPage: React.FC = () => {
                 );
               }
               return (
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1 shadow-2xs">
-                  <Clock size={11} className="text-amber-600 animate-pulse" /> PENDING
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1 shadow-2xs">
+                  <Clock size={11} className="text-slate-500 animate-pulse" /> PENDING
                 </span>
               );
             };
@@ -2446,6 +2485,14 @@ export const ESSPage: React.FC = () => {
                       {/* Receipt & Proof Attachment Zone */}
                       <div>
                         <label className="font-extrabold text-slate-700 block mb-1">Proof of Expense / Bill Receipt</label>
+                        <input
+                          type="file"
+                          ref={receiptFileInputRef}
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.docx"
+                          className="hidden"
+                          onChange={handleReceiptFileChange}
+                        />
+
                         {expReceiptName ? (
                           <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between">
                             <div className="flex items-center gap-2 truncate">
@@ -2453,32 +2500,57 @@ export const ESSPage: React.FC = () => {
                               <span className="font-bold text-blue-900 text-xs truncate">{expReceiptName}</span>
                               <span className="text-[10px] text-blue-600 font-mono">(Ready)</span>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => { setExpReceiptName(null); setExpReceiptUrl(''); }}
-                              className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                              title="Remove Receipt"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="p-3.5 bg-slate-50 border border-dashed border-slate-300 hover:border-blue-500 rounded-2xl text-center space-y-1.5 transition-colors">
-                            <div className="flex justify-center items-center gap-2 text-slate-500">
-                              <UploadCloud size={20} className="text-blue-500" />
-                              <span className="font-bold text-xs text-slate-700">Upload Receipt / Tax Invoice</span>
-                            </div>
-                            <p className="text-[11px] text-slate-400">PDF, JPG, PNG up to 10MB</p>
-                            <div className="flex justify-center gap-2 pt-1">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => receiptFileInputRef.current?.click()}
+                                className="text-[11px] text-blue-600 hover:text-blue-800 font-bold px-2 py-0.5 rounded hover:bg-blue-100/50 cursor-pointer"
+                              >
+                                Change
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setExpReceiptName('tax-invoice-receipt.pdf');
-                                  setExpReceiptUrl('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=800&auto=format&fit=crop&q=80');
+                                  setExpReceiptName(null);
+                                  setExpReceiptUrl('');
+                                  if (receiptFileInputRef.current) receiptFileInputRef.current.value = '';
                                 }}
-                                className="px-3 py-1 bg-white hover:bg-blue-50 text-blue-600 border border-slate-200 hover:border-blue-300 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors"
+                                className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                                title="Remove Receipt"
                               >
-                                + Attach Sample Bill
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => receiptFileInputRef.current?.click()}
+                            className="p-4 bg-slate-50 border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50/20 rounded-2xl text-center space-y-2 cursor-pointer transition-all group"
+                          >
+                            <div className="flex justify-center items-center gap-2 text-slate-600 group-hover:text-blue-600 transition-colors">
+                              <UploadCloud size={24} className="text-blue-500 group-hover:scale-110 transition-transform" />
+                              <span className="font-black text-xs">Upload Receipt / Tax Invoice</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400">
+                              Click anywhere to choose a file from your computer (PDF, JPG, PNG up to 10MB)
+                            </p>
+                            <div className="flex justify-center gap-2 pt-1" onClick={e => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => receiptFileInputRef.current?.click()}
+                                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                              >
+                                <UploadCloud size={13} /> Choose File
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpReceiptName('Official_Tax_Invoice.pdf');
+                                  setExpReceiptUrl('');
+                                }}
+                                className="px-3 py-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-extrabold cursor-pointer transition-colors"
+                              >
+                                + Sample Tax Invoice
                               </button>
                             </div>
                           </div>
@@ -2629,9 +2701,29 @@ export const ESSPage: React.FC = () => {
                               {/* Footer Action Strip */}
                               <div className="flex flex-wrap items-center justify-between pt-1 text-[11px] gap-2">
                                 <div className="flex items-center gap-2">
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-100">
-                                    <Paperclip size={11} /> Bill Verified
-                                  </span>
+                                  {ex.receipt_url ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const isPdf = ex.receipt_url.startsWith('data:application/pdf') || ex.receipt_url.includes('.pdf');
+                                        setPreviewDocModal({
+                                          fileName: isPdf ? `${claimId}_Receipt.pdf` : `${claimId}_Receipt.jpg`,
+                                          fileUrl: ex.receipt_url,
+                                          taskTitle: `${ex.category} - Attached Bill Proof`,
+                                          projectName: `Expense Voucher #${claimId}`
+                                        });
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 transition cursor-pointer"
+                                      title="View attached real PDF bill"
+                                    >
+                                      <Paperclip size={11} /> View Real Bill PDF
+                                      <Eye size={10} className="text-indigo-500 ml-0.5" />
+                                    </button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 font-bold border border-indigo-100">
+                                      <Paperclip size={11} /> Bill Verified
+                                    </span>
+                                  )}
                                   <span className="text-slate-400 font-mono text-[10px]">
                                     Processed for EMP-006
                                   </span>
@@ -2726,6 +2818,35 @@ export const ESSPage: React.FC = () => {
                           ₹{Number(selectedExpenseForModal.amount || 0).toLocaleString()}
                         </span>
                       </div>
+
+                      {/* Attached Receipt Proof Box */}
+                      {selectedExpenseForModal.receipt_url && (
+                        <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between">
+                          <div className="flex items-center gap-2 truncate">
+                            <FileText size={16} className="text-blue-600 shrink-0" />
+                            <span className="font-bold text-blue-900 text-xs truncate">
+                              {selectedExpenseForModal.receipt_url.startsWith('data:application/pdf')
+                                ? `Tax_Invoice_${selectedExpenseForModal.id || 'EXP'}.pdf`
+                                : 'Expense_Receipt_Bill.pdf'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const isPdf = selectedExpenseForModal.receipt_url.startsWith('data:application/pdf') || selectedExpenseForModal.receipt_url.includes('.pdf');
+                              setPreviewDocModal({
+                                fileName: isPdf ? `Invoice_${selectedExpenseForModal.id || 'EXP'}.pdf` : `Receipt_${selectedExpenseForModal.id || 'EXP'}.jpg`,
+                                fileUrl: selectedExpenseForModal.receipt_url,
+                                taskTitle: `${selectedExpenseForModal.category} - Attached Bill`,
+                                projectName: `Voucher #${selectedExpenseForModal.id || 'EXP'}`
+                              });
+                            }}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors shrink-0"
+                          >
+                            <Eye size={13} /> View Real PDF / Bill
+                          </button>
+                        </div>
+                      )}
 
                       {/* Modal Footer Actions */}
                       <div className="flex gap-2.5 pt-2">
