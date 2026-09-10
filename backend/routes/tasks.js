@@ -9,9 +9,10 @@ const router = express.Router();
 function getAuthUser(req) {
   const tokenEmpId = req.user?.empCode || req.user?.id;
   const headerEmpId = req.headers['x-employee-id'];
-  const empId = headerEmpId || tokenEmpId || 'EMP-006';
+  const queryEmpId = req.query.employeeId || req.query.employee_id;
+  const empId = headerEmpId || tokenEmpId || queryEmpId || null;
 
-  const role = req.user?.role || req.headers['x-user-role'] || (req.headers['x-employee-id'] ? 'Employee' : 'Admin');
+  const role = req.user?.role || req.headers['x-user-role'] || (headerEmpId ? 'Employee' : 'Admin');
   return {
     id: empId,
     empCode: empId,
@@ -36,7 +37,11 @@ router.get('/', async (req, res) => {
 router.get('/my', async (req, res) => {
   try {
     const user = getAuthUser(req);
-    const tasks = await TaskService.getAllTasks({ employeeId: user.empCode }, { ...user, isEmployeeOnly: true });
+    const targetEmpId = req.headers['x-employee-id'] || req.query.employeeId || req.query.employee_id || user.empCode;
+    if (!targetEmpId) {
+      return res.status(400).json({ success: false, message: 'Employee ID required to view personal tasks.' });
+    }
+    const tasks = await TaskService.getAllTasks({ employeeId: targetEmpId, ...req.query }, { ...user, empCode: targetEmpId, isEmployeeOnly: true });
     res.json({ success: true, count: tasks.length, data: tasks });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -46,7 +51,33 @@ router.get('/my', async (req, res) => {
 router.get('/my-tasks', async (req, res) => {
   try {
     const user = getAuthUser(req);
-    const tasks = await TaskService.getAllTasks({ employeeId: user.empCode }, { ...user, isEmployeeOnly: true });
+    const targetEmpId = req.headers['x-employee-id'] || req.query.employeeId || req.query.employee_id || user.empCode;
+    if (!targetEmpId) {
+      return res.status(400).json({ success: false, message: 'Employee ID required to view personal tasks.' });
+    }
+    const tasks = await TaskService.getAllTasks({ employeeId: targetEmpId, ...req.query }, { ...user, empCode: targetEmpId, isEmployeeOnly: true });
+    res.json({ success: true, count: tasks.length, data: tasks });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 2b. GET /api/tasks/review — Admin tasks ready for review
+router.get('/review', async (req, res) => {
+  try {
+    const user = getAuthUser(req);
+    const tasks = await TaskService.getAllTasks({ ...req.query, status: 'READY_FOR_REVIEW' }, user);
+    res.json({ success: true, count: tasks.length, data: tasks });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 2c. GET /api/tasks/completed — All completed tasks
+router.get('/completed', async (req, res) => {
+  try {
+    const user = getAuthUser(req);
+    const tasks = await TaskService.getAllTasks({ ...req.query, status: 'COMPLETED' }, user);
     res.json({ success: true, count: tasks.length, data: tasks });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

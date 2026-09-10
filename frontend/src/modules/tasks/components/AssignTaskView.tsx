@@ -46,7 +46,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
   // Form states
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState('PROJECT-001');
   const [priority, setPriority] = useState<TaskPriority>('HIGH');
   const [dueDate, setDueDate] = useState('');
   const [estimatedHours, setEstimatedHours] = useState('');
@@ -63,14 +63,25 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const distinctProjects = useMemo(() => {
-    const s = new Set<string>();
-    ['HRMS & Payroll System', 'ERP Core Suite 2.0', 'Banking & Financial Ledger', 'Client Delivery Portal', 'HRMS Cloud Migration'].forEach(p => s.add(p));
+  const projectOptions = useMemo(() => {
+    const list: { id: string; name: string }[] = [
+      { id: 'PROJECT-001', name: 'HRMS Cloud Migration' },
+      { id: 'PROJECT-002', name: 'Payroll Automation' },
+      { id: 'PROJECT-003', name: 'Banking & Financial Ledger' },
+      { id: 'PROJECT-004', name: 'CRM Revenue Expansion' },
+      { id: 'PROJECT-005', name: 'ERP Core Suite 2.0' }
+    ];
     projects.forEach((p: any) => {
-      if (p.name && p.name.trim()) s.add(p.name.trim());
+      if (p.name && !list.some(item => item.id === p.id || item.name.toLowerCase() === p.name.toLowerCase())) {
+        list.push({ id: p.id || `PRJ-${list.length + 1}`, name: p.name });
+      }
     });
-    return Array.from(s);
+    return list;
   }, [projects]);
+
+  const targetSelectedProject = useMemo(() => {
+    return projectOptions.find(p => p.id === selectedProjectId) || projectOptions[0];
+  }, [projectOptions, selectedProjectId]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -157,7 +168,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
     try {
       const plan = await taskApiService.generateAITaskPlan({
         title,
-        projectName: selectedProject || 'ERP Core Suite 2.0',
+        projectName: targetSelectedProject.name,
         department: selectedEmployees[0]?.department || 'ALL'
       });
 
@@ -299,7 +310,8 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
       const payload = {
         title: title.trim(),
         description: description.trim(),
-        projectName: selectedProject || 'ERP Core Suite 2.0',
+        projectId: targetSelectedProject.id,
+        projectName: targetSelectedProject.name,
         priority,
         dueDate,
         estimatedHours: Number(estimatedHours) || 8.0,
@@ -471,14 +483,13 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                 </label>
                 <div className="relative">
                   <select
-                    value={selectedProject}
-                    onChange={e => setSelectedProject(e.target.value)}
+                    value={selectedProjectId}
+                    onChange={e => setSelectedProjectId(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition appearance-none cursor-pointer pr-9"
                   >
-                    <option value="">Select project</option>
-                    {distinctProjects.map(p => (
-                      <option key={p} value={p}>
-                        {p}
+                    {projectOptions.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.id})
                       </option>
                     ))}
                   </select>
@@ -962,7 +973,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
         fileName={previewModalDoc?.fileName}
         fileUrl={previewModalDoc?.fileUrl}
         taskTitle={title || 'Task Document'}
-        projectName={selectedProject || 'ERP Core Suite'}
+        projectName={targetSelectedProject.name}
         scopeOfWork={description}
       />
     </div>

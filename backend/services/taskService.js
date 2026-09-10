@@ -52,13 +52,13 @@ function saveAttachmentToDisk(taskId, fileName, dataUrl, uploadedBy = 'Admin') {
 
 export class TaskService {
   /**
-   * Helper: Resolve Employee Record safely from employeeId or empCode
+   * Helper: Resolve Employee Record safely from employeeId or empCode (Strict, NO Fallback)
    */
   static async resolveEmployee(employeeId) {
-    let searchId = employeeId;
-    if (!searchId || searchId === 'usr_1' || searchId === 'undefined' || searchId === 'null') {
-      searchId = 'EMP-006';
+    if (!employeeId || employeeId === 'undefined' || employeeId === 'null') {
+      throw new Error('Assigned Employee ID is required.');
     }
+    const searchId = String(employeeId).trim();
     // 1. Direct exact match by emp_code or id
     let res = await pool.query(
       `SELECT * FROM employees WHERE emp_code = $1 OR id = $1`,
@@ -66,37 +66,57 @@ export class TaskService {
     );
     if (res.rows.length > 0) return res.rows[0];
 
-    // 2. Case-insensitive and trimmed match by emp_code, id, or exact name
-    const trimmedId = String(searchId).trim();
+    // 2. Case-insensitive match by emp_code or id
     res = await pool.query(
       `SELECT * FROM employees 
        WHERE LOWER(emp_code) = LOWER($1) 
-          OR LOWER(id) = LOWER($1) 
-          OR LOWER(name) = LOWER($1)
+          OR LOWER(id) = LOWER($1)
        LIMIT 1`,
-      [trimmedId]
+      [searchId]
     );
     if (res.rows.length > 0) return res.rows[0];
 
-    // 3. Partial name search
+    // 3. Exact match by employee name
     res = await pool.query(
       `SELECT * FROM employees 
-       WHERE LOWER(name) LIKE LOWER($1) 
-       ORDER BY CASE WHEN status = 'Active' THEN 0 ELSE 1 END, created_at ASC 
+       WHERE LOWER(name) = LOWER($1)
        LIMIT 1`,
-      [`%${trimmedId}%`]
+      [searchId]
     );
     if (res.rows.length > 0) return res.rows[0];
 
-    // 4. Default active employee fallback
-    const fallback = await pool.query(
-      `SELECT * FROM employees 
-       WHERE status != 'Exited' AND status != 'Terminated'
-       ORDER BY CASE WHEN emp_code = 'EMP-006' THEN 0 ELSE 1 END, created_at ASC 
-       LIMIT 1`
-    );
-    if (fallback.rows.length > 0) return fallback.rows[0];
     throw new Error(`Employee record not found for: ${employeeId}`);
+  }
+
+  /**
+   * Helper: Resolve Project Record safely from projectId or projectName
+   */
+  static async resolveProject(projectIdOrName) {
+    if (!projectIdOrName) {
+      return { id: 'PROJECT-001', name: 'HRMS Cloud Migration' };
+    }
+    const queryTerm = String(projectIdOrName).trim();
+    
+    // Check HRMS DB projects table
+    let res = await pool.query(
+      `SELECT * FROM projects WHERE id = $1 OR project_id = $1 OR code = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
+      [queryTerm]
+    );
+    if (res.rows.length > 0) {
+      return { id: res.rows[0].id, name: res.rows[0].name };
+    }
+
+    // Try partial name match
+    res = await pool.query(
+      `SELECT * FROM projects WHERE LOWER(name) LIKE LOWER($1) LIMIT 1`,
+      [`%${queryTerm}%`]
+    );
+    if (res.rows.length > 0) {
+      return { id: res.rows[0].id, name: res.rows[0].name };
+    }
+
+    // Fallback standard
+    return { id: 'PROJECT-001', name: queryTerm || 'HRMS Cloud Migration' };
   }
 
   /**
@@ -169,7 +189,7 @@ export class TaskService {
   }
 
   /**
-   * 1. GET ALL TASKS (With Dynamic Filters & Role Scoping)
+   * 1. GET ALL TASKS (With Strict ID Joins & Unified Response Mapping)
    */
   static async getAllTasks(filters = {}, user = {}) {
     const {
@@ -178,45 +198,107 @@ export class TaskService {
       status,
       priority,
       project,
+      projectId,
       search,
       startDate,
       endDate
     } = filters;
 
     let queryStr = `
-      SELECT t.*,
+      SELECT 
+        t.id as "taskId",
+        t.id as id,
+        t.id as task_id,
+        t.title as "taskTitle",
+        t.title as title,
+        t.description,
+        COALESCE(p.id, t.project_id, 'PROJECT-001') as "projectId",
+        COALESCE(p.id, t.project_id, 'PROJECT-001') as project_id,
+        COALESCE(p.name, t.project_name, 'General Project') as "projectName",
+        COALESCE(p.name, t.project_name, 'General Project') as project_name,
+        e.emp_code as "employeeId",
+        e.emp_code as assigned_to,
+        e.emp_code as assigned_to_employee_id,
+        e.emp_code as employee_code,
+        e.name as "employeeName",
+        e.name as assigned_to_name,
+        e.name as employee_name,
+        COALESCE(e.department, t.department_name, 'Engineering') as department,
+        COALESCE(e.department, t.department_name, 'Engineering') as department_name,
+        COALESCE(e.designation, 'Specialist') as employee_designation,
+        COALESCE(t.progress_percent, 0) as progress,
+        COALESCE(t.progress_percent, 0) as progress_percent,
+        t.due_date as "dueDate",
+        t.due_date,
+        t.start_date,
+        t.priority,
+        t.status,
+        t.assigned_by,
+        t.assigned_by_id,
+        t.category,
+        t.instructions,
+        t.completion_note,
+        t.manager_feedback,
+        t.submitted_at,
+        t.completed_at,
+        t.completed_by,
+        t.created_at,
+        t.updated_at,
+        t.checklist,
+        t.pdf_attachment_name,
+        t.pdf_attachment_url,
         CASE 
           WHEN t.due_date < CURRENT_DATE AND t.status NOT IN ('COMPLETED', 'CANCELLED') THEN TRUE 
           ELSE FALSE 
-        END as is_overdue,
-        COALESCE(e.department, t.department_name, 'Engineering') as department,
-        COALESCE(e.name, t.assigned_to_name, t.assigned_to) as employee_name,
-        COALESCE(e.emp_code, t.assigned_to) as employee_code,
-        COALESCE(e.designation, 'Specialist') as employee_designation
+        END as is_overdue
       FROM tasks t
-      LEFT JOIN employees e ON (t.assigned_to = e.emp_code OR t.assigned_to = e.id)
+      INNER JOIN employees e ON (
+        t.assigned_to_employee_id = e.emp_code 
+        OR t.assigned_to = e.emp_code 
+        OR t.assigned_to = e.id
+      )
+      LEFT JOIN projects p ON (
+        t.project_id = p.id 
+        OR t.project_id = p.project_id
+        OR t.project_id = p.code
+      )
       WHERE 1=1
     `;
     const params = [];
 
-    // Role-based security scoping
+    // Role-based scoping or single employee filter (Strict ID match)
     if (user.role === 'Employee' || user.isEmployeeOnly) {
       const authEmp = await this.resolveEmployee(user.empCode || user.id);
-      params.push(authEmp.emp_code, authEmp.id);
-      queryStr += ` AND (t.assigned_to = $${params.length - 1} OR t.assigned_to = $${params.length})`;
-    } else if (employeeId) {
-      params.push(employeeId);
-      queryStr += ` AND (t.assigned_to = $${params.length} OR e.id = $${params.length} OR e.emp_code = $${params.length})`;
+      params.push(authEmp.emp_code);
+      queryStr += ` AND (t.assigned_to_employee_id = $${params.length} OR t.assigned_to = $${params.length} OR e.emp_code = $${params.length})`;
+    } else if (employeeId && employeeId !== 'ALL') {
+      const emp = await this.resolveEmployee(employeeId).catch(() => ({ emp_code: employeeId }));
+      params.push(emp.emp_code || employeeId);
+      queryStr += ` AND (t.assigned_to_employee_id = $${params.length} OR t.assigned_to = $${params.length} OR e.emp_code = $${params.length})`;
     }
 
     if (department && department !== 'ALL') {
       params.push(department);
-      queryStr += ` AND (t.department_name ILIKE $${params.length} OR t.department_id ILIKE $${params.length} OR e.department ILIKE $${params.length})`;
+      queryStr += ` AND (t.department_name ILIKE $${params.length} OR e.department ILIKE $${params.length})`;
     }
 
+    // Standardized status filters
     if (status && status !== 'ALL') {
-      params.push(status.toUpperCase());
-      queryStr += ` AND UPPER(t.status) = $${params.length}`;
+      const upperStatus = status.toUpperCase();
+      if (upperStatus === 'READY_FOR_REVIEW') {
+        queryStr += ` AND UPPER(t.status) IN ('READY_FOR_REVIEW', 'SUBMITTED')`;
+      } else if (upperStatus === 'COMPLETED') {
+        queryStr += ` AND UPPER(t.status) = 'COMPLETED'`;
+      } else if (upperStatus === 'CHANGES_REQUESTED') {
+        queryStr += ` AND UPPER(t.status) IN ('CHANGES_REQUESTED', 'REOPENED')`;
+      } else if (upperStatus === 'IN_PROGRESS') {
+        queryStr += ` AND UPPER(t.status) IN ('IN_PROGRESS', 'ASSIGNED')`;
+      } else if (upperStatus === 'OVERDUE') {
+        queryStr += ` AND t.due_date < CURRENT_DATE AND t.status NOT IN ('COMPLETED', 'CANCELLED')`;
+      } else {
+        params.push(upperStatus);
+        queryStr += ` AND UPPER(t.status) = $${params.length}`;
+      }
     }
 
     if (priority && priority !== 'ALL') {
@@ -224,9 +306,12 @@ export class TaskService {
       queryStr += ` AND UPPER(t.priority) = $${params.length}`;
     }
 
-    if (project && project !== 'ALL') {
+    if (projectId && projectId !== 'ALL') {
+      params.push(projectId);
+      queryStr += ` AND (t.project_id = $${params.length} OR p.id = $${params.length})`;
+    } else if (project && project !== 'ALL') {
       params.push(`%${project}%`);
-      queryStr += ` AND t.project_name ILIKE $${params.length}`;
+      queryStr += ` AND (t.project_name ILIKE $${params.length} OR p.name ILIKE $${params.length} OR t.project_id ILIKE $${params.length})`;
     }
 
     if (search && search.trim()) {
@@ -236,7 +321,8 @@ export class TaskService {
         t.description ILIKE $${params.length} OR 
         t.id ILIKE $${params.length} OR
         e.name ILIKE $${params.length} OR
-        e.emp_code ILIKE $${params.length}
+        e.emp_code ILIKE $${params.length} OR
+        p.name ILIKE $${params.length}
       )`;
     }
 
@@ -289,17 +375,63 @@ export class TaskService {
    */
   static async getTaskById(taskId, user = {}) {
     const taskRes = await pool.query(
-      `SELECT t.*,
+      `SELECT 
+        t.id as "taskId",
+        t.id as id,
+        t.id as task_id,
+        t.title as "taskTitle",
+        t.title as title,
+        t.description,
+        COALESCE(p.id, t.project_id, 'PROJECT-001') as "projectId",
+        COALESCE(p.id, t.project_id, 'PROJECT-001') as project_id,
+        COALESCE(p.name, t.project_name, 'General Project') as "projectName",
+        COALESCE(p.name, t.project_name, 'General Project') as project_name,
+        e.emp_code as "employeeId",
+        e.emp_code as assigned_to,
+        e.emp_code as assigned_to_employee_id,
+        e.emp_code as employee_code,
+        e.name as "employeeName",
+        e.name as assigned_to_name,
+        e.name as employee_name,
+        COALESCE(e.department, t.department_name, 'Engineering') as department,
+        COALESCE(e.department, t.department_name, 'Engineering') as department_name,
+        COALESCE(e.designation, 'Specialist') as employee_designation,
+        COALESCE(t.progress_percent, 0) as progress,
+        COALESCE(t.progress_percent, 0) as progress_percent,
+        t.due_date as "dueDate",
+        t.due_date,
+        t.start_date,
+        t.priority,
+        t.status,
+        t.assigned_by,
+        t.assigned_by_id,
+        t.category,
+        t.instructions,
+        t.completion_note,
+        t.manager_feedback,
+        t.submitted_at,
+        t.completed_at,
+        t.completed_by,
+        t.created_at,
+        t.updated_at,
+        t.checklist,
+        t.pdf_attachment_name,
+        t.pdf_attachment_url,
         CASE 
           WHEN t.due_date < CURRENT_DATE AND t.status NOT IN ('COMPLETED', 'CANCELLED') THEN TRUE 
           ELSE FALSE 
-        END as is_overdue,
-        COALESCE(e.department, t.department_name, 'Engineering') as department,
-        COALESCE(e.name, t.assigned_to_name, t.assigned_to) as employee_name,
-        COALESCE(e.emp_code, t.assigned_to) as employee_code,
-        COALESCE(e.designation, 'Specialist') as employee_designation
+        END as is_overdue
       FROM tasks t
-      LEFT JOIN employees e ON (t.assigned_to = e.emp_code OR t.assigned_to = e.id)
+      INNER JOIN employees e ON (
+        t.assigned_to_employee_id = e.emp_code 
+        OR t.assigned_to = e.emp_code 
+        OR t.assigned_to = e.id
+      )
+      LEFT JOIN projects p ON (
+        t.project_id = p.id 
+        OR t.project_id = p.project_id
+        OR t.project_id = p.code
+      )
       WHERE t.id = $1`,
       [taskId]
     );
@@ -313,7 +445,7 @@ export class TaskService {
     // Check Employee IDOR authorization
     if (user.role === 'Employee' || user.isEmployeeOnly) {
       const authEmp = await this.resolveEmployee(user.empCode || user.id);
-      const isOwner = task.assigned_to === authEmp.emp_code || task.assigned_to === authEmp.id || task.assigned_by === authEmp.name;
+      const isOwner = task.assigned_to === authEmp.emp_code || task.assigned_to_employee_id === authEmp.emp_code || task.assigned_to === authEmp.id;
       if (!isOwner) {
         throw new Error('Access denied: You are only authorized to view your own assigned tasks.');
       }
@@ -350,7 +482,7 @@ export class TaskService {
    * 3. CREATE & ASSIGN TASK (Admin / Manager)
    */
   static async createTask(taskData, creatorUser = {}) {
-    let rawAssigned = taskData.assignedTo || taskData.assigned_to || taskData.assignedToId || taskData.employeeId;
+    let rawAssigned = taskData.assignedTo || taskData.assigned_to || taskData.assignedToId || taskData.employeeId || taskData.assigned_to_employee_id;
     if (Array.isArray(rawAssigned)) {
       if (rawAssigned.length === 0) {
         throw new Error('At least one assigned employee is required.');
@@ -369,7 +501,7 @@ export class TaskService {
       rawAssigned = rawAssigned[0];
     }
     const assignedTo = rawAssigned;
-    const title = taskData.title;
+    const title = taskData.title || taskData.taskTitle;
     const description = taskData.description || '';
     const department = taskData.department || taskData.department_name || taskData.departmentName;
     const priority = (taskData.priority || 'MEDIUM').toUpperCase();
@@ -377,7 +509,12 @@ export class TaskService {
     const defaultDue = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
     const dueDate = taskData.dueDate || taskData.due_date || defaultDue;
     const estimatedHours = Number(taskData.estimatedHours || taskData.estimated_hours || 8.0);
-    const projectName = taskData.projectName || taskData.project_name || 'General Operations';
+    
+    // Resolve Project strictly via ID/Name
+    const project = await this.resolveProject(taskData.projectId || taskData.project_id || taskData.projectName || taskData.project_name);
+    const projectId = project.id;
+    const projectName = project.name;
+
     const category = taskData.category || 'Feature Development';
     const instructions = taskData.instructions || '';
     const tags = taskData.tags || 'Enterprise, HRMS';
@@ -389,7 +526,7 @@ export class TaskService {
       throw new Error('Assigned Employee is required.');
     }
 
-    // 1. Validate Employee exists & is Active
+    // 1. Validate Employee exists & is Active (Strict)
     const emp = await this.resolveEmployee(assignedTo);
     if (emp.status === 'Exited' || emp.status === 'Terminated') {
       throw new Error(`Cannot assign task to inactive/exited employee (${emp.name}).`);
@@ -397,16 +534,12 @@ export class TaskService {
 
     // 2. Validate Department relationship if specified
     const empDept = emp.department || 'Engineering';
-    if (department && department !== 'ALL' && empDept.toLowerCase() !== department.toLowerCase()) {
-      console.warn(`Note: Employee ${emp.name} belongs to ${empDept}, assigned under ${department}`);
-    }
-
     const assignedDept = department && department !== 'ALL' ? department : empDept;
     const empCode = emp.emp_code || emp.id;
     const creatorName = creatorUser.name || 'Admin';
     const creatorId = creatorUser.id || creatorUser.empCode || 'ADM-001';
 
-    const taskId = `TSK-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+    const taskId = taskData.id || taskData.taskId || `TSK-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
 
     const moduleName = taskData.moduleName || taskData.module_name || 'Core Module';
     const deliverableType = taskData.deliverableType || taskData.deliverable_type || 'Code Implementation & Docs';
@@ -446,19 +579,21 @@ export class TaskService {
 
     const res = await pool.query(
       `INSERT INTO tasks (
-        id, title, description, department_id, department_name, project_name,
-        assigned_to, assigned_to_name, assigned_by, assigned_by_id,
+        id, task_id, title, description, department_id, department_name, 
+        project_id, project_name,
+        assigned_to, assigned_to_employee_id, assigned_to_name, assigned_by, assigned_by_id,
         priority, status, progress_percent, start_date, due_date,
         estimated_hours, actual_hours, category, instructions, tags,
         module_name, deliverable_type, pdf_attachment_name, pdf_attachment_url, checklist, ai_recommendation_log,
         created_at, updated_at
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10,
-        $11, 'ASSIGNED', 0, $12, $13,
-        $14, 0.0, $15, $16, $17,
-        $18, $19, $20, $21, $22::jsonb, $23,
+        $1, $1, $2, $3, $4, $5,
+        $6, $7,
+        $8, $8, $9, $10, $11,
+        $12, 'IN_PROGRESS', 0, $13, $14,
+        $15, 0.0, $16, $17, $18,
+        $19, $20, $21, $22, $23::jsonb, $24,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *`,
@@ -468,6 +603,7 @@ export class TaskService {
         description,
         assignedDept,
         assignedDept,
+        projectId,
         projectName,
         empCode,
         emp.name,
@@ -676,7 +812,7 @@ export class TaskService {
 
     const res = await pool.query(
       `UPDATE tasks
-       SET status = 'SUBMITTED',
+       SET status = 'READY_FOR_REVIEW',
            progress_percent = 100,
            submitted_at = CURRENT_TIMESTAMP,
            completion_note = $1,
@@ -692,11 +828,11 @@ export class TaskService {
     // Log activity
     await this.logTaskActivity({
       taskId,
-      action: 'TASK_SUBMITTED',
+      action: 'TASK_SUBMITTED_FOR_REVIEW',
       performedBy: empCode,
       performedByName: emp.name,
       oldValue: task.status,
-      newValue: 'SUBMITTED',
+      newValue: 'READY_FOR_REVIEW',
       note: completionNote || `${emp.name} submitted task for review.`
     });
 
