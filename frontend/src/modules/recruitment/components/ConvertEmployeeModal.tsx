@@ -24,9 +24,7 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
   const { addEmployee, employees } = useApp() as any;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const nextEmpNum = (employees?.length || 0) + 1;
-  const defaultEmpCode = `EMP-${String(nextEmpNum).padStart(3, '0')}`;
+  const [lastEmpCode, setLastEmpCode] = useState('EMP-010');
 
   const getCandidateAnnualSalary = (c: any) => {
     if (!c) return 400000;
@@ -39,7 +37,7 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
   };
 
   const [form, setForm] = useState({
-    empCode: defaultEmpCode,
+    empCode: 'EMP-011',
     department: candidate?.department || 'Engineering',
     designation: candidate?.appliedPosition || 'Senior Software Engineer',
     annualSalary: getCandidateAnnualSalary(candidate),
@@ -48,22 +46,33 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
     pin: '1234'
   });
 
-  // Re-sync form state whenever candidate or modal opens
+  // Re-sync form state whenever candidate or modal opens, fetching real sequential next-id
   React.useEffect(() => {
     if (candidate && isOpen) {
-      const nextNum = (employees?.length || 0) + 1;
-      setForm({
-        empCode: `EMP-${String(nextNum).padStart(3, '0')}`,
+      fetch('/api/employees/next-id')
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            if (d.lastEmpCode) setLastEmpCode(d.lastEmpCode);
+            if (d.nextEmpCode) {
+              setForm(prev => ({ ...prev, empCode: d.nextEmpCode }));
+            }
+          }
+        })
+        .catch(e => console.warn('next-id error:', e));
+
+      setForm(prev => ({
+        ...prev,
         department: candidate.department || 'Engineering',
         designation: candidate.appliedPosition || 'Senior Software Engineer',
         annualSalary: getCandidateAnnualSalary(candidate),
         reportingManager: 'Sarah Jenkins',
         branch: 'Bengaluru HQ',
         pin: '1234'
-      });
+      }));
       setError(null);
     }
-  }, [candidate, isOpen, employees?.length]);
+  }, [candidate, isOpen]);
 
   if (!candidate) return null;
 
@@ -155,6 +164,26 @@ export const ConvertEmployeeModal: React.FC<ConvertEmployeeModalProps> = ({
             <p className="text-emerald-700 text-[11px] mt-0.5 leading-relaxed">
               Converting <strong>{candidate.name}</strong> will save them permanently to PostgreSQL with status <span className="font-bold text-emerald-600">Joined</span> and they will immediately appear in the HRMS Employee Directory.
             </p>
+          </div>
+        </div>
+
+        {/* PREVIEW: PREVIOUS LAST ID & AUTO-ASSIGNED SEQUENTIAL ID */}
+        <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-emerald-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between shadow-sm">
+          <div>
+            <span className="text-[10px] text-purple-700 font-semibold uppercase tracking-wider block">Previous Last ID</span>
+            <span className="text-xs font-bold text-slate-700 font-mono bg-white px-2 py-0.5 rounded border border-purple-100">
+              {lastEmpCode}
+            </span>
+          </div>
+          <div className="flex items-center text-purple-400 font-medium text-[11px] gap-1">
+            <span>Next in Order</span>
+            <span className="text-purple-600 font-bold">→</span>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-indigo-700 font-semibold uppercase tracking-wider block">Assigned New ID</span>
+            <span className="text-xs font-extrabold text-purple-900 font-mono bg-purple-100 px-2.5 py-0.5 rounded border border-purple-300">
+              {form.empCode}
+            </span>
           </div>
         </div>
 

@@ -14,11 +14,16 @@ import { ESSPage } from '../modules/ess/pages/ESSPage';
 const MainLayout: React.FC = () => {
   const { activeModule, userRole } = useApp();
 
-  // STRICT EMPLOYEE ROUTE: Only open ESSPage when on /employee URL path or activeModule is employee
+  const path = window.location.pathname.toLowerCase();
+  const isEssPath = (path === '/employee' || path.startsWith('/employee/')) &&
+    !path.startsWith('/employee/emp-') &&
+    !/^\/employee\/\d+$/.test(path);
+
+  // STRICT EMPLOYEE ROUTE: Only open ESSPage when logged in as Employee or on an ESS route with Employee role
   const isEmployeeMode = 
-    window.location.pathname.toLowerCase().startsWith('/employee') ||
-    activeModule === 'employee' ||
-    (userRole === 'Employee' && (window.location.pathname === '/' || window.location.pathname === '/home'));
+    userRole === 'Employee' ||
+    (isEssPath && localStorage.getItem('crm_user_role') === 'Employee') ||
+    path === '/portal' || path.startsWith('/portal/');
   
   if (isEmployeeMode) {
     return <ESSPage />;

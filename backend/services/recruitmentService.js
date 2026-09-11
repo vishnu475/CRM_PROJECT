@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2
+import { getNextEmployeeSequence, syncEmployeeSequence } from '../utils/employeeIdGenerator.js';
 
 export class RecruitmentService {
   /**
@@ -24,8 +25,10 @@ export class RecruitmentService {
         applied_date AS "appliedDate",
         education,
         skills,
+        notes,
         COALESCE(expected_salary, 1800000) AS "expectedSalary",
         employee_id AS "convertedEmployeeId",
+        employee_id AS "employeeId",
         stage = 'Employee' AS "isConverted"
       FROM job_candidates 
       ORDER BY created_at DESC
@@ -118,7 +121,7 @@ export class RecruitmentService {
    * 4. Commit transaction after both tables are updated
    * 5. Return created employee in response
    */
-  static async updateCandidateStage(id, stage) {
+  static async updateCandidateStage(id, stage, notes = null, performedBy = 'HR Admin') {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -133,47 +136,69 @@ export class RecruitmentService {
       const candNo = candidate ? candidate.candidate_no : id;
       const candId = candidate ? candidate.id : id;
 
-      // Update candidate stage in job_candidates table
+      // Update candidate stage and notes in job_candidates table
       const updateQuery = `
         UPDATE job_candidates 
-        SET stage = $1, updated_at = NOW() 
-        WHERE id = $2 OR candidate_no = $2 OR employee_id = $2
+        SET stage = $1, 
+            notes = COALESCE($2, notes),
+            updated_at = NOW() 
+        WHERE id = $3 OR candidate_no = $3 OR employee_id = $3
         RETURNING *
       `;
-      const res = await client.query(updateQuery, [stage, candId]);
+      const res = await client.query(updateQuery, [stage, notes, candId]);
       const updatedCandidate = res.rows[0] || candidate;
 
       let createdEmployee = null;
 
       // Whenever stage becomes 'Employee' (or 'Hired')
       if (stage === 'Employee' || stage === 'Hired') {
-        // 1. Determine unique employee_id and email
+        // 1. Determine unique employee_id
         let empId = candidate?.employee_id;
-        let empEmail = candidate?.email;
+        let isExistingEmployee = false;
 
-        // Check if employee record already exists by ID, emp_code, or email
-        const existingEmp = await client.query(
-          'SELECT id, emp_code, email FROM employees WHERE id = $1 OR emp_code = $1 OR (email IS NOT NULL AND email = $2) LIMIT 1',
-          [candNo, empEmail || '']
-        );
-
-        if (existingEmp.rows.length > 0) {
-          empId = existingEmp.rows[0].emp_code || existingEmp.rows[0].id;
-          empEmail = existingEmp.rows[0].email || empEmail;
-        } else if (!empId) {
-          const seqRes = await client.query(
-            `UPDATE number_sequences SET current_value = current_value + 1 WHERE id = 'seq-emp' RETURNING current_value, prefix`
+        if (empId && empId.startsWith('EMP-')) {
+          const existingEmp = await client.query(
+            'SELECT id, emp_code, email FROM employees WHERE id = $1 OR emp_code = $1',
+            [empId]
           );
-          const nextVal = seqRes.rows[0]?.current_value || Math.floor(Math.random() * 900) + 100;
-          const prefix = seqRes.rows[0]?.prefix || 'EMP-';
-          empId = `${prefix}${String(nextVal).padStart(3, '0')}`;
+          if (existingEmp.rows.length > 0) {
+            const otherCand = await client.query(
+              'SELECT id FROM job_candidates WHERE employee_id = $1 AND id != $2 LIMIT 1',
+              [empId, candId]
+            );
+            if (otherCand.rows.length === 0) {
+              isExistingEmployee = true;
+              empId = existingEmp.rows[0].emp_code || existingEmp.rows[0].id;
+            }
+          }
+        }
+
+        if (!isExistingEmployee) {
+          const seqData = await getNextEmployeeSequence(client);
+          empId = seqData.nextEmpCode;
+          await syncEmployeeSequence(client, seqData.nextNumber);
+        }
+
+        let empEmail = candidate?.email;
+        if (!empEmail) {
+          empEmail = `${empId.toLowerCase()}@company.com`;
+        } else {
+          // Prevent email collision with existing employees
+          const emailCheck = await client.query(
+            'SELECT id FROM employees WHERE email = $1 AND id != $2',
+            [empEmail, empId]
+          );
+          if (emailCheck.rows.length > 0) {
+            const cleanName = (candidate?.name || 'emp').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const numPart = empId.replace(/[^0-9]/g, '');
+            empEmail = `${cleanName}${numPart ? '.' + numPart : ''}@company.com`;
+          }
         }
 
         const empName = candidate?.name || 'Converted Employee';
         const empDept = candidate?.department || 'Engineering';
         const empDesig = candidate?.applied_position || candidate?.job_title || 'Senior Software Engineer';
         const empPhone = candidate?.phone || '+91 98765 00000';
-        if (!empEmail) empEmail = `${empId.toLowerCase()}@company.com`;
         const empManager = candidate?.recruiter || candidate?.hiring_manager || 'Sarah Jenkins';
         
         // ANNUAL SALARY IS THE SOURCE OF TRUTH
@@ -188,13 +213,17 @@ export class RecruitmentService {
           [empId, candId]
         );
 
+        const defaultPin = '1234';
+        const pinHash = await bcrypt.hash(defaultPin, 10);
+
         // 2. Upsert into employees table (status = 'Active')
         const empUpsert = await client.query(`
           INSERT INTO employees (
             id, emp_code, name, email, phone, department, designation, joining_date, status,
-            annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_name, plain_pin
+            annual_salary, annual_ctc, salary, basic_salary, allowances, reporting_manager_name,
+            plain_pin, pin, pin_hash
           )
-          VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Active', $7, $7, $8, $9, $10, $11, '1234')
+          VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Active', $7, $7, $8, $9, $10, $11, '1234', '1234', $12)
           ON CONFLICT (id) DO UPDATE SET
             emp_code = EXCLUDED.emp_code,
             name = EXCLUDED.name,
@@ -208,10 +237,12 @@ export class RecruitmentService {
             basic_salary = EXCLUDED.basic_salary,
             allowances = EXCLUDED.allowances,
             reporting_manager_name = EXCLUDED.reporting_manager_name,
+            pin_hash = EXCLUDED.pin_hash,
+            plain_pin = EXCLUDED.plain_pin,
             status = 'Active',
             updated_at = CURRENT_TIMESTAMP
           RETURNING *
-        `, [empId, empName, empEmail, empPhone, empDept, empDesig, annualSalary, monthlySalary, basicSalary, allowances, empManager]);
+        `, [empId, empName, empEmail, empPhone, empDept, empDesig, annualSalary, monthlySalary, basicSalary, allowances, empManager, pinHash]);
 
         createdEmployee = empUpsert.rows[0];
 
@@ -245,17 +276,17 @@ export class RecruitmentService {
         `, [empId]);
       }
 
-      // Record activity logs
+      // Record activity logs with evaluation comments/notes
       await client.query(
-        `INSERT INTO candidate_activity_logs (candidate_id, candidate_no, from_stage, to_stage, changed_by)
-         VALUES ($1, $2, $3, $4, 'HR Admin')`,
-        [candId, candNo, oldStage, stage]
+        `INSERT INTO candidate_activity_logs (candidate_id, candidate_no, from_stage, to_stage, notes, reason, changed_by)
+         VALUES ($1, $2, $3, $4, $5, $5, $6)`,
+        [candId, candNo, oldStage, stage, notes || null, performedBy || 'HR Admin']
       );
 
       await client.query(
         `INSERT INTO activity_logs (module, entity, entity_id, action, old_value, new_value, performed_by)
-         VALUES ('recruitment', 'job_candidate', $1, 'candidate_stage_updated', $2, $3, 'HR Admin')`,
-        [candNo || candId, oldStage, stage]
+         VALUES ('recruitment', 'job_candidate', $1, 'candidate_stage_updated', $2, $3, $4)`,
+        [candNo || candId, oldStage, notes ? `${stage} (Evaluation: ${notes})` : stage, performedBy || 'HR Admin']
       );
 
       // Commit transaction
@@ -291,31 +322,52 @@ export class RecruitmentService {
       const candNo = candidate?.candidate_no || candidateId;
       const candId = candidate?.id || candidateId;
 
-      // 2. Check if employee record already exists in employees table
-      const existingCheck = await client.query(
-        'SELECT id, emp_code, email FROM employees WHERE id = $1 OR emp_code = $1 OR id = $2 OR emp_code = $2 LIMIT 1',
-        [candNo, candId]
-      );
-
+      // 2. Check if candidate already has an employee record or assign next sequential ID
       let empCode;
-      if (customDetails.empCode) {
+      let existingEmp = null;
+      if (customDetails.empCode && customDetails.empCode.startsWith('EMP-')) {
         empCode = customDetails.empCode;
-      } else if (existingCheck.rows.length > 0) {
-        empCode = existingCheck.rows[0].emp_code || existingCheck.rows[0].id;
-      } else {
-        const seqRes = await client.query(
-          `UPDATE number_sequences SET current_value = current_value + 1 WHERE id = 'seq-emp' RETURNING current_value, prefix`
+      } else if (candidate?.employee_id && candidate.employee_id.startsWith('EMP-')) {
+        const check = await client.query(
+          'SELECT id, emp_code, email FROM employees WHERE id = $1 OR emp_code = $1',
+          [candidate.employee_id]
         );
-        const nextVal = seqRes.rows[0]?.current_value || Math.floor(Math.random() * 900) + 100;
-        const prefix = seqRes.rows[0]?.prefix || 'EMP-';
-        empCode = `${prefix}${String(nextVal).padStart(3, '0')}`;
+        if (check.rows.length > 0) {
+          const other = await client.query(
+            'SELECT id FROM job_candidates WHERE employee_id = $1 AND id != $2 LIMIT 1',
+            [candidate.employee_id, candId]
+          );
+          if (other.rows.length === 0) {
+            existingEmp = check.rows[0];
+            empCode = existingEmp.emp_code || existingEmp.id;
+          }
+        }
+      }
+
+      if (!empCode) {
+        const seqData = await getNextEmployeeSequence(client);
+        empCode = seqData.nextEmpCode;
+        await syncEmployeeSequence(client, seqData.nextNumber);
       }
 
       const defaultPin = customDetails.pin || '1234';
       const pinHash = await bcrypt.hash(defaultPin, 10);
 
       const name = customDetails.name || (candidate ? candidate.name : 'Converted Employee');
-      let finalEmail = customDetails.email || (candidate?.email ? candidate.email : `${empCode.toLowerCase()}.${Date.now()}@company.com`);
+      let finalEmail = customDetails.email || candidate?.email;
+      if (!finalEmail) {
+        finalEmail = `${empCode.toLowerCase()}@company.com`;
+      } else {
+        const emailCheck = await client.query(
+          'SELECT id FROM employees WHERE email = $1 AND id != $2',
+          [finalEmail, empCode]
+        );
+        if (emailCheck.rows.length > 0) {
+          const cleanName = (candidate?.name || 'emp').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const numPart = empCode.replace(/[^0-9]/g, '');
+          finalEmail = `${cleanName}${numPart ? '.' + numPart : ''}@company.com`;
+        }
+      }
 
       const phone = customDetails.phone || (candidate ? candidate.phone : '+91 98765 00000');
       const department = customDetails.department || (candidate ? candidate.department : 'Engineering');
@@ -335,8 +387,8 @@ export class RecruitmentService {
 
       // 3. Insert or Update employees table cleanly
       let newEmployee;
-      if (existingCheck.rows.length > 0) {
-        const targetId = existingCheck.rows[0].id;
+      if (existingEmp) {
+        const targetId = existingEmp.id;
         const updateRes = await client.query(
           `UPDATE employees 
            SET name = $2, department = $3, designation = $4,
@@ -354,7 +406,7 @@ export class RecruitmentService {
             annual_salary, annual_ctc, salary, basic_salary, allowances,
             reporting_manager_id, reporting_manager_name, pan_number, uan_number, bank_account, ifsc_code, pin_hash, plain_pin)
            VALUES ($1, $1, $2, $3, $4, $5, $6, CURRENT_DATE, 'Joined', $7, $7, $8, $9, $10, 'EMP-001', 'Sarah Jenkins', 'ABCDE1234F', '100987654321', '98765432101', 'HDFC0001234', $11, $12)
-           ON CONFLICT (email) DO UPDATE SET
+           ON CONFLICT (id) DO UPDATE SET
              name = EXCLUDED.name,
              department = EXCLUDED.department,
              designation = EXCLUDED.designation,

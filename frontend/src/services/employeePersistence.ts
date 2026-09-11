@@ -6,6 +6,7 @@
  */
 
 export async function saveEmployeeToDB(employeeData: {
+  empCode?: string;
   name: string;
   email?: string;
   phone?: string;
@@ -37,6 +38,7 @@ export async function saveEmployeeToDB(employeeData: {
     const finalAllowances = Math.round((finalMonthly * 0.4) * 100) / 100;
 
     const payload = {
+      empCode: employeeData.empCode || undefined,
       name: employeeData.name,
       email: employeeData.email || `${employeeData.name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
       phone: employeeData.phone || null,
@@ -129,11 +131,14 @@ export async function fetchAllEmployeesFromDB(stage?: string): Promise<any[]> {
  */
 export async function updateEmployeeInDB(id: string, updates: Record<string, any>): Promise<boolean> {
   try {
+    if (updates.status && Object.keys(updates).length === 1) {
+      return await updateEmployeeStatusInDB(id, updates.status);
+    }
     if (updates.status) {
-      await updateOnboardingStageInDB(id, updates.status);
+      await updateEmployeeStatusInDB(id, updates.status);
     }
     const res = await fetch(`/api/employees/${id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
@@ -141,6 +146,24 @@ export async function updateEmployeeInDB(id: string, updates: Record<string, any
     return json.success === true;
   } catch (e) {
     console.warn('Failed to update employee in DB:', e);
+    return false;
+  }
+}
+
+/**
+ * Update employee lifecycle status in PostgreSQL database via PATCH /api/employees/:id/status
+ */
+export async function updateEmployeeStatusInDB(id: string, status: string, reason?: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/employees/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, reason }),
+    });
+    const json = await res.json();
+    return json.success === true;
+  } catch (e) {
+    console.warn('Failed to update employee status in DB:', e);
     return false;
   }
 }

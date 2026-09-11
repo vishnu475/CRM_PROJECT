@@ -96,7 +96,7 @@ export const HrmsPage: React.FC = () => {
     if (tab === 'dashboard') setActiveSubSection('dashboard');
     else if (tab === 'hierarchy') setActiveSubSection('hierarchy');
     else if (tab === 'interns') setActiveSubSection('interns');
-    else setActiveSubSection('joined');
+    else setActiveSubSection('all');
   };
   
   // Sync lifecycle status filter pill with URL sub-section route (/hrms/transferred, /hrms/joined, etc.)
@@ -106,10 +106,10 @@ export const HrmsPage: React.FC = () => {
       case 'joined': return 'Joined';
       case 'probation': return 'Probation';
       case 'confirmed': return 'Confirmed';
-      case 'active': return 'Active';
+      case 'active': return 'Confirmed';
       case 'transferred': return 'Transferred';
       case 'exited': return 'Exited';
-      default: return 'Joined';
+      default: return 'All';
     }
   }, [activeSubSection]);
 
@@ -201,6 +201,31 @@ export const HrmsPage: React.FC = () => {
     };
   });
 
+  // Sort employees strictly in ascending numerical order by ID (EMP-001, EMP-002, ...)
+  extendedEmployees.sort((a, b) => {
+    const numA = parseInt((a.empCode || a.id || '').replace(/\D/g, '') || '0', 10);
+    const numB = parseInt((b.empCode || b.id || '').replace(/\D/g, '') || '0', 10);
+    return numA - numB;
+  });
+
+  // Auto-open employee modal if URL specifies an employee ID (/employees/EMP-008, /employees/8, etc.)
+  useEffect(() => {
+    if (activeSubSection && activeSubSection.startsWith('employees/')) {
+      const empId = activeSubSection.replace('employees/', '').trim().toLowerCase();
+      const numPart = empId.replace(/\D/g, '');
+      const found = extendedEmployees.find(e => {
+        const idLower = (e.id || '').toLowerCase();
+        const codeLower = (e.empCode || '').toLowerCase();
+        const idNum = idLower.replace(/\D/g, '');
+        const codeNum = codeLower.replace(/\D/g, '');
+        return idLower === empId || codeLower === empId || (numPart && (idNum === numPart || codeNum === numPart));
+      });
+      if (found) {
+        setSelectedEmployee(found);
+      }
+    }
+  }, [activeSubSection, extendedEmployees]);
+
   // Extract unique departments & designations
   const departmentsList = Array.from(new Set(extendedEmployees.map(e => e.department).filter(Boolean)));
   const designations = Array.from(new Set(extendedEmployees.map(e => e.designation).filter(Boolean)));
@@ -223,7 +248,7 @@ export const HrmsPage: React.FC = () => {
     const matchesStatus = 
       selectedStatus === 'All' || 
       statusLower === targetStatusLower ||
-      (targetStatusLower === 'joined' && (statusLower === 'joined' || statusLower === 'active'));
+      (targetStatusLower === 'confirmed' && statusLower === 'active');
     
     return matchesSearch && matchesDept && matchesDesig && matchesStatus;
   });
@@ -455,7 +480,7 @@ export const HrmsPage: React.FC = () => {
           {/* Lifecycle Filter Pills */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
             <span className="text-slate-400 font-bold uppercase text-[10px] mr-1">Lifecycle Status:</span>
-            {(['All', 'Joined', 'Probation', 'Confirmed', 'Active', 'Transferred', 'Exited'] as const).map((st) => (
+            {(['All', 'Joined', 'Probation', 'Confirmed', 'Transferred', 'Exited'] as const).map((st) => (
               <button
                 key={st}
                 onClick={() => handleSelectStatus(st as any)}
@@ -580,7 +605,7 @@ export const HrmsPage: React.FC = () => {
 
                   <div className="pt-2 flex justify-between items-center border-t border-slate-100 text-[10px]">
                     <select
-                      value={emp.status}
+                      value={emp.status === 'Active' ? 'Confirmed' : emp.status}
                       onChange={(e) => handleUpdateLifecycleStatus(emp, e.target.value as EmployeeLifecycleStatus)}
                       className={`px-2 py-1 rounded text-[10px] font-bold border outline-none cursor-pointer transition-all ${
                         emp.status === 'Confirmed' || emp.status === 'Active' || emp.status === 'Joined'
@@ -596,7 +621,6 @@ export const HrmsPage: React.FC = () => {
                       <option value="Joined">Joined</option>
                       <option value="Probation">Probation</option>
                       <option value="Confirmed">Confirmed</option>
-                      <option value="Active">Active</option>
                       <option value="Transferred">Transferred</option>
                       <option value="Exited">Exited</option>
                     </select>
@@ -647,7 +671,7 @@ export const HrmsPage: React.FC = () => {
                       <td className="p-3.5 font-mono font-bold text-emerald-600">₹ {Number(emp.salary).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="p-3.5">
                         <select
-                          value={emp.status}
+                          value={emp.status === 'Active' ? 'Confirmed' : emp.status}
                           onChange={(e) => handleUpdateLifecycleStatus(emp, e.target.value as EmployeeLifecycleStatus)}
                           className={`px-2 py-1 rounded text-[10px] font-bold border outline-none cursor-pointer transition-all ${
                             emp.status === 'Confirmed' || emp.status === 'Active' || emp.status === 'Joined'
@@ -663,7 +687,6 @@ export const HrmsPage: React.FC = () => {
                           <option value="Joined">Joined</option>
                           <option value="Probation">Probation</option>
                           <option value="Confirmed">Confirmed</option>
-                          <option value="Active">Active</option>
                           <option value="Transferred">Transferred</option>
                           <option value="Exited">Exited</option>
                         </select>
@@ -713,7 +736,8 @@ export const HrmsPage: React.FC = () => {
         onClose={() => setIsAddModalOpen(false)}
         onSave={async (data) => {
           // Save to PostgreSQL FIRST via central persistence service
-          await saveEmployeeToDB({
+          const saveRes = await saveEmployeeToDB({
+            empCode: data.empCode,
             name: data.name || '',
             email: data.email,
             phone: data.phone,
@@ -729,11 +753,14 @@ export const HrmsPage: React.FC = () => {
             uanNumber: data.uanNumber,
             bankAccount: data.bankAccount,
             ifscCode: data.ifscCode,
+            pin: (data as any).pin || '1234',
           });
-          // Also add to AppContext for immediate UI update
-          addEmployee(data);
+          const assignedCode = saveRes.empCode || data.empCode || 'EMP-011';
+          // Also add to AppContext for immediate UI update with sequential ID
+          addEmployee({ ...data, empCode: assignedCode, id: assignedCode });
           // Reload from DB to show the new employee
           await refreshFromDB();
+          alert(`Employee ${data.name} successfully registered!\nAssigned Employee ID: ${assignedCode}\nPortal Login PIN: ${(data as any).pin || '1234'}`);
         }}
         departments={departmentsList}
       />
@@ -781,7 +808,6 @@ export const HrmsPage: React.FC = () => {
                   <option value="Joined">Joined</option>
                   <option value="Probation">Probation</option>
                   <option value="Confirmed">Confirmed</option>
-                  <option value="Active">Active</option>
                   <option value="Transferred">Transferred</option>
                   <option value="Exited">Exited</option>
                 </select>

@@ -1,5 +1,7 @@
 import express from 'express';
+import bcrypt from 'bcryptjs';
 import { hrmsPool as pool } from '../db/pool.js';
+import { getNextEmployeeSequence } from '../utils/employeeIdGenerator.js';
 
 const router = express.Router();
 
@@ -651,13 +653,13 @@ router.post('/:id/convert-to-employee', async (req, res) => {
       });
     }
 
-    // 2. Generate next employee code
-    const seqRes = await client.query(
-      `UPDATE number_sequences SET current_value = current_value + 1 WHERE id = 'seq-emp' RETURNING current_value, prefix`
-    );
-    const nextVal = seqRes.rows[0]?.current_value || Math.floor(Math.random() * 900) + 100;
-    const prefix = seqRes.rows[0]?.prefix || 'EMP';
-    const empCode = `${prefix}-${String(nextVal).padStart(3, '0')}`;
+    // 2. Generate next sequential employee code strictly based on highest existing ID
+    const seqData = await getNextEmployeeSequence(client);
+    const empCode = seqData.nextEmpCode;
+
+    // Login Credentials: Plain PIN '1234' and Bcrypt hash for employee portal login
+    const defaultPin = '1234';
+    const pinHash = await bcrypt.hash(defaultPin, 10);
 
     // 3. Compensation parameters for permanent role
     const annualSalary = Number(req.body.annualSalary) || (Number(intern.stipend || 25000) * 20); // Default to competitive full-time salary
@@ -673,19 +675,24 @@ router.post('/:id/convert-to-employee', async (req, res) => {
         department, designation, joining_date, status,
         annual_salary, annual_ctc, salary, basic_salary, allowances,
         reporting_manager_id, reporting_manager_name,
-        branch, employment_type, converted_from_intern_id
+        branch, employment_type, converted_from_intern_id,
+        plain_pin, pin, pin_hash
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, CURRENT_DATE, 'Joined',
         $11, $12, $13, $14, $15,
         $16, $17,
-        $18, 'Full-time', $19
+        $18, 'Full-time', $19,
+        $20, $21, $22
       )
-      ON CONFLICT (email) DO UPDATE SET
+      ON CONFLICT (id) DO UPDATE SET
         emp_code = EXCLUDED.emp_code,
         status = 'Joined',
         designation = EXCLUDED.designation,
         converted_from_intern_id = EXCLUDED.converted_from_intern_id,
+        plain_pin = EXCLUDED.plain_pin,
+        pin = EXCLUDED.pin,
+        pin_hash = EXCLUDED.pin_hash,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
     `, [
@@ -694,7 +701,8 @@ router.post('/:id/convert-to-employee', async (req, res) => {
       intern.department, designation,
       annualSalary, annualSalary, monthlySalary, basicSalary, allowances,
       intern.reporting_manager_id || 'EMP-001', intern.reporting_manager_name || 'Sarah Jenkins',
-      intern.location || 'Bengaluru HQ', intern.id
+      intern.location || 'Bengaluru HQ', intern.id,
+      defaultPin, defaultPin, pinHash
     ]);
 
     // 5. Insert into employee onboarding pipeline

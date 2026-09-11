@@ -62,26 +62,39 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   }, [fileUrl, isOpen]);
 
   const rawFileName = fileName || 'Document.pdf';
-  const displayPdfName = rawFileName.replace(/\.(jpg|jpeg|png|webp|gif)$/i, '.pdf');
 
   // Convert Base64 Data URL to a real browser Object URL if needed
   const { directUrl, isPdf, isImage } = useMemo(() => {
     if (!fileUrl) return { directUrl: null, isPdf: false, isImage: false };
 
+    let isImg = false;
+    let isDocPdf = false;
+    let url = fileUrl;
+
     if (fileUrl.startsWith('data:')) {
       const parsed = dataUrlToBlob(fileUrl);
       if (parsed) {
-        const url = URL.createObjectURL(parsed.blob);
-        const isPdfType = parsed.mime.includes('pdf');
-        const isImgType = parsed.mime.includes('image');
-        return { directUrl: url, isPdf: isPdfType, isImage: isImgType };
+        url = URL.createObjectURL(parsed.blob);
+        isDocPdf = parsed.mime.includes('pdf');
+        isImg = parsed.mime.includes('image');
       }
     }
 
-    const isPdfType = fileUrl.includes('.pdf') || fileUrl.toLowerCase().endsWith('.pdf') || rawFileName.toLowerCase().endsWith('.pdf');
-    const isImgType = /\.(jpg|jpeg|png|webp|gif)/i.test(fileUrl) || /\.(jpg|jpeg|png|webp|gif)$/i.test(rawFileName);
+    if (!isImg && !isDocPdf) {
+      if (
+        fileUrl.startsWith('data:image') ||
+        /\.(jpg|jpeg|png|webp|gif|svg)(\?.*)?$/i.test(fileUrl) ||
+        /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(rawFileName) ||
+        fileUrl.includes('images.') ||
+        fileUrl.includes('/photo-')
+      ) {
+        isImg = true;
+      } else {
+        isDocPdf = true;
+      }
+    }
 
-    return { directUrl: fileUrl, isPdf: isPdfType, isImage: isImgType };
+    return { directUrl: url, isPdf: isDocPdf, isImage: isImg };
   }, [fileUrl, rawFileName]);
 
   // Clean up object URLs on unmount
@@ -105,7 +118,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     if (directUrl) {
       const a = document.createElement('a');
       a.href = directUrl;
-      a.download = displayPdfName;
+      a.download = rawFileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -136,12 +149,16 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900 text-slate-200 border-b border-slate-800 shrink-0">
           {/* File Info */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 font-bold text-[11px] shrink-0">
-              PDF
+            <div className={`w-8 h-8 rounded-lg border flex items-center justify-center font-bold text-[11px] shrink-0 ${
+              isImage 
+                ? 'bg-amber-500/20 border-amber-500/30 text-amber-400' 
+                : 'bg-rose-500/20 border-rose-500/30 text-rose-400'
+            }`}>
+              {isImage ? 'IMG' : 'PDF'}
             </div>
             <div className="min-w-0">
               <h3 className="text-xs sm:text-sm font-bold text-white truncate">
-                {displayPdfName}
+                {rawFileName}
               </h3>
               <p className="text-[10px] text-slate-400 truncate">
                 {taskTitle} • {projectName}
@@ -267,35 +284,31 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         <div className="flex-1 overflow-auto bg-slate-800/90 p-3 sm:p-6 flex justify-center items-start min-h-0">
           {directUrl ? (
             isImage ? (
-              /* A4 PDF Page Sheet with embedded image */
+              /* High-Clarity Receipt & Bill Image Viewer */
               <div
-                className="bg-white rounded shadow-2xl overflow-hidden border border-slate-300 transition-transform duration-150 flex flex-col my-auto"
+                className="bg-slate-900 rounded-2xl shadow-2xl overflow-hidden border border-slate-700 transition-transform duration-150 flex flex-col my-auto max-w-3xl w-full"
                 style={{
-                  width: '100%',
-                  maxWidth: '820px',
-                  minHeight: '1060px',
                   transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
-                  transformOrigin: 'top center'
+                  transformOrigin: 'center center'
                 }}
               >
-                <div className="px-8 pt-5 pb-3 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-mono select-none">
-                  <span>{displayPdfName}</span>
-                  <span>CONFIDENTIAL DOCUMENT</span>
+                <div className="px-5 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs text-slate-300 font-mono select-none">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span className="font-bold text-white truncate max-w-sm">{rawFileName}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full font-bold">Receipt Attachment</span>
                 </div>
-                <div className="p-6 sm:p-8 flex-1 flex items-center justify-center bg-white">
+                <div className="p-4 sm:p-6 flex-1 flex items-center justify-center bg-slate-900/60 min-h-[360px] max-h-[75vh] overflow-auto">
                   <img
                     src={directUrl}
-                    alt={displayPdfName}
-                    className="max-w-full max-h-[920px] object-contain mx-auto rounded"
+                    alt={rawFileName}
+                    className="max-w-full max-h-[70vh] object-contain mx-auto rounded-lg shadow-md"
                   />
-                </div>
-                <div className="px-8 py-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-mono select-none">
-                  <span>HRMS Document Specification</span>
-                  <span>Page 1 of 1</span>
                 </div>
               </div>
             ) : (
-              /* Native PDF Viewer Iframe loaded directly from server URL */
+              /* Native PDF Viewer */
               <div
                 className="w-full h-full min-h-[680px] bg-white rounded-lg shadow-2xl overflow-hidden border border-slate-700 transition-transform duration-150"
                 style={{
@@ -303,11 +316,17 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                   transformOrigin: 'top center'
                 }}
               >
-                <iframe
-                  src={directUrl}
-                  title={displayPdfName}
+                <object
+                  data={directUrl}
+                  type="application/pdf"
                   className="w-full h-full min-h-[680px] border-0"
-                />
+                >
+                  <iframe
+                    src={directUrl}
+                    title={rawFileName}
+                    className="w-full h-full min-h-[680px] border-0"
+                  />
+                </object>
               </div>
             )
           ) : (

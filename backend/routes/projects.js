@@ -1,9 +1,9 @@
 import express from 'express';
-import { crmPool as pool } from '../db/pool.js';
+import { crmPool, hrmsPool } from '../db/pool.js';
 
 const router = express.Router();
 
-// GET /api/projects — Fetch all projects
+// GET /api/projects — Fetch all projects with weightage, repo, and dates
 router.get('/', async (req, res) => {
   try {
     const { status, clientId, customerId, sourceLeadId } = req.query;
@@ -24,22 +24,162 @@ router.get('/', async (req, res) => {
     }
 
     query += ` ORDER BY created_at DESC`;
-    const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows });
+    const result = await crmPool.query(query, params);
+    res.json({ success: true, count: result.rows.length, data: result.rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// GET /api/projects/:id — Fetch single project
+// GET /api/projects/:id — Fetch single project by ID, code, or name
 router.get('/:id', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM projects WHERE id = $1', [req.params.id]);
+    const { id } = req.params;
+    const result = await crmPool.query(
+      `SELECT * FROM projects WHERE id = $1 OR code = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
+      [id]
+    );
     if (result.rows.length === 0) {
+      // Fallback check in HRMS pool
+      const hrmsRes = await hrmsPool.query(
+        `SELECT * FROM projects WHERE id = $1 OR code = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
+        [id]
+      );
+      if (hrmsRes.rows.length > 0) {
+        return res.json({ success: true, data: hrmsRes.rows[0] });
+      }
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/projects/:id/workspace — Complete dynamic project workspace data
+router.get('/:id/workspace', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // 1. Fetch Project
+    let projRes = await crmPool.query(
+      `SELECT * FROM projects WHERE id = $1 OR code = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
+      [id]
+    );
+    if (projRes.rows.length === 0) {
+      projRes = await hrmsPool.query(
+        `SELECT * FROM projects WHERE id = $1 OR code = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
+        [id]
+      );
+    }
+    if (projRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+    const project = projRes.rows[0];
+
+    // 2. Fetch Groups & Members
+    const groupsRes = await hrmsPool.query(
+      `SELECT 
+        g.id,
+        g.name,
+        g.project_id,
+        g.team_head_id,
+        g.team_head_name,
+        g.description,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'employeeId', gm.employee_id,
+              'employeeName', COALESCE(e.name, gm.employee_name),
+              'designation', COALESCE(e.designation, 'Specialist'),
+              'department', COALESCE(e.department, 'Engineering'),
+              'role', gm.role,
+              'isTeamHead', (gm.employee_id = g.team_head_id)
+            )
+          ) FILTER (WHERE gm.id IS NOT NULL), '[]'::json
+        ) as members
+       FROM project_groups g
+       LEFT JOIN group_members gm ON g.id = gm.group_id
+       LEFT JOIN employees e ON (gm.employee_id = e.emp_code OR gm.employee_id = e.id)
+       WHERE g.project_id = $1 OR g.project_id = $2
+       GROUP BY g.id, g.name, g.project_id, g.team_head_id, g.team_head_name, g.description`,
+      [project.id, project.code]
+    );
+
+    // 3. Fetch Tasks for this project
+    const tasksRes = await hrmsPool.query(
+      `SELECT 
+        t.*,
+        COALESCE(t.task_weightage, 25.0) as task_weightage,
+        COALESCE(t.progress_percent, 0) as progress_percent,
+        t.assignment_type,
+        t.group_id,
+        t.group_name
+       FROM tasks t
+       WHERE t.project_id = $1 OR t.project_id = $2 OR LOWER(t.project_name) = LOWER($3)
+       ORDER BY t.created_at DESC`,
+      [project.id, project.code, project.name]
+    );
+
+    const tasks = tasksRes.rows;
+
+    // 4. Calculate dynamic overall progress using task weightages
+    const totalWeightage = tasks.reduce((sum, t) => sum + (Number(t.task_weightage) || 0), 0);
+    const weightedProgressSum = tasks.reduce((sum, t) => {
+      const weight = Number(t.task_weightage) || 0;
+      const prog = Number(t.progress_percent) || (t.status === 'COMPLETED' ? 100 : 0);
+      return sum + (prog * (weight / 100));
+    }, 0);
+
+    const overallProgress = totalWeightage > 0 
+      ? Math.min(100, Math.round((weightedProgressSum / (totalWeightage / 100))))
+      : (tasks.length > 0 ? Math.round(tasks.reduce((sum, t) => sum + (t.progress_percent || 0), 0) / tasks.length) : 0);
+
+    // Task counts by status
+    const taskSummary = {
+      total: tasks.length,
+      completed: tasks.filter(t => t.status === 'COMPLETED').length,
+      inProgress: tasks.filter(t => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED').length,
+      readyForReview: tasks.filter(t => t.status === 'READY_FOR_REVIEW' || t.status === 'SUBMITTED').length,
+      changesRequested: tasks.filter(t => t.status === 'CHANGES_REQUESTED' || t.status === 'REOPENED').length
+    };
+
+    // 5. Team member progress map
+    const memberProgressMap = {};
+    for (const t of tasks) {
+      const empId = t.assigned_to_employee_id || t.assigned_to;
+      const empName = t.assigned_to_name || empId;
+      if (empId) {
+        if (!memberProgressMap[empId]) {
+          memberProgressMap[empId] = { employeeId: empId, name: empName, taskCount: 0, totalProgress: 0 };
+        }
+        memberProgressMap[empId].taskCount += 1;
+        memberProgressMap[empId].totalProgress += Number(t.progress_percent) || (t.status === 'COMPLETED' ? 100 : 0);
+      }
+    }
+
+    const memberProgressList = Object.values(memberProgressMap).map((m) => ({
+      ...m,
+      averageProgress: Math.round(m.totalProgress / m.taskCount)
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        project: {
+          ...project,
+          overallProgress,
+          weightage: Number(project.weightage) || 100.0,
+          repositoryUrl: project.repository_url || 'https://github.com/company/' + (project.code ? project.code.toLowerCase() : 'project')
+        },
+        groups: groupsRes.rows,
+        tasks,
+        taskSummary,
+        memberProgress: memberProgressList
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching project workspace:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -64,9 +204,11 @@ async function createProjectHandler(req, res) {
     progress,
     status,
     priority,
+    weightage,
+    repositoryUrl
   } = req.body;
 
-  const dbClient = await pool.connect();
+  const dbClient = await crmPool.connect();
 
   try {
     // If originated from a Lead, perform validation and create-or-reuse resolution inside transaction
@@ -257,8 +399,8 @@ async function createProjectHandler(req, res) {
         `INSERT INTO projects (
           id, code, name, client, customer_id, source_lead_id, source_opportunity_id,
           project_requirement, project_notes, project_manager, start_date, end_date,
-          budget, spent, progress, status, priority, created_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING *`,
+          budget, spent, progress, status, priority, weightage, repository_url, created_at, updated_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING *`,
         [
           projectId,
           projectCode,
@@ -275,10 +417,49 @@ async function createProjectHandler(req, res) {
           budget !== undefined ? budget : (lead.final_agreed_amount || lead.value || 0),
           spent || 0,
           progress || 0,
-          status || 'Not Started',
+          status || 'In Progress',
           priority || 'Medium',
+          weightage || 100.0,
+          repositoryUrl || null
         ]
       );
+
+      // Mirror to HRMS pool
+      await hrmsPool.query(
+        `INSERT INTO projects (
+          id, code, name, client, customer_id, source_lead_id, source_opportunity_id,
+          project_requirement, project_notes, project_manager, start_date, end_date,
+          budget, spent, progress, status, priority, weightage, repository_url, created_at, updated_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          client = EXCLUDED.client,
+          status = EXCLUDED.status,
+          priority = EXCLUDED.priority,
+          weightage = EXCLUDED.weightage,
+          repository_url = EXCLUDED.repository_url`,
+        [
+          projectId,
+          projectCode,
+          finalProjectName,
+          resolvedCustName,
+          resolvedCustId,
+          lead.id,
+          resolvedOppId,
+          projectRequirement !== undefined ? projectRequirement : (lead.requirement || null),
+          projectNotes !== undefined ? projectNotes : (lead.notes || null),
+          projectManager || lead.assigned_to || null,
+          startDate || lead.won_date || isoToday,
+          endDate || lead.expected_close_date || null,
+          budget !== undefined ? budget : (lead.final_agreed_amount || lead.value || 0),
+          spent || 0,
+          progress || 0,
+          status || 'In Progress',
+          priority || 'Medium',
+          weightage || 100.0,
+          repositoryUrl || null
+        ]
+      ).catch(e => console.warn('HRMS project sync notice:', e.message));
 
       // 5. Update Lead with Project reference and resolved Customer, Contact, Opportunity
       await dbClient.query(
@@ -314,32 +495,49 @@ async function createProjectHandler(req, res) {
     const projectId = id || `PRJ-${Date.now().toString().slice(-4)}`;
     const projectCode = code || projectId;
 
-    const result = await dbClient.query(
-      `INSERT INTO projects (
+    const query = `
+      INSERT INTO projects (
         id, code, name, client, customer_id, source_lead_id, source_opportunity_id,
         project_requirement, project_notes, project_manager, start_date, end_date,
-        budget, spent, progress, status, priority, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING *`,
-      [
-        projectId,
-        projectCode,
-        name,
-        clientParam,
-        customerId || null,
-        sourceLeadId || null,
-        sourceOpportunityId || null,
-        projectRequirement || null,
-        projectNotes || null,
-        projectManager || null,
-        startDate || null,
-        endDate || null,
-        budget || 0,
-        spent || 0,
-        progress || 0,
-        status || 'Not Started',
-        priority || 'Medium',
-      ]
-    );
+        budget, spent, progress, status, priority, weightage, repository_url, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        client = EXCLUDED.client,
+        project_requirement = EXCLUDED.project_requirement,
+        start_date = EXCLUDED.start_date,
+        end_date = EXCLUDED.end_date,
+        priority = EXCLUDED.priority,
+        weightage = EXCLUDED.weightage,
+        repository_url = EXCLUDED.repository_url
+      RETURNING *
+    `;
+
+    const values = [
+      projectId,
+      projectCode,
+      name,
+      clientParam || 'Internal Enterprise',
+      customerId || null,
+      sourceLeadId || null,
+      sourceOpportunityId || null,
+      projectRequirement || null,
+      projectNotes || null,
+      projectManager || 'Sarah Jenkins',
+      startDate || null,
+      endDate || null,
+      budget || 0,
+      spent || 0,
+      progress || 0,
+      status || 'In Progress',
+      priority || 'Medium',
+      weightage || 100.0,
+      repositoryUrl || null
+    ];
+
+    const result = await crmPool.query(query, values);
+    // Mirror to HRMS pool
+    await hrmsPool.query(query, values).catch(e => console.warn('HRMS project sync notice:', e.message));
 
     dbClient.release();
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -373,11 +571,18 @@ const updateHandler = async (req, res) => {
       .map((key, i) => `"${key.replace(/([A-Z])/g, '_$1').toLowerCase()}" = $${i + 2}`)
       .join(', ');
     const values = [id, ...Object.values(fields)];
-    const result = await pool.query(
+    const result = await crmPool.query(
       `UPDATE projects SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
       values
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Project not found' });
+    
+    // Mirror to HRMS pool
+    await hrmsPool.query(
+      `UPDATE projects SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      values
+    ).catch(() => {});
+
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -392,16 +597,18 @@ router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {
     // If project was linked to a lead, reset the lead's project flags
-    await pool.query(
+    await crmPool.query(
       `UPDATE leads SET project_id = NULL, is_project_created = false, project_created_at = NULL WHERE project_id = $1`,
       [id]
-    );
+    ).catch(() => {});
 
-    const result = await pool.query('DELETE FROM projects WHERE id = $1 RETURNING *', [id]);
+    const result = await crmPool.query('DELETE FROM projects WHERE id = $1 RETURNING *', [id]);
+    await hrmsPool.query('DELETE FROM projects WHERE id = $1', [id]).catch(() => {});
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
-    res.json({ success: true, message: 'Project deleted', data: result.rows[0] });
+    res.json({ success: true, message: 'Project deleted successfully', data: result.rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -179,9 +179,7 @@ export function isEmployeeOnLeave(
   leaveRequests: LeaveRequest[] = []
 ): { isOnLeave: boolean; isHalfDay: boolean; leaveType?: string; status?: string } {
   const matchingLeave = leaveRequests.find(lr => {
-    const safeLrName = (lr.empName || '').toLowerCase();
-    const safeEmpName = (empName || '').toLowerCase();
-    const isEmp = (lr.empId && lr.empId === employeeId) || (Boolean(safeLrName) && Boolean(safeEmpName) && safeLrName === safeEmpName);
+    const isEmp = Boolean(lr.empId && (lr.empId === employeeId || lr.empId.toLowerCase() === employeeId.toLowerCase()));
     if (!isEmp) return false;
     const isApproved = lr.status === 'Approved';
     if (!isApproved) return false;
@@ -310,18 +308,17 @@ export function calculateDailyAttendance(
         const rEmpName = (r as any).emp_name || (r as any).empName || (r as any).name;
 
         const idMatches =
-          rEmpId === empId ||
-          rEmpId === emp.id ||
-          rEmpId === emp.empCode ||
-          (Boolean(rEmpId) && Boolean(empId) && String(rEmpId).toLowerCase() === String(empId).toLowerCase()) ||
-          (Boolean(rEmpId) && Boolean(emp.id) && String(rEmpId).toLowerCase() === String(emp.id).toLowerCase()) ||
-          (Boolean(rEmpId) && Boolean(emp.empCode) && String(rEmpId).toLowerCase() === String(emp.empCode).toLowerCase());
-
-        const nameMatches = Boolean(rEmpName) && Boolean(emp.name) && String(rEmpName).toLowerCase() === String(emp.name).toLowerCase();
+          Boolean(rEmpId) &&
+          (rEmpId === empId ||
+           rEmpId === emp.id ||
+           rEmpId === emp.empCode ||
+           String(rEmpId).toLowerCase() === String(empId).toLowerCase() ||
+           String(rEmpId).toLowerCase() === String(emp.id).toLowerCase() ||
+           String(rEmpId).toLowerCase() === String(emp.empCode).toLowerCase());
 
         const dateMatches = isSameDateStr(r.date, selectedDate);
 
-        return (idMatches || nameMatches) && dateMatches;
+        return idMatches && dateMatches;
       }
     );
 
@@ -364,7 +361,13 @@ export function calculateDailyAttendance(
       // Fallback to Live Attendance Events if checkIn is still '-'
       if (checkIn === '-' && safeEvents.length > 0) {
         const empEvents = safeEvents.filter(evt => {
-          const matchesEmp = evt.employeeId === empId || evt.employeeId === emp.id || (evt.empName && emp.name && evt.empName.toLowerCase() === emp.name.toLowerCase());
+          const matchesEmp = Boolean(evt.employeeId) && (
+            evt.employeeId === empId || 
+            evt.employeeId === emp.id || 
+            evt.employeeId === emp.empCode ||
+            String(evt.employeeId).toLowerCase() === String(empId).toLowerCase() ||
+            String(evt.employeeId).toLowerCase() === String(emp.empCode).toLowerCase()
+          );
           const eventDateStr = evt.timestamp ? evt.timestamp.split('T')[0] : '';
           return matchesEmp && eventDateStr && isSameDateStr(eventDateStr, selectedDate);
         });

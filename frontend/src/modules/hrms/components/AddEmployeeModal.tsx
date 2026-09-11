@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { User, Briefcase, DollarSign, CreditCard, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, Briefcase, DollarSign, CreditCard, CheckCircle2, ArrowRight, ShieldCheck, Key } from 'lucide-react';
 import { Modal } from '../../../components/common/Modal';
 import { Button } from '../../../components/common/Button';
 import { Input } from '../../../components/common/Input';
@@ -21,6 +21,11 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'personal' | 'employment' | 'salary' | 'statutory'>('personal');
 
+  // Sequential ID Preview State
+  const [lastEmpCode, setLastEmpCode] = useState<string>('EMP-010');
+  const [nextEmpCode, setNextEmpCode] = useState<string>('EMP-011');
+  const [pin, setPin] = useState<string>('1234');
+
   // Form Fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,11 +34,26 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [address, setAddress] = useState('');
 
+  // Fetch next sequential employee code when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/employees/next-id')
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            if (d.lastEmpCode) setLastEmpCode(d.lastEmpCode);
+            if (d.nextEmpCode) setNextEmpCode(d.nextEmpCode);
+          }
+        })
+        .catch(err => console.warn('Could not fetch next-id preview:', err));
+    }
+  }, [isOpen]);
+
   const [department, setDepartment] = useState(departments[0] || 'Engineering');
   const [designation, setDesignation] = useState('Software Engineer');
   const [joiningDate, setJoiningDate] = useState(new Date().toISOString().split('T')[0]);
   const [employmentType, setEmploymentType] = useState<'Full-time' | 'Part-time' | 'Contract' | 'Intern'>('Full-time');
-  const [status, setStatus] = useState<EmployeeLifecycleStatus>('Probation');
+  const [status, setStatus] = useState<EmployeeLifecycleStatus>('Joined');
   const [manager, setManager] = useState('John Doe');
   const [branch, setBranch] = useState('Mumbai HQ');
 
@@ -55,6 +75,8 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     }
 
     onSave({
+      id: nextEmpCode,
+      empCode: nextEmpCode,
       name,
       email: email || `${name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
       phone: phone || '+91 98765 00000',
@@ -76,7 +98,8 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       uanNumber,
       bankAccount,
       ifscCode,
-    });
+      pin: pin || '1234',
+    } as any);
 
     onClose();
   };
@@ -84,6 +107,26 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add New Employee Master Record">
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+        {/* PREVIEW: PREVIOUS LAST ID & AUTO-ASSIGNED SEQUENTIAL ID */}
+        <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border border-purple-200 rounded-lg p-3 flex items-center justify-between shadow-sm">
+          <div>
+            <span className="text-[10px] text-purple-700 font-semibold uppercase tracking-wider block">Previous Last ID</span>
+            <span className="text-xs font-bold text-slate-700 font-mono bg-white px-2 py-0.5 rounded border border-purple-100">
+              {lastEmpCode}
+            </span>
+          </div>
+          <div className="flex items-center text-purple-400 font-medium text-[11px] gap-1">
+            <span>Next in Order</span>
+            <ArrowRight size={14} className="text-purple-600 animate-pulse" />
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] text-indigo-700 font-semibold uppercase tracking-wider block">Assigned New ID</span>
+            <span className="text-xs font-extrabold text-purple-900 font-mono bg-purple-100 px-2.5 py-0.5 rounded border border-purple-300">
+              {nextEmpCode}
+            </span>
+          </div>
+        </div>
+
         {/* Step Navigation Tabs */}
         <div className="flex border-b border-slate-200 text-xs">
           <button
@@ -127,6 +170,25 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         {/* TAB 1: PERSONAL INFO */}
         {activeTab === 'personal' && (
           <div className="space-y-3">
+            <div className="bg-amber-50 border border-amber-200 rounded p-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key size={16} className="text-amber-600 flex-shrink-0" />
+                <div>
+                  <p className="text-[11px] font-bold text-amber-900">Portal Login Credentials</p>
+                  <p className="text-[10px] text-amber-700">Login ID: <strong className="font-mono">{nextEmpCode}</strong> | Default PIN: <strong className="font-mono">{pin}</strong></p>
+                </div>
+              </div>
+              <div className="w-28">
+                <Input
+                  label="Login PIN"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="1234"
+                  required
+                />
+              </div>
+            </div>
+
             <Input
               label="Full Employee Name *"
               placeholder="e.g. Ravi Kumar"
@@ -225,7 +287,6 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
                   { label: 'Joined', value: 'Joined' },
                   { label: 'Probation', value: 'Probation' },
                   { label: 'Confirmed', value: 'Confirmed' },
-                  { label: 'Active', value: 'Active' },
                 ]}
               />
               <Input

@@ -19,6 +19,7 @@ export interface ExtendedExpenseClaim {
   amount: number;
   description: string;
   receiptFileName?: string;
+  receiptUrl?: string;
   appliedDate: string;
   stage: ExpenseApprovalStage;
   managerNotes?: string;

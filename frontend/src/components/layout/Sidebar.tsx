@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   LayoutDashboard,
   Target,
@@ -76,6 +76,7 @@ export const Sidebar: React.FC = () => {
     setActiveModule = () => {},
     setActiveSubSection = () => {},
     userProfile = { name: 'John Doe', avatar: '', roleTitle: 'Administrator' },
+    userRole,
     isSidebarCollapsed = false,
     setIsSidebarCollapsed = () => {},
     theme = 'dark',
@@ -85,6 +86,26 @@ export const Sidebar: React.FC = () => {
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
     tasks: true,
   });
+
+  // Dynamic assigned modules for logged in employee from database
+  const [assignedModuleCodes, setAssignedModuleCodes] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    const empId = (userProfile as any)?.empCode || (userProfile as any)?.id;
+    if (userRole === 'Employee' && empId && empId !== 'admin-001') {
+      fetch(`/api/modules/employee/${encodeURIComponent(empId)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.data)) {
+            const codes = data.data.map((m: any) => String(m.code || m.id || m.name).toLowerCase());
+            setAssignedModuleCodes(codes);
+          }
+        })
+        .catch(err => console.warn('Could not load assigned modules for sidebar:', err));
+    } else {
+      setAssignedModuleCodes(null);
+    }
+  }, [userRole, userProfile]);
 
   // Dynamic order of nav items with localStorage persistence
   const [navItems, setNavItems] = useState<NavItem[]>(() => {
@@ -112,6 +133,25 @@ export const Sidebar: React.FC = () => {
     return DEFAULT_NAV_ITEMS;
   });
 
+  // Filtered nav items based on employee database assignment
+  const visibleNavItems = useMemo(() => {
+    if (userRole !== 'Employee' || assignedModuleCodes === null) {
+      return navItems;
+    }
+    return navItems.filter(item => {
+      if (item.id === 'dashboard') return true;
+      const itemIdLower = item.id.toLowerCase();
+      const itemLabelLower = item.label.toLowerCase();
+      return assignedModuleCodes.some(c => 
+        c === itemIdLower || 
+        c === `mod-${itemIdLower}` || 
+        c.includes(itemIdLower) || 
+        itemIdLower.includes(c) ||
+        itemLabelLower.includes(c)
+      );
+    });
+  }, [navItems, userRole, assignedModuleCodes]);
+
   // Drag-and-Drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -122,9 +162,12 @@ export const Sidebar: React.FC = () => {
   };
 
   const taskSubItems = [
-    { id: 'my-tasks', label: 'My Tasks' },
     { id: 'all-tasks', label: 'All Tasks' },
+    { id: 'my-tasks', label: 'My Tasks' },
     { id: 'assign-task', label: 'Assign Task' },
+    { id: 'teams-groups', label: 'Teams & Groups' },
+    { id: 'review', label: 'Ready for Review' },
+    { id: 'completed', label: 'Completed' },
     { id: 'reports', label: 'Task Reports' },
   ];
 
@@ -210,7 +253,7 @@ export const Sidebar: React.FC = () => {
 
       {/* Navigation Links with Drag & Drop */}
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-        {navItems.map((item, index) => {
+        {visibleNavItems.map((item, index) => {
           const Icon = item.icon;
           const isActive = activeModule === item.id;
           const isTasks = item.id === 'tasks';

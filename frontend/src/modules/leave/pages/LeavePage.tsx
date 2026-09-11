@@ -93,7 +93,7 @@ export const LeavePage: React.FC = () => {
       return dynamicBalances;
     }
     const empName = selectedEmpObj.name;
-    const empReqs = leaveRequests.filter(r => r.empId === selectedEmpId || r.empName.toLowerCase() === empName.toLowerCase());
+    const empReqs = leaveRequests.filter(r => r.empId === selectedEmpId);
     
     const clUsed = empReqs.filter(r => r.leaveType.includes('Casual') && r.status === 'Approved').reduce((s, r) => s + r.days, 0);
     const clPending = empReqs.filter(r => r.leaveType.includes('Casual') && r.status === 'Pending').reduce((s, r) => s + r.days, 0);
@@ -114,9 +114,7 @@ export const LeavePage: React.FC = () => {
 
   // Filtered requests list (incorporates selected employee dropdown)
   const filteredRequests = leaveRequests.filter(r => {
-    const matchesEmpDropdown = selectedEmpId === 'ALL' || 
-                              r.empId === selectedEmpId || 
-                              r.empName.toLowerCase() === selectedEmpObj.name.toLowerCase();
+    const matchesEmpDropdown = selectedEmpId === 'ALL' || r.empId === selectedEmpId;
 
     const matchesSubTab = 
       requestSubTab === 'all' ||

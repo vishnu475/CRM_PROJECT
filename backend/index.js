@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { hrmsPool, crmPool } from './db/pool.js';
 import { initWebSocketServer } from './utils/websocket.js';
+// Reload trigger: sequential-employee-id-flow-v2
 
 // ─── HRMS Routes (Friend 2 — Employees, Payroll, Attendance) ────────────────
 import authRouter from './routes/auth.js';
@@ -27,6 +28,7 @@ import dashboardRouter from './routes/dashboard.js';
 import tasksRouter from './routes/tasks.js';
 import internsRouter from './routes/interns.js';
 import reportsRouter from './routes/reports.js';
+import modulesRouter from './routes/modules.js';
 
 // ─── CRM Routes (Friend 1 — Leads, Customers, Opportunities, Sales) ──────────
 import leadsRouter from './routes/leads.js';
@@ -42,8 +44,10 @@ import crmProductsRouter from './routes/crm_products.js';
 import vendorsRouter from './routes/vendors.js';
 import purchaseOrdersRouter from './routes/purchase_orders.js';
 import projectsRouter from './routes/projects.js';
+import groupsRouter from './routes/groups.js';
 
 import { authenticateUser } from './middleware/auth.js';
+import { protectModuleRoute } from './middleware/moduleAuth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { ensureDatabaseAndMigrate } from './setup_hrms.js';
 import { ensureCRMDatabaseAndMigrate } from './setup_crm.js';
@@ -90,6 +94,7 @@ async function initializeHRMSSchema() {
     '011_task_attachments.sql',
     '012_intern_management_complete.sql',
     '013_enterprise_document_management_system.sql',
+    '014_modules_and_employee_assignments.sql',
   ];
 
   for (const migrationFile of migrations) {
@@ -108,6 +113,8 @@ async function initializeHRMSSchema() {
 
 // Global Authentication Middleware
 app.use(authenticateUser);
+// Global Module Authorization Protection Middleware
+app.use(protectModuleRoute);
 
 import essRouter from './routes/ess.js';
 import documentsRouter from './routes/documents.js';
@@ -115,9 +122,11 @@ import { documentTypesRouter, documentCategoriesRouter } from './routes/document
 
 // ─── HRMS API Routes (Friend 2) ───────────────────────────────────────────────
 app.use('/api/auth',                authRouter);
+app.use('/auth',                    authRouter);
 app.use('/api/employees',           employeesRouter);
 app.use('/api/hrms',                hrmsRouter);
 app.use('/api/tasks',               tasksRouter);
+app.use('/api/modules',             modulesRouter);
 app.use('/api/interns',             internsRouter);
 app.use('/api/departments',         departmentsRouter);
 app.use('/api/designations',        designationsRouter);
@@ -153,6 +162,7 @@ app.use('/api/crm/products',    crmProductsRouter);
 app.use('/api/vendors',         vendorsRouter);
 app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/projects',        projectsRouter);
+app.use('/api/groups',          groupsRouter);
 
 // ─── Health Check (shows both DB connections) ─────────────────────────────────
 app.get('/api/health', async (req, res) => {

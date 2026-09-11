@@ -181,8 +181,8 @@ interface AppContextType {
   regularizationRequests: AttendanceRegularizationRequest[];
   attendanceEvents: AttendanceEvent[];
   addAttendanceEvent: (event: AttendanceEvent) => void;
-  checkIn: (employeeId: string, location?: string, ipAddress?: string) => { success: boolean; message: string };
-  checkOut: (employeeId: string) => { success: boolean; message: string };
+  checkIn: (employeeId: string, location?: string, ipAddress?: string, skipBackendSync?: boolean) => { success: boolean; message: string };
+  checkOut: (employeeId: string, skipBackendSync?: boolean) => { success: boolean; message: string };
   submitRegularization: (requestData: Omit<AttendanceRegularizationRequest, 'id' | 'appliedDate' | 'status'>) => { success: boolean; message: string };
   approveRegularization: (requestId: string, reviewerName?: string) => { success: boolean; message: string };
   rejectRegularization: (requestId: string, reviewerName?: string) => { success: boolean; message: string };
@@ -225,12 +225,12 @@ interface AppContextType {
 }
 
 const initialUserProfile: UserProfile = {
-  id: 'EMP-006',
-  empCode: 'EMP-006',
-  name: 'Ashok',
-  email: 'ashok@democompany.com',
+  id: 'EMP-005',
+  empCode: 'EMP-005',
+  name: 'Vishnu Vardhan',
+  email: 'vishnu.vardhan@democompany.com',
   role: 'Executive',
-  roleTitle: 'Senior Full Stack Engineer',
+  roleTitle: 'Lead Backend Architect',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   company: 'Demo Company Pvt. Ltd.',
   branch: 'Headquarters (HQ)',
@@ -517,7 +517,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [userRole, setUserRoleState] = useState<UserRole>(() => {
     const path = window.location.pathname.toLowerCase();
-    if (path.startsWith('/employee')) return 'Employee';
+    const isEssPath = (path === '/employee' || path.startsWith('/employee/')) &&
+      !path.startsWith('/employee/emp-') &&
+      !/^\/employee\/\d+$/.test(path);
+    if (isEssPath) return 'Employee';
     const saved = localStorage.getItem('crm_user_role');
     if (saved && saved !== 'Employee') return saved as UserRole;
     return 'Executive';
@@ -658,12 +661,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const mEmpId = m.employeeId || m.empId || (m as any).empCode;
 
                 const idMatches =
-                  rEmpId === mEmpId ||
-                  (Boolean(rEmpId) && Boolean(mEmpId) && String(rEmpId).toLowerCase() === String(mEmpId).toLowerCase());
+                  Boolean(rEmpId) && Boolean(mEmpId) &&
+                  (rEmpId === mEmpId || String(rEmpId).toLowerCase() === String(mEmpId).toLowerCase());
 
-                const nameMatches = Boolean(fr.empName) && Boolean(m.empName) && fr.empName.toLowerCase() === m.empName.toLowerCase();
-
-                return sameDate && (idMatches || nameMatches);
+                return sameDate && idMatches;
               });
 
               if (idx >= 0) {
@@ -1145,7 +1146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAttendanceEvents(prev => [evt, ...prev]);
   };
 
-  const checkIn = (employeeId: string, location: string = 'HQ Office', ipAddress: string = '192.168.1.50') => {
+  const checkIn = (employeeId: string, location: string = 'HQ Office', ipAddress: string = '192.168.1.50', skipBackendSync: boolean = false) => {
     const emp = employees.find(e => e.id === employeeId || e.empCode === employeeId);
     if (!emp) {
       return { success: false, message: 'Employee not found.' };
@@ -1203,23 +1204,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // POST TO POSTGRESQL BACKEND (SINGLE SOURCE OF TRUTH)
-    fetch('/api/attendance/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        employeeId: emp.empCode || emp.id,
-        pin: (emp as any).pin || (emp as any).plain_pin || '1234',
-        deviceId: 'WEB-ADMIN-PANEL',
-        source: 'ADMIN_DESK'
-      })
-    }).then(() => {
-      reloadAttendanceFromDB();
-    }).catch(err => console.warn('Backend PostgreSQL checkIn sync warning:', err));
+    if (!skipBackendSync) {
+      fetch('/api/attendance/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: emp.empCode || emp.id,
+          pin: (emp as any).pin || (emp as any).plain_pin || '1234',
+          deviceId: 'WEB-ADMIN-PANEL',
+          source: 'ADMIN_DESK',
+          action: 'CHECK_IN'
+        })
+      }).then(() => {
+        reloadAttendanceFromDB();
+      }).catch(err => console.warn('Backend PostgreSQL checkIn sync warning:', err));
+    }
 
     return { success: true, message: `Checked in successfully at ${nowTime}` };
   };
 
-  const checkOut = (employeeId: string) => {
+  const checkOut = (employeeId: string, skipBackendSync: boolean = false) => {
     const emp = employees.find(e => e.id === employeeId || e.empCode === employeeId);
     if (!emp) {
       return { success: false, message: 'Employee not found.' };
@@ -1268,18 +1272,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAttendanceRecords(prev => prev.map((r, idx) => (idx === existingIndex ? updatedRecord : r)));
 
     // POST TO POSTGRESQL BACKEND (SINGLE SOURCE OF TRUTH)
-    fetch('/api/attendance/events', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        employeeId: emp.empCode || emp.id,
-        pin: (emp as any).pin || (emp as any).plain_pin || '1234',
-        deviceId: 'WEB-ADMIN-PANEL',
-        source: 'ADMIN_DESK'
-      })
-    }).then(() => {
-      reloadAttendanceFromDB();
-    }).catch(err => console.warn('Backend PostgreSQL checkOut sync warning:', err));
+    if (!skipBackendSync) {
+      fetch('/api/attendance/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: emp.empCode || emp.id,
+          pin: (emp as any).pin || (emp as any).plain_pin || '1234',
+          deviceId: 'WEB-ADMIN-PANEL',
+          source: 'ADMIN_DESK',
+          action: 'CHECK_OUT'
+        })
+      }).then(() => {
+        reloadAttendanceFromDB();
+      }).catch(err => console.warn('Backend PostgreSQL checkOut sync warning:', err));
+    }
 
     return { success: true, message: `Checked out successfully at ${nowTime}` };
   };
@@ -2783,8 +2790,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addEmployee = (empData: Partial<Employee>): Employee => {
-    const nextNum = employees.length + 1;
-    const empCode = empData.empCode || empData.id || `EMP-${String(nextNum).padStart(3, '0')}`;
+    const empCode = empData.empCode || empData.id || 'EMP-001';
     const newEmp: Employee = {
       id: empCode,
       empCode,
@@ -2810,14 +2816,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       ]
     };
-    setEmployees(prev => [...prev, newEmp]);
-
-    // Save permanently to PostgreSQL database via API
-    fetch('/api/employees', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newEmp)
-    }).catch(err => console.warn('Database save error:', err));
+    setEmployees(prev => {
+      const exists = prev.some(e => e.id === empCode || e.empCode === empCode);
+      const nextList = exists ? prev.map(e => e.id === empCode || e.empCode === empCode ? { ...e, ...newEmp } : e) : [...prev, newEmp];
+      return nextList.sort((a, b) => {
+        const numA = parseInt((a.empCode || a.id || '').replace(/\D/g, '') || '0', 10);
+        const numB = parseInt((b.empCode || b.id || '').replace(/\D/g, '') || '0', 10);
+        return numA - numB;
+      });
+    });
 
     return newEmp;
   };
@@ -2826,8 +2833,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEmployees(prev => prev.map(emp => emp.id === id || emp.empCode === id ? { ...emp, ...updates } : emp));
 
     // Update permanently in PostgreSQL database via API
-    fetch(`/api/employees/${id}`, {
-      method: 'PUT',
+    fetch(`/api/employees/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
     }).catch(err => console.warn('Database update error:', err));
@@ -2933,8 +2940,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const convertCandidateToEmployee = (candidateId: string, customDetails?: Partial<Employee>): Employee => {
     const candidate = jobCandidates.find(c => c.id === candidateId);
-    const nextNum = employees.length + 1;
-    const empCode = `EMP-${String(nextNum).padStart(3, '0')}`;
+    let empCode = customDetails?.empCode || customDetails?.id;
+    if (!empCode || !empCode.startsWith('EMP-')) {
+      const maxExistingNum = employees.reduce((max, e) => {
+        const num = parseInt((e.empCode || e.id || '').replace(/\D/g, '') || '0', 10);
+        return num > max ? num : max;
+      }, 10);
+      empCode = `EMP-${String(maxExistingNum + 1).padStart(3, '0')}`;
+    }
 
     const targetStatus = customDetails?.status || 'Probation';
 
@@ -2942,7 +2955,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: empCode,
       empCode,
       name: candidate ? candidate.name : customDetails?.name || 'New Employee',
-      email: candidate ? candidate.email : customDetails?.email || `employee${nextNum}@democompany.com`,
+      email: candidate ? candidate.email : customDetails?.email || `${empCode.toLowerCase()}@democompany.com`,
       phone: customDetails?.phone || '+91 98765 00000',
       department: customDetails?.department || 'Engineering',
       designation: candidate ? candidate.jobTitle : customDetails?.designation || 'Software Developer',

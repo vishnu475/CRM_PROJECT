@@ -62,12 +62,12 @@ export class RecruitmentService {
     return candidate;
   }
 
-  static async updateCandidateStage(candidateId: string, stage: string): Promise<boolean> {
+  static async updateCandidateStage(candidateId: string, stage: string, notes?: string): Promise<boolean> {
     try {
       const res = await fetch(`/api/recruitment/candidates/${candidateId}/stage`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stage })
+        body: JSON.stringify({ stage, notes })
       });
       if (res.ok) {
         const json = await res.json();

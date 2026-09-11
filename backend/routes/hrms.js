@@ -77,11 +77,11 @@ router.get('/employees', async (req, res) => {
     `;
 
     const params = [];
-    if (stage) {
-      queryStr += ` WHERE (LOWER(o.stage) = LOWER($1) OR LOWER(e.status) = LOWER($1) OR (LOWER($1) = 'joined' AND (LOWER(e.status) = 'active' OR LOWER(e.status) = 'joined')))`;
+    if (stage && stage !== 'All') {
+      queryStr += ` WHERE (LOWER(e.status) = LOWER($1) OR LOWER(o.stage) = LOWER($1))`;
       params.push(stage);
     }
-    queryStr += ` ORDER BY e.created_at DESC, e.emp_code ASC`;
+    queryStr += ` ORDER BY COALESCE(NULLIF(regexp_replace(COALESCE(e.emp_code, e.id), '[^0-9]', '', 'g'), ''), '0')::int ASC, e.emp_code ASC`;
 
     const result = await pool.query(queryStr, params);
     res.json({ success: true, data: result.rows });
@@ -348,8 +348,32 @@ router.post('/approvals/expense', async (req, res) => {
 
   const { claimId, status, reviewerName } = req.body;
   try {
-    const isApproved = status && (status.toUpperCase() === 'APPROVED' || status.toUpperCase() === 'FINANCE_APPROVED');
-    const finalStatus = isApproved ? 'FINANCE_APPROVED' : 'REJECTED';
+    const rawStatus = (status || '').toUpperCase().trim();
+    let finalStatus = 'REJECTED';
+    let notifTitle = 'Expense Request Rejected';
+    let notifMsg = '';
+
+    if (rawStatus === 'MANAGER_APPROVED' || rawStatus === 'MANAGER APPROVED') {
+      finalStatus = 'MANAGER_APPROVED';
+      notifTitle = 'Expense Request Manager Approved';
+      notifMsg = `Your expense request ${claimId} has been approved by Manager and forwarded to Finance.`;
+    } else if (rawStatus === 'FINANCE_APPROVED' || rawStatus === 'APPROVED') {
+      finalStatus = 'FINANCE_APPROVED';
+      notifTitle = 'Expense Request Finance Approved';
+      notifMsg = `Your expense request ${claimId} has been approved by Finance.`;
+    } else if (rawStatus === 'REIMBURSED' || rawStatus === 'PAID') {
+      finalStatus = 'REIMBURSED';
+      notifTitle = 'Expense Request Reimbursed';
+      notifMsg = `Your expense request ${claimId} has been reimbursed and disbursed.`;
+    } else if (rawStatus.includes('APPROV')) {
+      finalStatus = 'FINANCE_APPROVED';
+      notifTitle = 'Expense Request Approved';
+      notifMsg = `Your expense request ${claimId} has been approved.`;
+    } else {
+      finalStatus = 'REJECTED';
+      notifTitle = 'Expense Request Rejected';
+      notifMsg = `Your expense request ${claimId} has been rejected.`;
+    }
 
     const updated = await pool.query(
       `UPDATE expense_claims SET status = $1, approved_by = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
@@ -358,11 +382,6 @@ router.post('/approvals/expense', async (req, res) => {
     if (updated.rows.length === 0) return res.status(404).json({ success: false, message: 'Expense claim not found' });
     const exp = updated.rows[0];
 
-    const notifTitle = isApproved ? 'Expense Request Approved' : 'Expense Request Rejected';
-    const notifMsg = isApproved 
-      ? `Your expense request ${exp.id} has been approved.`
-      : `Your expense request ${exp.id} has been rejected.`;
-
     await ESSService.createNotification(
       exp.employee_id,
       notifTitle,
@@ -370,7 +389,7 @@ router.post('/approvals/expense', async (req, res) => {
       '/employee/expenses'
     );
 
-    res.json({ success: true, message: `Expense claim ${finalStatus} successfully.`, data: exp });
+    res.json({ success: true, message: `Expense claim updated to ${finalStatus} successfully.`, data: exp });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
