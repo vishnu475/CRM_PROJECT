@@ -38,23 +38,32 @@ export interface TaskComment {
 
 export interface TaskItem {
   id: string;
+  taskId?: string;
   task_code?: string;
   title: string;
+  taskTitle?: string;
   description?: string;
   department_id?: string;
   department_name?: string;
   department?: string;
   project_id?: string;
+  projectId?: string;
   project_name?: string;
+  projectName?: string;
   assigned_to: string;
+  assigned_to_employee_id?: string;
+  employeeId?: string;
+  employeeName?: string;
   assigned_to_name?: string;
   assigned_by?: string;
   assigned_by_id?: string;
   priority: TaskPriority;
   status: TaskStatus;
   progress_percent?: number;
+  progress?: number;
   start_date?: string;
   due_date?: string;
+  dueDate?: string;
   created_at?: string;
   started_at?: string | null;
   submitted_at?: string | null;
@@ -74,6 +83,11 @@ export interface TaskItem {
   instructions?: string;
   module_name?: string;
   deliverable_type?: string;
+  video_url?: string | null;
+  videoUrl?: string | null;
+  reference_link?: string | null;
+  referenceLink?: string | null;
+  deliverable_link?: string | null;
   pdf_attachment_name?: string;
   pdf_attachment_url?: string;
   attachments?: { id?: string | number; fileName?: string; file_name?: string; fileUrl?: string; file_url?: string; fileType?: string; fileSize?: number; uploadedBy?: string }[];
@@ -84,7 +98,82 @@ export interface TaskItem {
   employee_code?: string;
   employee_designation?: string;
   activities?: TaskActivity[];
+  assignment_type?: 'INDIVIDUAL' | 'GROUP';
+  assignmentType?: 'INDIVIDUAL' | 'GROUP';
+  group_id?: string | null;
+  groupId?: string | null;
+  group_name?: string | null;
+  groupName?: string | null;
+  task_weightage?: number;
+  taskWeightage?: number;
+  repository_url?: string | null;
+  repositoryUrl?: string | null;
+  review_target_date?: string | null;
+  reviewTargetDate?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  approval_comment?: string | null;
+  members?: TaskMemberAssignment[];
+  memberCount?: number;
   comments?: TaskComment[];
+  updated_at?: string;
+}
+
+export interface GroupMember {
+  id?: string;
+  employeeId: string;
+  employee_id?: string;
+  name: string;
+  employeeName?: string;
+  designation?: string;
+  department?: string;
+  role?: string;
+  isTeamHead?: boolean;
+  is_team_head?: boolean;
+}
+
+export interface ProjectGroup {
+  id: string;
+  name: string;
+  project_id: string;
+  team_head_id: string;
+  team_head_name: string;
+  description?: string;
+  project_name?: string;
+  project_code?: string;
+  members?: GroupMember[];
+  memberCount?: number;
+  tasks?: TaskItem[];
+  taskCount?: number;
+  task_count?: number;
+  completed_count?: number;
+  overall_progress?: number;
+  repository_url?: string | null;
+  repositoryUrl?: string | null;
+  created_at?: string;
+}
+
+export interface TaskMemberAssignment {
+  id: string;
+  taskId?: string;
+  task_id?: string;
+  employeeId?: string;
+  employee_id?: string;
+  emp_code?: string;
+  empCode?: string;
+  employeeName?: string;
+  employee_name?: string;
+  name?: string;
+  role?: string;
+  isTeamHead?: boolean;
+  is_team_head?: boolean;
+  progressPercent?: number;
+  employee_progress?: number;
+  progress?: number;
+  status?: string;
+  employee_status?: string;
+  notes?: string;
+  assigned_at?: string;
   updated_at?: string;
 }
 

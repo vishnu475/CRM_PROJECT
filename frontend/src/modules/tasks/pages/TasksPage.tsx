@@ -30,6 +30,7 @@ import {
   Layers,
   BarChart3,
   FolderKanban,
+  FolderGit2,
   Hourglass,
   PlayCircle,
   FileCheck2,
@@ -41,7 +42,13 @@ import {
   Award,
   CircleDot,
   Flame,
-  Briefcase
+  Briefcase,
+  Video,
+  GitPullRequest,
+  ExternalLink,
+  Users,
+  Crown,
+  ShieldAlert
 } from 'lucide-react';
 import { DocumentPreviewModal } from '../../../components/common/DocumentPreviewModal';
 import { useApp } from '../../../context/AppContext';
@@ -59,6 +66,9 @@ import { AssignTaskView } from '../components/AssignTaskView';
 import { MyTasksView } from '../components/MyTasksView';
 import { AllTasksView } from '../components/AllTasksView';
 import { TaskReportsView } from '../components/TaskReportsView';
+import { ReviewTasksView } from '../components/ReviewTasksView';
+import { CompletedTasksView } from '../components/CompletedTasksView';
+import { TeamsGroupsView } from '../components/TeamsGroupsView';
 
 // Human-friendly date formatter
 function formatFriendlyDate(dateStr?: string | null): string {
@@ -685,6 +695,40 @@ export const TasksPage: React.FC = () => {
       );
     }
 
+    if (activeSubSection === 'review') {
+      return (
+        <ReviewTasksView
+          tasks={tasks}
+          isLoading={isLoading}
+          onRefresh={fetchTasksData}
+          onSelectTask={handleSelectTaskDetail}
+        />
+      );
+    }
+
+    if (activeSubSection === 'completed') {
+      return (
+        <CompletedTasksView
+          tasks={tasks}
+          isLoading={isLoading}
+          onRefresh={fetchTasksData}
+          onSelectTask={handleSelectTaskDetail}
+        />
+      );
+    }
+
+    if (activeSubSection === 'teams-groups') {
+      return (
+        <TeamsGroupsView
+          onAssignTask={(grp) => {
+            setActiveSubSection('assign-task');
+            setViewMode('assign_task');
+          }}
+          onSelectTask={handleSelectTaskDetail}
+        />
+      );
+    }
+
     if (activeSubSection === 'reports') {
       return (
         <TaskReportsView
@@ -845,6 +889,162 @@ export const TasksPage: React.FC = () => {
                   <span className="font-semibold text-purple-700">{selectedTaskDetail.deliverable_type || 'Code Implementation'}</span>
                 </div>
               </div>
+
+              {/* Dynamic Project, Assignment Type, Weightage & 5-Day Rule */}
+              <div className="flex flex-wrap items-center gap-2 p-2.5 bg-slate-100/80 rounded-xl border border-slate-200 text-xs">
+                {selectedTaskDetail.project_name && (
+                  <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 font-semibold border border-blue-200 text-[11px] flex items-center gap-1">
+                    <FolderKanban size={12} className="text-blue-600" />
+                    {selectedTaskDetail.project_name}
+                  </span>
+                )}
+                <span className={`px-2 py-0.5 rounded-md font-semibold text-[11px] flex items-center gap-1 border ${
+                  selectedTaskDetail.assignment_type === 'GROUP'
+                    ? 'bg-purple-50 text-purple-800 border-purple-200'
+                    : 'bg-slate-50 text-slate-700 border-slate-200'
+                }`}>
+                  <Users size={12} className={selectedTaskDetail.assignment_type === 'GROUP' ? 'text-purple-600' : 'text-slate-500'} />
+                  {selectedTaskDetail.assignment_type === 'GROUP' ? `Group: ${selectedTaskDetail.group_name || 'Team'}` : 'Individual Task'}
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200 text-[11px] flex items-center gap-1">
+                  <Percent size={12} className="text-emerald-600" />
+                  {selectedTaskDetail.task_weightage ?? 0}% Task Weightage
+                </span>
+                {selectedTaskDetail.review_target_date && (
+                  <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 font-semibold border border-amber-200 text-[11px] flex items-center gap-1" title="Target completion deadline 5 days before final due date">
+                    <Clock size={12} className="text-amber-600" />
+                    5-Day Review: {new Date(selectedTaskDetail.review_target_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                )}
+                {selectedTaskDetail.repository_url && (
+                  <a
+                    href={selectedTaskDetail.repository_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2 py-0.5 rounded-md bg-slate-900 text-white font-medium hover:bg-slate-800 text-[11px] flex items-center gap-1 transition ml-auto"
+                  >
+                    <span>Repo</span>
+                    <ExternalLink size={11} />
+                  </a>
+                )}
+              </div>
+
+              {/* Group Roster if Group Task */}
+              {selectedTaskDetail.assignment_type === 'GROUP' && selectedTaskDetail.members && selectedTaskDetail.members.length > 0 && (
+                <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-200 space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+                    <span className="flex items-center gap-1.5">
+                      <Users size={13} className="text-purple-600" />
+                      Assigned Group Roster ({selectedTaskDetail.members.length} Members)
+                    </span>
+                    <span className="text-[10px] text-purple-600 font-normal">All members track this task</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {selectedTaskDetail.members.map((m, idx) => {
+                      const mName = m.name || m.employee_name || m.employeeName || 'Member';
+                      const mCode = m.emp_code || m.empCode || m.employee_id || '';
+                      return (
+                        <div key={idx} className="flex items-center justify-between p-1.5 bg-white rounded-lg border border-purple-100 text-[11px]">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-800 font-bold text-[9px] flex items-center justify-center shrink-0">
+                              {mName.charAt(0)}
+                            </span>
+                            <span className="font-semibold text-slate-800 truncate">{mName}</span>
+                            {mCode && <span className="text-[10px] font-mono text-slate-400">({mCode})</span>}
+                          </div>
+                          {m.is_team_head && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[9px] flex items-center gap-0.5 shrink-0">
+                              <Crown size={10} className="text-amber-600" /> Team Head
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* GitHub Repository Bar */}
+              {Boolean(selectedTaskDetail.repository_url || (selectedTaskDetail as any).project_repository_url || (selectedTaskDetail as any).repositoryUrl) && (
+                <div className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-white/10 text-white flex items-center justify-center shrink-0">
+                      <FolderGit2 size={14} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300 block leading-tight">GitHub Repository</span>
+                      <a
+                        href={selectedTaskDetail.repository_url || (selectedTaskDetail as any).project_repository_url || (selectedTaskDetail as any).repositoryUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono text-xs font-bold text-white hover:text-blue-300 underline truncate block leading-tight"
+                      >
+                        {(selectedTaskDetail.repository_url || (selectedTaskDetail as any).project_repository_url || (selectedTaskDetail as any).repositoryUrl).replace('https://', '')}
+                      </a>
+                    </div>
+                  </div>
+                  <a
+                    href={selectedTaskDetail.repository_url || (selectedTaskDetail as any).project_repository_url || (selectedTaskDetail as any).repositoryUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition shrink-0"
+                  >
+                    <span>Code</span>
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              )}
+
+              {/* Submitted Deliverables & Video Demo Review Artifacts */}
+              {(selectedTaskDetail.video_url || selectedTaskDetail.reference_link) && (
+                <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50/80 rounded-xl border border-blue-200 space-y-2">
+                  <span className="text-[10px] font-bold text-blue-900 uppercase tracking-wider block flex items-center gap-1">
+                    <Sparkles size={12} className="text-blue-600" />
+                    Submitted Deliverables & Review Artifacts
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedTaskDetail.video_url && (
+                      <a
+                        href={selectedTaskDetail.video_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition"
+                      >
+                        <Video size={13} />
+                        Watch Video Demo URL
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+                    {selectedTaskDetail.reference_link && (
+                      <a
+                        href={selectedTaskDetail.reference_link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition"
+                      >
+                        <GitPullRequest size={13} />
+                        View Pull Request / Deliverable Link
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Approval Info Banner */}
+              {selectedTaskDetail.approved_by && (
+                <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                    Approved by {selectedTaskDetail.approved_by} on {selectedTaskDetail.approved_at ? new Date(selectedTaskDetail.approved_at).toLocaleString() : ''}
+                  </div>
+                  {selectedTaskDetail.approval_comment && (
+                    <p className="text-[11px] text-emerald-800 italic bg-white/70 p-1.5 rounded-lg border border-emerald-100">
+                      "{selectedTaskDetail.approval_comment}"
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Attachments / Spec */}
               {selectedTaskDetail.attachments && selectedTaskDetail.attachments.length > 0 ? (

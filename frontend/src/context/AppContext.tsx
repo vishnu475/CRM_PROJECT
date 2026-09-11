@@ -221,12 +221,12 @@ interface AppContextType {
 }
 
 const initialUserProfile: UserProfile = {
-  id: 'EMP-006',
-  empCode: 'EMP-006',
-  name: 'Ashok',
-  email: 'ashok@democompany.com',
+  id: 'EMP-005',
+  empCode: 'EMP-005',
+  name: 'Vishnu Vardhan',
+  email: 'vishnu.vardhan@democompany.com',
   role: 'Executive',
-  roleTitle: 'Senior Full Stack Engineer',
+  roleTitle: 'Lead Backend Architect',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   company: 'Demo Company Pvt. Ltd.',
   branch: 'Headquarters (HQ)',

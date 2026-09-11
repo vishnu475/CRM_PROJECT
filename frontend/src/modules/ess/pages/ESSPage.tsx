@@ -68,6 +68,9 @@ import {
   FileSpreadsheet,
   BookOpen,
   Pencil,
+  Video,
+  Link2,
+  Play,
   Edit3,
   Filter,
   UploadCloud,
@@ -90,6 +93,7 @@ import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
 import { EmployeeAttendanceView } from '../components/EmployeeAttendanceView';
 import { DocumentPreviewModal } from '../../../components/common/DocumentPreviewModal';
+import { MyTasksView } from '../../tasks/components/MyTasksView';
 
 export const ESSPage: React.FC = () => {
   const {
@@ -123,7 +127,7 @@ export const ESSPage: React.FC = () => {
     }
   };
 
-  const currentEmpId = (userProfile?.empCode && userProfile.empCode !== 'usr_1') ? userProfile.empCode : ((userProfile?.id && userProfile.id !== 'usr_1') ? userProfile.id : 'EMP-006');
+  const currentEmpId = (userProfile?.empCode && userProfile.empCode !== 'usr_1') ? userProfile.empCode : ((userProfile?.id && userProfile.id !== 'usr_1') ? userProfile.id : 'EMP-005');
 
   // Sidebar Collapse state matching Admin Sidebar
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -143,6 +147,7 @@ export const ESSPage: React.FC = () => {
   const [tasksData, setTasksData] = useState<any[]>([]);
   const [hrRequestsData, setHrRequestsData] = useState<any[]>([]);
   const [activityFeed, setActivityFeed] = useState<any[]>([]);
+  const [projectGroupsData, setProjectGroupsData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Form States
@@ -270,6 +275,8 @@ export const ESSPage: React.FC = () => {
   const [showSubmitReviewModal, setShowSubmitReviewModal] = useState<boolean>(false);
   const [submitReviewTask, setSubmitReviewTask] = useState<any | null>(null);
   const [completionNoteInput, setCompletionNoteInput] = useState<string>('');
+  const [deliverableLinkInput, setDeliverableLinkInput] = useState<string>('');
+  const [videoUrlInput, setVideoUrlInput] = useState<string>('');
   const [actualHoursInput, setActualHoursInput] = useState<string>('8');
   const [taskCommentInput, setTaskCommentInput] = useState<string>('');
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
@@ -499,6 +506,15 @@ export const ESSPage: React.FC = () => {
       if (tskRes.success) setTasksData(tskRes.data);
       if (hrRes.success) setHrRequestsData(hrRes.data);
       if (actRes.success) setActivityFeed(actRes.data);
+
+      try {
+        const grpRes = await fetch(`/api/groups?employeeId=${encodeURIComponent(currentEmpId)}`, { headers }).then(r => r.json());
+        if (grpRes.success && Array.isArray(grpRes.data)) {
+          setProjectGroupsData(grpRes.data);
+        }
+      } catch (grpErr) {
+        console.warn('Error fetching employee project groups:', grpErr);
+      }
     } catch (e) {
       console.warn('ESS Data Fetch Warning:', e);
     } finally {
@@ -1116,10 +1132,32 @@ export const ESSPage: React.FC = () => {
 
           {/* Right Control Actions */}
           <div className="flex items-center space-x-3 text-xs font-bold text-slate-700">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer shadow-2xs">
-              <User size={14} className="text-blue-600" />
-              <span>{emp.name} ({emp.empCode})</span>
-              <ChevronDown size={14} className="text-slate-400" />
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-2xs">
+              <User size={14} className="text-blue-600 shrink-0" />
+              <select
+                value={currentEmpId}
+                onChange={(e) => {
+                  const targetId = e.target.value;
+                  const targetEmp = employees.find(em => (em.empCode || em.id) === targetId);
+                  if (targetEmp && setUserProfile) {
+                    setUserProfile({
+                      id: targetEmp.empCode || targetEmp.id,
+                      empCode: targetEmp.empCode || targetEmp.id,
+                      name: targetEmp.name,
+                      email: targetEmp.email,
+                      department: targetEmp.department,
+                      roleTitle: targetEmp.designation
+                    });
+                  }
+                }}
+                className="bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer pr-1"
+              >
+                {employees.map(em => (
+                  <option key={em.id} value={em.empCode || em.id}>
+                    {em.name} ({em.empCode || em.id})
+                  </option>
+                ))}
+              </select>
             </div>
 
             <button
@@ -1317,6 +1355,156 @@ export const ESSPage: React.FC = () => {
                   })}
                 </div>
               </div>
+
+              {/* SECTION: MY ASSIGNED PROJECT TEAMS */}
+              {projectGroupsData.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">My Assigned Project Teams</h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                        {projectGroupsData.length} Assigned Team{projectGroupsData.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleNavClick('tasks')}
+                      className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Open Complete Workspace & Tasks</span>
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {projectGroupsData.map((grp: any) => {
+                      const overallP = Number(grp.overall_progress || 0);
+
+                      return (
+                        <div
+                          key={grp.id}
+                          className="bg-white rounded-3xl border border-slate-200/90 hover:border-purple-300 shadow-sm hover:shadow-md transition-all p-5 flex flex-col justify-between gap-4 group"
+                        >
+                          {/* Header & Badges */}
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200/80">
+                                <Folder size={12} />
+                                <span className="truncate max-w-[150px]">{grp.project_name || 'CMS Project'}</span>
+                              </span>
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                {grp.members?.length || grp.member_count || 4} Members
+                              </span>
+                            </div>
+
+                            <div>
+                              <h4 className="font-bold text-sm text-purple-800 group-hover:text-purple-900 transition">
+                                {grp.name}
+                              </h4>
+                              <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">
+                                {grp.description || `Core cross-functional delivery group for ${grp.project_name || 'CMS Project'}`}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Designated Lead Box */}
+                          <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-full bg-amber-500 text-white font-bold text-xs flex items-center justify-center shadow-2xs shrink-0">
+                                {(grp.team_head_name || 'V').charAt(0)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1">
+                                  <Award size={11} className="text-amber-600 shrink-0" />
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900">DESIGNATED LEAD</span>
+                                </div>
+                                <p className="text-xs font-bold text-slate-900 truncate">
+                                  {grp.team_head_name || 'Vishnu Vardhan'}
+                                </p>
+                                <p className="text-[10px] font-mono text-slate-500">
+                                  {grp.team_head_id || 'EMP-005'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Overall Progress Bar */}
+                          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-semibold text-slate-600 flex items-center gap-1">
+                                <TrendingUp size={12} className="text-purple-600" />
+                                <span>Overall Progress:</span>
+                              </span>
+                              <span className="font-bold text-purple-700">
+                                {overallP}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full transition-all duration-500"
+                                style={{ width: `${Math.min(100, Math.max(0, overallP))}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pt-0.5">
+                              <span>{grp.completed_count || 2} of {grp.task_count || 6} deliverables done</span>
+                              <span>{grp.task_count ? `${Math.round(((grp.completed_count || 0) / grp.task_count) * 100)}% velocity` : '33% velocity'}</span>
+                            </div>
+                          </div>
+
+                          {/* Team Roster Preview */}
+                          <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                              <span>Team Roster:</span>
+                              <button
+                                onClick={() => handleNavClick('tasks')}
+                                className="text-purple-600 font-bold hover:underline flex items-center gap-0.5 cursor-pointer text-[10px]"
+                              >
+                                <span>View Details</span>
+                                <ChevronRight size={11} />
+                              </button>
+                            </div>
+
+                            <div className="space-y-1 max-h-[110px] overflow-y-auto pr-1">
+                              {(grp.members || []).slice(0, 3).map((m: any) => (
+                                <div
+                                  key={m.employeeId || m.id}
+                                  className="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 text-[11px] border border-slate-100"
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 font-bold text-[9px] flex items-center justify-center shrink-0">
+                                      {(m.name || m.employeeName || 'E').charAt(0)}
+                                    </div>
+                                    <span className="font-semibold text-slate-800 text-[11px] truncate">
+                                      {m.name || m.employeeName}
+                                    </span>
+                                  </div>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                    m.isTeamHead || m.employeeId === grp.team_head_id
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-slate-200 text-slate-700'
+                                  }`}>
+                                    {m.isTeamHead || m.employeeId === grp.team_head_id ? 'Team Head' : (m.role || 'Member')}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Action to My Tasks */}
+                          <div className="pt-2 border-t border-slate-100">
+                            <button
+                              onClick={() => handleNavClick('tasks')}
+                              className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+                            >
+                              <span>Go to My Tasks ({grp.my_module || 'MOD-BACKEND'})</span>
+                              <ArrowRight size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* THREE-COLUMN WIDGET GRID */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -2910,715 +3098,10 @@ export const ESSPage: React.FC = () => {
               </div>
             </div>
           )}
-
-          {/* VIEW: TASKS & ASSIGNMENT HUB */}
-          {subSection === 'tasks' && (() => {
-            const allTasks = tasksData || [];
-
-            // Compute KPI Metrics
-            const totalCount = allTasks.length;
-            const assignedCount = allTasks.filter((t: any) => t.status === 'ASSIGNED' || t.status === 'To Do' || t.status === 'Backlog' || t.status === 'Pending' || t.status === 'ACCEPTED').length;
-            const inProgressCount = allTasks.filter((t: any) => t.status === 'IN_PROGRESS' || t.status === 'In Progress' || t.status === 'BLOCKED' || t.status === 'REOPENED').length;
-            const submittedCount = allTasks.filter((t: any) => t.status === 'SUBMITTED' || t.status === 'In Review' || t.status === 'QA').length;
-            const completedCount = allTasks.filter((t: any) => t.status === 'COMPLETED' || t.status === 'Completed' || t.status === 'Done').length;
-            const overdueCount = allTasks.filter((t: any) => t.is_overdue || (t.due_date && new Date(t.due_date) < new Date() && t.status !== 'COMPLETED' && t.status !== 'Completed')).length;
-            const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-            // Filter logic
-            const filteredTasks = allTasks.filter((t: any) => {
-              const matchesSearch = !taskSearchQuery || 
-                t.title?.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
-                t.project_name?.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
-                t.description?.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
-                t.category?.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
-                t.tags?.toLowerCase().includes(taskSearchQuery.toLowerCase());
-
-              const matchesPriority = taskPriorityFilter === 'ALL' || t.priority?.toUpperCase() === taskPriorityFilter.toUpperCase();
-              const matchesCategory = taskCategoryFilter === 'ALL' || t.category === taskCategoryFilter;
-
-              return matchesSearch && matchesPriority && matchesCategory;
-            });
-
-            const kanbanColumns = [
-              { id: 'ASSIGNED', label: 'Assigned / Pending', count: assignedCount, bg: 'bg-slate-50/90', border: 'border-slate-200', badgeColor: 'bg-slate-100 text-slate-700' },
-              { id: 'IN_PROGRESS', label: 'In Progress', count: inProgressCount, bg: 'bg-blue-50/50', border: 'border-blue-200', badgeColor: 'bg-blue-100 text-blue-800' },
-              { id: 'SUBMITTED', label: 'Submitted (Review)', count: submittedCount, bg: 'bg-purple-50/50', border: 'border-purple-200', badgeColor: 'bg-purple-100 text-purple-800' },
-              { id: 'COMPLETED', label: 'Completed', count: completedCount, bg: 'bg-emerald-50/50', border: 'border-emerald-200', badgeColor: 'bg-emerald-100 text-emerald-800' }
-            ];
-
-            return (
-              <div className="space-y-6 animate-fade-in">
-                {/* 1. TOP NOTIFICATION TOAST */}
-                {taskSuccessMsg && (
-                  <div className="p-4 bg-slate-900 text-white rounded-2xl shadow-xl flex items-center justify-between border border-emerald-500/40">
-                    <div className="flex items-center gap-2.5 font-bold text-xs">
-                      <CheckCircle2 size={16} className="text-emerald-400" />
-                      <span>{taskSuccessMsg}</span>
-                    </div>
-                    <button onClick={() => setTaskSuccessMsg(null)} className="text-slate-400 hover:text-white font-bold text-xs">✕</button>
-                  </div>
-                )}
-
-                {/* 2. HERO KPI METRICS BANNER */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">My Tasks</span>
-                    <h4 className="text-2xl font-black text-slate-900 mt-0.5">{totalCount}</h4>
-                    <span className="text-[10px] font-semibold text-slate-500">Assigned Total</span>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Pending</span>
-                    <h4 className="text-2xl font-black text-slate-700 mt-0.5">{assignedCount}</h4>
-                    <span className="text-[10px] font-semibold text-slate-500">To be started</span>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-sm bg-blue-50/20">
-                    <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider block">In Progress</span>
-                    <h4 className="text-2xl font-black text-blue-700 mt-0.5">{inProgressCount}</h4>
-                    <span className="text-[10px] font-bold text-blue-600">Active Work</span>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-2xl border border-purple-200 shadow-sm bg-purple-50/20">
-                    <span className="text-[10px] font-extrabold text-purple-600 uppercase tracking-wider block">Under Review</span>
-                    <h4 className="text-2xl font-black text-purple-700 mt-0.5">{submittedCount}</h4>
-                    <span className="text-[10px] font-bold text-purple-600">Submitted</span>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-sm bg-emerald-50/20">
-                    <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider block">Completed</span>
-                    <h4 className="text-2xl font-black text-emerald-700 mt-0.5">{completedCount}</h4>
-                    <span className="text-[10px] font-bold text-emerald-600">{completionRate}% Done</span>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-2xl border border-rose-200 shadow-sm bg-rose-50/20">
-                    <span className="text-[10px] font-extrabold text-rose-600 uppercase tracking-wider block">Overdue</span>
-                    <h4 className="text-2xl font-black text-rose-700 mt-0.5">{overdueCount}</h4>
-                    <span className="text-[10px] font-bold text-rose-600">Attention Required</span>
-                  </div>
-                </div>
-
-                {/* 3. FILTER & SEARCH CONTROLS */}
-                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="relative flex-1 w-full max-w-md">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                    <input
-                      type="text"
-                      value={taskSearchQuery}
-                      onChange={e => setTaskSearchQuery(e.target.value)}
-                      placeholder="Search my tasks by title, project, tags..."
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    <select
-                      value={taskPriorityFilter}
-                      onChange={e => setTaskPriorityFilter(e.target.value)}
-                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
-                    >
-                      <option value="ALL">All Priorities</option>
-                      <option value="URGENT">URGENT</option>
-                      <option value="HIGH">HIGH</option>
-                      <option value="MEDIUM">MEDIUM</option>
-                      <option value="LOW">LOW</option>
-                    </select>
-
-                    <div className="flex items-center p-1 bg-slate-100 rounded-xl">
-                      <button
-                        onClick={() => setTaskViewMode('kanban')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold ${taskViewMode === 'kanban' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500'}`}
-                      >
-                        Kanban
-                      </button>
-                      <button
-                        onClick={() => setTaskViewMode('list')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold ${taskViewMode === 'list' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500'}`}
-                      >
-                        List
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. KANBAN VIEW */}
-                {taskViewMode === 'kanban' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {kanbanColumns.map(col => {
-                      const colTasks = filteredTasks.filter((t: any) => {
-                        const s = (t.status || '').toUpperCase();
-                        if (col.id === 'ASSIGNED') return s === 'ASSIGNED' || s === 'TO DO' || s === 'PENDING' || s === 'ACCEPTED';
-                        if (col.id === 'IN_PROGRESS') return s === 'IN_PROGRESS' || s === 'IN PROGRESS' || s === 'BLOCKED' || s === 'REOPENED';
-                        if (col.id === 'SUBMITTED') return s === 'SUBMITTED' || s === 'IN REVIEW' || s === 'QA';
-                        if (col.id === 'COMPLETED') return s === 'COMPLETED' || s === 'DONE';
-                        return s === col.id;
-                      });
-
-                      return (
-                        <div key={col.id} className={`${col.bg} rounded-2xl p-3.5 border ${col.border} flex flex-col min-h-[480px]`}>
-                          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
-                            <span className="font-extrabold text-xs text-slate-800">{col.label}</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${col.badgeColor}`}>
-                              {colTasks.length}
-                            </span>
-                          </div>
-
-                          <div className="space-y-3 flex-1 overflow-y-auto">
-                            {colTasks.length === 0 ? (
-                              <div className="h-32 flex items-center justify-center text-center p-4 border border-dashed border-slate-200 rounded-xl text-slate-400 text-[11px]">
-                                No tasks in this column
-                              </div>
-                            ) : (
-                              colTasks.map((t: any) => {
-                                const isAssigned = (t.status || '').toUpperCase() === 'ASSIGNED' || (t.status || '').toUpperCase() === 'TO DO';
-                                const isInProg = (t.status || '').toUpperCase() === 'IN_PROGRESS' || (t.status || '').toUpperCase() === 'IN PROGRESS' || (t.status || '').toUpperCase() === 'REOPENED' || (t.status || '').toUpperCase() === 'BLOCKED';
-                                const isSub = (t.status || '').toUpperCase() === 'SUBMITTED' || (t.status || '').toUpperCase() === 'IN REVIEW';
-                                const isDone = (t.status || '').toUpperCase() === 'COMPLETED';
-
-                                return (
-                                  <div
-                                    key={t.id}
-                                    onClick={() => handleOpenTaskDetailModal(t)}
-                                    className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs hover:shadow-md transition space-y-3 cursor-pointer"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-mono text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{t.id}</span>
-                                      <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold ${
-                                        t.priority === 'URGENT' || t.priority === 'Critical' ? 'bg-rose-100 text-rose-700' :
-                                        t.priority === 'HIGH' || t.priority === 'High' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                                      }`}>
-                                        {t.priority}
-                                      </span>
-                                    </div>
-
-                                    <div>
-                                      <h4 className="font-bold text-xs text-slate-900 line-clamp-2">{t.title}</h4>
-                                      <p className="text-[10px] text-slate-400 mt-0.5">{t.project_name || 'ERP Suite'}</p>
-                                    </div>
-
-                                    {t.reopened_reason && (
-                                      <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg text-[10px] text-rose-800 font-medium">
-                                        <b>Manager Feedback:</b> {t.reopened_reason}
-                                      </div>
-                                    )}
-
-                                    {/* Progress Bar */}
-                                    <div>
-                                      <div className="flex justify-between text-[10px] font-bold mb-1">
-                                        <span className="text-slate-500">Progress</span>
-                                        <span className={(t.progress_percent || 0) >= 50 ? 'text-emerald-600' : 'text-rose-600'}>
-                                          {t.progress_percent || 0}%
-                                        </span>
-                                      </div>
-                                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full transition-all ${(t.progress_percent || 0) >= 50 ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                                          style={{ width: `${t.progress_percent || 0}%` }}
-                                        />
-                                      </div>
-                                    </div>
-
-                                    {/* Footer Details */}
-                                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-                                      <span className="font-mono">Due: {t.due_date ? String(t.due_date).split('T')[0] : 'Open'}</span>
-                                      <span className="text-slate-600 font-medium">By {t.assigned_by || 'Admin'}</span>
-                                    </div>
-
-                                    {/* Action Buttons */}
-                                    <div className="pt-1 flex gap-1.5">
-                                      {isAssigned && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleStartTask(t.id);
-                                          }}
-                                          className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold shadow-xs flex items-center justify-center gap-1 cursor-pointer"
-                                        >
-                                          ▶ Start Task
-                                        </button>
-                                      )}
-
-                                      {isInProg && (
-                                        <div className="grid grid-cols-2 gap-1.5 w-full">
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenProgressModal(t);
-                                            }}
-                                            className="py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
-                                          >
-                                            ⚡ Progress
-                                          </button>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleOpenSubmitReviewModal(t);
-                                            }}
-                                            className="py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
-                                          >
-                                            📤 Submit
-                                          </button>
-                                        </div>
-                                      )}
-
-                                      {isSub && (
-                                        <span className="w-full py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-bold text-center block">
-                                          ⏳ Awaiting Manager Approval
-                                        </span>
-                                      )}
-
-                                      {isDone && (
-                                        <span className="w-full py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold text-center block">
-                                          ✓ Approved & Completed
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  /* 5. LIST VIEW */
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-xs">
-                    <table className="w-full text-left text-slate-600">
-                      <thead className="bg-slate-50 text-slate-500 uppercase text-[10px] font-extrabold border-b border-slate-200">
-                        <tr>
-                          <th className="p-3.5">Task ID</th>
-                          <th className="p-3.5">Title</th>
-                          <th className="p-3.5">Project</th>
-                          <th className="p-3.5">Priority</th>
-                          <th className="p-3.5">Due Date</th>
-                          <th className="p-3.5">Progress</th>
-                          <th className="p-3.5">Status</th>
-                          <th className="p-3.5 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {filteredTasks.map((t: any) => (
-                          <tr key={t.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => handleOpenTaskDetailModal(t)}>
-                            <td className="p-3.5 font-mono text-blue-600 font-bold">{t.id}</td>
-                            <td className="p-3.5 font-bold text-slate-900">{t.title}</td>
-                            <td className="p-3.5 text-slate-500">{t.project_name || 'General'}</td>
-                            <td className="p-3.5 font-extrabold text-[10px]">{t.priority}</td>
-                            <td className="p-3.5 font-mono text-[11px]">{t.due_date ? String(t.due_date).split('T')[0] : 'Open'}</td>
-                            <td className="p-3.5 font-bold">{t.progress_percent || 0}%</td>
-                            <td className="p-3.5">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700">
-                                {t.status}
-                              </span>
-                            </td>
-                            <td className="p-3.5 text-right space-x-1.5" onClick={e => e.stopPropagation()}>
-                              {((t.status || '').toUpperCase() === 'ASSIGNED' || (t.status || '').toUpperCase() === 'TO DO') && (
-                                <button onClick={() => handleStartTask(t.id)} className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-bold">
-                                  Start
-                                </button>
-                              )}
-                              {((t.status || '').toUpperCase() === 'IN_PROGRESS' || (t.status || '').toUpperCase() === 'IN PROGRESS') && (
-                                <>
-                                  <button onClick={() => handleOpenProgressModal(t)} className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold">
-                                    Progress
-                                  </button>
-                                  <button onClick={() => handleOpenSubmitReviewModal(t)} className="px-2.5 py-1 bg-purple-600 text-white rounded-lg text-[10px] font-bold">
-                                    Submit
-                                  </button>
-                                </>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* MODAL: UPDATE PROGRESS & NOTES */}
-                {showProgressModal && progressUpdateTask && (
-                  <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in">
-                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                        <div>
-                          <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                            {progressUpdateTask.id}
-                          </span>
-                          <h3 className="font-black text-slate-900 text-sm mt-1">Update Task Progress</h3>
-                        </div>
-                        <button onClick={() => setShowProgressModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
-                      </div>
-
-                      <form onSubmit={handleSaveProgress} className="space-y-4 text-xs">
-                        <div>
-                          <p className="font-bold text-slate-800 mb-2">{progressUpdateTask.title}</p>
-                          <div className="flex justify-between items-center font-bold text-xs text-blue-600 mb-1">
-                            <span>Completion Percentage:</span>
-                            <span className="text-base font-black">{newProgressValue}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="5"
-                            value={newProgressValue}
-                            onChange={e => setNewProgressValue(parseInt(e.target.value, 10))}
-                            className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-100 rounded-lg"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Progress Note / Milestone Update</label>
-                          <textarea
-                            rows={3}
-                            value={newProgressNote}
-                            onChange={e => setNewProgressNote(e.target.value)}
-                            placeholder="e.g. Payroll API completed. Payment validation remaining..."
-                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:bg-white outline-none"
-                          />
-                        </div>
-
-                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                          <button
-                            type="button"
-                            onClick={() => setShowProgressModal(false)}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={isSavingTaskProgress}
-                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md shadow-blue-500/20"
-                          >
-                            {isSavingTaskProgress ? 'Updating...' : 'Update Progress'}
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
-
-                {/* MODAL: SUBMIT FOR REVIEW */}
-                {showSubmitReviewModal && submitReviewTask && (
-                  <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in">
-                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                        <div>
-                          <span className="text-[10px] font-mono font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md">
-                            {submitReviewTask.id}
-                          </span>
-                          <h3 className="font-black text-slate-900 text-sm mt-1">Submit Task for Manager Review</h3>
-                        </div>
-                        <button onClick={() => setShowSubmitReviewModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
-                      </div>
-
-                      <form onSubmit={handleConfirmSubmitReview} className="space-y-4 text-xs">
-                        <div className="p-3 bg-purple-50 rounded-xl border border-purple-100">
-                          <p className="font-bold text-purple-950">{submitReviewTask.title}</p>
-                          <p className="text-[11px] text-purple-700 mt-0.5">Assigned by {submitReviewTask.assigned_by || 'Admin'}</p>
-                        </div>
-
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Actual Hours Spent</label>
-                          <input
-                            type="number"
-                            step="0.5"
-                            value={actualHoursInput}
-                            onChange={e => setActualHoursInput(e.target.value)}
-                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block font-bold text-slate-700 mb-1">Completion Note / Result Deliverable</label>
-                          <textarea
-                            rows={3}
-                            required
-                            value={completionNoteInput}
-                            onChange={e => setCompletionNoteInput(e.target.value)}
-                            placeholder="Provide summary of work completed, PR link, or test results..."
-                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:bg-white outline-none"
-                          />
-                        </div>
-
-                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                          <button
-                            type="button"
-                            onClick={() => setShowSubmitReviewModal(false)}
-                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={isSavingTaskProgress}
-                            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-md shadow-purple-500/20"
-                          >
-                            {isSavingTaskProgress ? 'Submitting...' : 'Submit Deliverable'}
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
-
-                {/* MODAL: TASK DETAIL & TIMELINE */}
-                {selectedTaskDetailModal && (
-                  <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                        <div>
-                          <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                            {selectedTaskDetailModal.id}
-                          </span>
-                          <h3 className="font-black text-slate-900 text-base mt-1">
-                            {selectedTaskDetailModal.title}
-                          </h3>
-                        </div>
-                        <button onClick={() => setSelectedTaskDetailModal(null)} className="text-slate-400 hover:text-slate-600 font-bold p-1">✕</button>
-                      </div>
-
-                      <div className="space-y-3 text-xs">
-                        {/* Project & Module Badge Box */}
-                        <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Project</span>
-                            <span className="font-extrabold text-slate-900">{selectedTaskDetailModal.project_name || 'ERP Core Suite'}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Target Module</span>
-                            <span className="font-extrabold text-blue-700">{selectedTaskDetailModal.module_name || 'Core Module'}</span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Deliverable</span>
-                            <span className="font-bold text-purple-700">{selectedTaskDetailModal.deliverable_type || 'Full-Stack Implementation'}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Target Deadline</span>
-                            <span className="font-mono font-bold text-rose-600">{selectedTaskDetailModal.due_date ? String(selectedTaskDetailModal.due_date).split('T')[0] : 'Open'}</span>
-                          </div>
-                        </div>
-
-                        {/* Task Documents & Attachments */}
-                        {selectedTaskDetailModal.attachments && selectedTaskDetailModal.attachments.length > 0 ? (
-                          <div className="space-y-1.5">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Task Documents ({selectedTaskDetailModal.attachments.length})</span>
-                            {selectedTaskDetailModal.attachments.map((att: any, idx: number) => (
-                              <div
-                                key={idx}
-                                onClick={() =>
-                                  setPreviewDocModal({
-                                    fileName: att.fileName || att.file_name,
-                                    fileUrl: att.fileUrl || att.file_url,
-                                    taskTitle: selectedTaskDetailModal.title,
-                                    projectName: selectedTaskDetailModal.project_name,
-                                    scopeOfWork: selectedTaskDetailModal.description
-                                  })
-                                }
-                                className="flex items-center justify-between p-3 bg-rose-50 hover:bg-rose-100/80 border border-rose-200 rounded-2xl text-rose-900 text-xs transition cursor-pointer group shadow-2xs"
-                              >
-                                <div className="flex items-center gap-2 truncate">
-                                  <FileText size={15} className="text-rose-600 shrink-0 group-hover:scale-110 transition" />
-                                  <span className="font-bold">Required Spec:</span>
-                                  <span className="font-mono truncate">{att.fileName || att.file_name}</span>
-                                </div>
-                                <span className="px-2.5 py-1 bg-white border border-rose-200 rounded-lg font-bold text-[10px] text-rose-700 shrink-0 flex items-center gap-1 group-hover:bg-rose-600 group-hover:text-white transition shadow-2xs">
-                                  <Eye size={11} /> View Spec / PDF Doc
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : selectedTaskDetailModal.pdf_attachment_name ? (
-                          <div
-                            onClick={() =>
-                              setPreviewDocModal({
-                                fileName: selectedTaskDetailModal.pdf_attachment_name,
-                                fileUrl: selectedTaskDetailModal.pdf_attachment_url,
-                                taskTitle: selectedTaskDetailModal.title,
-                                projectName: selectedTaskDetailModal.project_name,
-                                scopeOfWork: selectedTaskDetailModal.description
-                              })
-                            }
-                            className="flex items-center justify-between p-3 bg-rose-50 hover:bg-rose-100/80 border border-rose-200 rounded-2xl text-rose-900 text-xs transition cursor-pointer group shadow-2xs"
-                          >
-                            <div className="flex items-center gap-2 truncate">
-                              <FileText size={15} className="text-rose-600 shrink-0 group-hover:scale-110 transition" />
-                              <span className="font-bold">Required Spec:</span>
-                              <span className="font-mono truncate">{selectedTaskDetailModal.pdf_attachment_name}</span>
-                            </div>
-                            <span className="px-2.5 py-1 bg-white border border-rose-200 rounded-lg font-bold text-[10px] text-rose-700 shrink-0 flex items-center gap-1 group-hover:bg-rose-600 group-hover:text-white transition shadow-2xs">
-                              <Eye size={11} /> View Spec / PDF Doc
-                            </span>
-                          </div>
-                        ) : null}
-
-                        {selectedTaskDetailModal.description && (
-                          <div className="p-3.5 bg-blue-50/50 rounded-2xl border border-blue-100 text-slate-700 space-y-1">
-                            <span className="text-[10px] font-bold text-blue-900 uppercase tracking-wider block">Scope of Work & Requirements</span>
-                            <p className="text-xs leading-relaxed">{selectedTaskDetailModal.description}</p>
-                          </div>
-                        )}
-
-                        {selectedTaskDetailModal.instructions && (
-                          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-slate-700 space-y-1">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Instructions & Constraints</span>
-                            <p className="text-xs whitespace-pre-line leading-relaxed">{selectedTaskDetailModal.instructions}</p>
-                          </div>
-                        )}
-
-                        {/* Milestone Checklist */}
-                        {selectedTaskDetailModal.checklist && selectedTaskDetailModal.checklist.length > 0 && (
-                          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Milestone Checklist</span>
-                              <span className="text-[10px] font-bold text-blue-600">
-                                {selectedTaskDetailModal.checklist.filter((c: any) => c.completed).length} / {selectedTaskDetailModal.checklist.length} Done
-                              </span>
-                            </div>
-                            <div className="space-y-1.5">
-                              {selectedTaskDetailModal.checklist.map((item: any, idx: number) => (
-                                <div key={item.id || idx} className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200/80">
-                                  <span className={`w-4 h-4 rounded text-[9px] font-bold flex items-center justify-center ${item.completed ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                                    {item.completed ? '✓' : (idx + 1)}
-                                  </span>
-                                  <span className={item.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-800 font-medium'}>
-                                    {item.label}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {selectedTaskDetailModal.manager_feedback && (
-                          <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-emerald-900 space-y-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider block text-emerald-800">Manager Evaluation & Feedback</span>
-                            <p className="text-xs leading-relaxed">{selectedTaskDetailModal.manager_feedback}</p>
-                          </div>
-                        )}
-
-                        {/* Comments & Collaboration */}
-                        <div className="space-y-2.5 pt-3 border-t border-slate-100">
-                          <div className="flex justify-between items-center">
-                            <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                              <MessageSquare size={13} className="text-slate-500" /> Comments & Discussion
-                            </h4>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {(selectedTaskDetailModal.comments || []).length} comment{((selectedTaskDetailModal.comments || []).length === 1 ? '' : 's')}
-                            </span>
-                          </div>
-
-                          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                            {(selectedTaskDetailModal.comments || []).length === 0 ? (
-                              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center">
-                                <p className="text-slate-400 text-[11px] italic">No comments yet. Start the conversation below.</p>
-                              </div>
-                            ) : (
-                              (selectedTaskDetailModal.comments || []).map((cmt: any) => {
-                                const isReply = Boolean(cmt.parent_comment_id);
-                                return (
-                                  <div
-                                    key={cmt.id}
-                                    className={`p-2.5 rounded-xl border transition ${
-                                      isReply
-                                        ? 'ml-6 bg-slate-50/80 border-slate-200/90'
-                                        : 'bg-white border-slate-200 shadow-2xs'
-                                    }`}
-                                  >
-                                    <div className="flex justify-between items-center text-[10px]">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="font-bold text-slate-900">{cmt.author_name}</span>
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-slate-100 text-slate-600 font-medium">
-                                          {cmt.author_role || 'Employee'}
-                                        </span>
-                                        {isReply && (
-                                          <span className="text-[9px] text-blue-600 font-medium">↳ Reply</span>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-slate-400 font-mono text-[9px]">
-                                          {cmt.created_at ? new Date(cmt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setReplyingToCommentId(cmt.id);
-                                            setTaskCommentInput(`@${cmt.author_name} `);
-                                          }}
-                                          className="text-blue-600 hover:text-blue-800 text-[10px] font-semibold cursor-pointer"
-                                        >
-                                          Reply
-                                        </button>
-                                      </div>
-                                    </div>
-                                    <p className="text-slate-700 text-xs mt-1 leading-relaxed">{cmt.comment}</p>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-
-                          {replyingToCommentId && (
-                            <div className="flex items-center justify-between px-2.5 py-1 bg-blue-50 text-blue-800 rounded-lg text-[10px] font-medium border border-blue-200">
-                              <span>Replying to comment #{replyingToCommentId.slice(-6)}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReplyingToCommentId(null);
-                                  setTaskCommentInput('');
-                                }}
-                                className="hover:text-blue-900 font-bold"
-                              >
-                                ✕ Cancel
-                              </button>
-                            </div>
-                          )}
-
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={taskCommentInput}
-                              onChange={e => setTaskCommentInput(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                  e.preventDefault();
-                                  handleAddTaskComment(selectedTaskDetailModal.id);
-                                }
-                              }}
-                              placeholder={replyingToCommentId ? "Write your reply..." : "Leave a comment for this task..."}
-                              className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                            <button
-                              type="button"
-                              disabled={isPostingComment || !taskCommentInput.trim()}
-                              onClick={() => handleAddTaskComment(selectedTaskDetailModal.id)}
-                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs cursor-pointer flex items-center gap-1 transition"
-                            >
-                              {isPostingComment ? 'Posting...' : 'Post'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end pt-3 border-t border-slate-100">
-                        <button
-                          onClick={() => setSelectedTaskDetailModal(null)}
-                          className="px-4 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {/* VIEW: PROJECT → TEAM → EMPLOYEE → MODULE → TASK → PROGRESS HIERARCHY */}
+          {subSection === 'tasks' && (
+            <MyTasksView employeeId={currentEmpId} />
+          )}
 
           {/* VIEW: EMPLOYEE PERFORMANCE (DYNAMIC DERIVATION) */}
           {subSection === 'performance' && (() => {

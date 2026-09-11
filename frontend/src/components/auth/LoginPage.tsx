@@ -52,7 +52,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           localStorage.setItem('crm_token', data.token);
         }
 
-        const effectiveRole = role === 'Executive' ? 'Executive' : (emp.role || 'Employee');
+        const effectiveRole = role === 'Employee' ? 'Employee' : (role === 'Executive' ? 'Executive' : (emp.role || 'Employee'));
 
         if (setUserProfile) {
           setUserProfile({

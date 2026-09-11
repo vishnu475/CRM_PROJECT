@@ -93,7 +93,7 @@ export class TaskService {
    */
   static async resolveProject(projectIdOrName) {
     if (!projectIdOrName) {
-      return { id: 'PROJECT-001', name: 'HRMS Cloud Migration' };
+      return { id: 'PROJECT-001', name: 'HRMS Cloud Migration', repository_url: null, weightage: 100 };
     }
     const queryTerm = String(projectIdOrName).trim();
     
@@ -103,7 +103,7 @@ export class TaskService {
       [queryTerm]
     );
     if (res.rows.length > 0) {
-      return { id: res.rows[0].id, name: res.rows[0].name };
+      return res.rows[0];
     }
 
     // Try partial name match
@@ -112,11 +112,11 @@ export class TaskService {
       [`%${queryTerm}%`]
     );
     if (res.rows.length > 0) {
-      return { id: res.rows[0].id, name: res.rows[0].name };
+      return res.rows[0];
     }
 
     // Fallback standard
-    return { id: 'PROJECT-001', name: queryTerm || 'HRMS Cloud Migration' };
+    return { id: 'PROJECT-001', name: queryTerm || 'HRMS Cloud Migration', repository_url: null, weightage: 100 };
   }
 
   /**
@@ -216,13 +216,13 @@ export class TaskService {
         COALESCE(p.id, t.project_id, 'PROJECT-001') as project_id,
         COALESCE(p.name, t.project_name, 'General Project') as "projectName",
         COALESCE(p.name, t.project_name, 'General Project') as project_name,
-        e.emp_code as "employeeId",
-        e.emp_code as assigned_to,
-        e.emp_code as assigned_to_employee_id,
-        e.emp_code as employee_code,
-        e.name as "employeeName",
-        e.name as assigned_to_name,
-        e.name as employee_name,
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as "employeeId",
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as assigned_to,
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as assigned_to_employee_id,
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as employee_code,
+        COALESCE(t.assigned_to_name, e.name, 'Unassigned') as "employeeName",
+        COALESCE(t.assigned_to_name, e.name, 'Unassigned') as assigned_to_name,
+        COALESCE(t.assigned_to_name, e.name, 'Unassigned') as employee_name,
         COALESCE(e.department, t.department_name, 'Engineering') as department,
         COALESCE(e.department, t.department_name, 'Engineering') as department_name,
         COALESCE(e.designation, 'Specialist') as employee_designation,
@@ -237,6 +237,10 @@ export class TaskService {
         t.assigned_by_id,
         t.category,
         t.instructions,
+        t.module_name,
+        t.deliverable_type,
+        t.video_url,
+        t.reference_link,
         t.completion_note,
         t.manager_feedback,
         t.submitted_at,
@@ -247,12 +251,21 @@ export class TaskService {
         t.checklist,
         t.pdf_attachment_name,
         t.pdf_attachment_url,
+        COALESCE(t.assignment_type, 'INDIVIDUAL') as assignment_type,
+        t.group_id,
+        t.group_name,
+        COALESCE(t.task_weightage, 25.0) as task_weightage,
+        COALESCE(t.repository_url, p.repository_url) as repository_url,
+        t.review_target_date,
+        t.approved_by,
+        t.approved_at,
+        t.approval_comment,
         CASE 
           WHEN t.due_date < CURRENT_DATE AND t.status NOT IN ('COMPLETED', 'CANCELLED') THEN TRUE 
           ELSE FALSE 
         END as is_overdue
       FROM tasks t
-      INNER JOIN employees e ON (
+      LEFT JOIN employees e ON (
         t.assigned_to_employee_id = e.emp_code 
         OR t.assigned_to = e.emp_code 
         OR t.assigned_to = e.id
@@ -266,15 +279,21 @@ export class TaskService {
     `;
     const params = [];
 
-    // Role-based scoping or single employee filter (Strict ID match)
+    // Role-based scoping or single employee filter (Strict ID match + Group membership)
     if (user.role === 'Employee' || user.isEmployeeOnly) {
       const authEmp = await this.resolveEmployee(user.empCode || user.id);
       params.push(authEmp.emp_code);
-      queryStr += ` AND (t.assigned_to_employee_id = $${params.length} OR t.assigned_to = $${params.length} OR e.emp_code = $${params.length})`;
+      queryStr += ` AND (
+        (COALESCE(t.assignment_type, 'INDIVIDUAL') != 'GROUP' AND (t.assigned_to_employee_id = $${params.length} OR t.assigned_to = $${params.length} OR e.emp_code = $${params.length}))
+        OR (t.id IN (SELECT task_id FROM task_member_assignments WHERE employee_id = $${params.length}))
+      )`;
     } else if (employeeId && employeeId !== 'ALL') {
       const emp = await this.resolveEmployee(employeeId).catch(() => ({ emp_code: employeeId }));
       params.push(emp.emp_code || employeeId);
-      queryStr += ` AND (t.assigned_to_employee_id = $${params.length} OR t.assigned_to = $${params.length} OR e.emp_code = $${params.length})`;
+      queryStr += ` AND (
+        (COALESCE(t.assignment_type, 'INDIVIDUAL') != 'GROUP' AND (t.assigned_to_employee_id = $${params.length} OR t.assigned_to = $${params.length} OR e.emp_code = $${params.length}))
+        OR (t.id IN (SELECT task_id FROM task_member_assignments WHERE employee_id = $${params.length}))
+      )`;
     }
 
     if (department && department !== 'ALL') {
@@ -308,10 +327,10 @@ export class TaskService {
 
     if (projectId && projectId !== 'ALL') {
       params.push(projectId);
-      queryStr += ` AND (t.project_id = $${params.length} OR p.id = $${params.length})`;
+      queryStr += ` AND (t.project_id = $${params.length} OR p.id = $${params.length} OR p.code = $${params.length})`;
     } else if (project && project !== 'ALL') {
       params.push(`%${project}%`);
-      queryStr += ` AND (t.project_name ILIKE $${params.length} OR p.name ILIKE $${params.length} OR t.project_id ILIKE $${params.length})`;
+      queryStr += ` AND (t.project_name ILIKE $${params.length} OR p.name ILIKE $${params.length} OR t.project_id ILIKE $${params.length} OR p.code ILIKE $${params.length})`;
     }
 
     if (search && search.trim()) {
@@ -322,6 +341,7 @@ export class TaskService {
         t.id ILIKE $${params.length} OR
         e.name ILIKE $${params.length} OR
         e.emp_code ILIKE $${params.length} OR
+        t.group_name ILIKE $${params.length} OR
         p.name ILIKE $${params.length}
       )`;
     }
@@ -342,10 +362,11 @@ export class TaskService {
     const taskIds = result.rows.map(t => t.id);
 
     if (taskIds.length > 0) {
-      const attRes = await pool.query(
-        `SELECT * FROM task_attachments WHERE task_id = ANY($1::varchar[]) ORDER BY created_at ASC`,
-        [taskIds]
-      );
+      const [attRes, memRes] = await Promise.all([
+        pool.query(`SELECT * FROM task_attachments WHERE task_id = ANY($1::varchar[]) ORDER BY created_at ASC`, [taskIds]),
+        pool.query(`SELECT * FROM task_member_assignments WHERE task_id = ANY($1::varchar[]) ORDER BY is_team_head DESC, employee_name ASC`, [taskIds])
+      ]);
+
       const attMap = {};
       for (const a of attRes.rows) {
         if (!attMap[a.task_id]) attMap[a.task_id] = [];
@@ -359,8 +380,26 @@ export class TaskService {
           createdAt: a.created_at
         });
       }
+
+      const memMap = {};
+      for (const m of memRes.rows) {
+        if (!memMap[m.task_id]) memMap[m.task_id] = [];
+        memMap[m.task_id].push({
+          id: m.id,
+          taskId: m.task_id,
+          employeeId: m.employee_id,
+          employeeName: m.employee_name,
+          isTeamHead: Boolean(m.is_team_head),
+          role: m.role || 'Member',
+          progressPercent: m.employee_progress || 0,
+          status: m.employee_status || 'IN_PROGRESS'
+        });
+      }
+
       return result.rows.map(t => ({
         ...t,
+        members: memMap[t.id] || [],
+        memberCount: (memMap[t.id] || []).length,
         attachments: attMap[t.id] || [],
         pdf_attachment_url: t.pdf_attachment_url || (attMap[t.id]?.[0]?.fileUrl || null),
         pdf_attachment_name: t.pdf_attachment_name || (attMap[t.id]?.[0]?.fileName || null)
@@ -386,13 +425,13 @@ export class TaskService {
         COALESCE(p.id, t.project_id, 'PROJECT-001') as project_id,
         COALESCE(p.name, t.project_name, 'General Project') as "projectName",
         COALESCE(p.name, t.project_name, 'General Project') as project_name,
-        e.emp_code as "employeeId",
-        e.emp_code as assigned_to,
-        e.emp_code as assigned_to_employee_id,
-        e.emp_code as employee_code,
-        e.name as "employeeName",
-        e.name as assigned_to_name,
-        e.name as employee_name,
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as "employeeId",
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as assigned_to,
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as assigned_to_employee_id,
+        COALESCE(e.emp_code, t.assigned_to_employee_id, t.assigned_to) as employee_code,
+        COALESCE(t.assigned_to_name, e.name, 'Unassigned') as "employeeName",
+        COALESCE(t.assigned_to_name, e.name, 'Unassigned') as assigned_to_name,
+        COALESCE(t.assigned_to_name, e.name, 'Unassigned') as employee_name,
         COALESCE(e.department, t.department_name, 'Engineering') as department,
         COALESCE(e.department, t.department_name, 'Engineering') as department_name,
         COALESCE(e.designation, 'Specialist') as employee_designation,
@@ -407,6 +446,10 @@ export class TaskService {
         t.assigned_by_id,
         t.category,
         t.instructions,
+        t.module_name,
+        t.deliverable_type,
+        t.video_url,
+        t.reference_link,
         t.completion_note,
         t.manager_feedback,
         t.submitted_at,
@@ -417,12 +460,21 @@ export class TaskService {
         t.checklist,
         t.pdf_attachment_name,
         t.pdf_attachment_url,
+        COALESCE(t.assignment_type, 'INDIVIDUAL') as assignment_type,
+        t.group_id,
+        t.group_name,
+        COALESCE(t.task_weightage, 25.0) as task_weightage,
+        COALESCE(t.repository_url, p.repository_url) as repository_url,
+        t.review_target_date,
+        t.approved_by,
+        t.approved_at,
+        t.approval_comment,
         CASE 
           WHEN t.due_date < CURRENT_DATE AND t.status NOT IN ('COMPLETED', 'CANCELLED') THEN TRUE 
           ELSE FALSE 
         END as is_overdue
       FROM tasks t
-      INNER JOIN employees e ON (
+      LEFT JOIN employees e ON (
         t.assigned_to_employee_id = e.emp_code 
         OR t.assigned_to = e.emp_code 
         OR t.assigned_to = e.id
@@ -442,12 +494,38 @@ export class TaskService {
 
     const task = taskRes.rows[0];
 
+    // Fetch member assignments
+    const memRes = await pool.query(
+      `SELECT 
+        id,
+        task_id as "taskId",
+        task_id,
+        employee_id as "employeeId",
+        employee_id,
+        employee_name as "employeeName",
+        employee_name as name,
+        COALESCE(role, 'Member') as role,
+        COALESCE(is_team_head, false) as "isTeamHead",
+        COALESCE(is_team_head, false) as is_team_head,
+        COALESCE(employee_progress, 0) as "progressPercent",
+        COALESCE(employee_progress, 0) as progress,
+        COALESCE(employee_status, 'IN_PROGRESS') as status,
+        notes,
+        assigned_at,
+        updated_at
+       FROM task_member_assignments 
+       WHERE task_id = $1 
+       ORDER BY is_team_head DESC, employee_name ASC`,
+      [taskId]
+    );
+
     // Check Employee IDOR authorization
     if (user.role === 'Employee' || user.isEmployeeOnly) {
       const authEmp = await this.resolveEmployee(user.empCode || user.id);
-      const isOwner = task.assigned_to === authEmp.emp_code || task.assigned_to_employee_id === authEmp.emp_code || task.assigned_to === authEmp.id;
-      if (!isOwner) {
-        throw new Error('Access denied: You are only authorized to view your own assigned tasks.');
+      const isDirectOwner = task.assigned_to === authEmp.emp_code || task.assigned_to_employee_id === authEmp.emp_code || task.assigned_to === authEmp.id;
+      const isMember = memRes.rows.some(m => m.employee_id === authEmp.emp_code || m.employee_id === authEmp.id);
+      if (!isDirectOwner && !isMember) {
+        throw new Error('Access denied: You are only authorized to view your own assigned tasks or group tasks.');
       }
     }
 
@@ -470,6 +548,8 @@ export class TaskService {
 
     return {
       ...task,
+      members: memRes.rows,
+      memberCount: memRes.rows.length,
       activities: actRes.rows,
       comments: comRes.rows,
       attachments: formattedAttachments,
@@ -482,75 +562,114 @@ export class TaskService {
    * 3. CREATE & ASSIGN TASK (Admin / Manager)
    */
   static async createTask(taskData, creatorUser = {}) {
-    let rawAssigned = taskData.assignedTo || taskData.assigned_to || taskData.assignedToId || taskData.employeeId || taskData.assigned_to_employee_id;
-    if (Array.isArray(rawAssigned)) {
-      if (rawAssigned.length === 0) {
-        throw new Error('At least one assigned employee is required.');
-      }
-      if (rawAssigned.length > 1) {
-        const createdTasks = [];
-        for (const singleAssignee of rawAssigned) {
-          const singleTask = await this.createTask({
-            ...taskData,
-            assignedTo: singleAssignee
-          }, creatorUser);
-          createdTasks.push(singleTask);
-        }
-        return createdTasks[0];
-      }
-      rawAssigned = rawAssigned[0];
-    }
-    const assignedTo = rawAssigned;
+    const assignmentType = (taskData.assignmentType || taskData.assignment_type || (taskData.groupId || taskData.group_id ? 'GROUP' : 'INDIVIDUAL')).toUpperCase();
     const title = taskData.title || taskData.taskTitle;
     const description = taskData.description || '';
-    const department = taskData.department || taskData.department_name || taskData.departmentName;
+    const department = taskData.department || taskData.department_name || taskData.departmentName || 'Engineering';
     const priority = (taskData.priority || 'MEDIUM').toUpperCase();
     const startDate = taskData.startDate || taskData.start_date || new Date().toISOString().split('T')[0];
-    const defaultDue = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+    const defaultDue = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
     const dueDate = taskData.dueDate || taskData.due_date || defaultDue;
-    const estimatedHours = Number(taskData.estimatedHours || taskData.estimated_hours || 8.0);
-    
+    const estimatedHours = Number(taskData.estimatedHours || taskData.estimated_hours || 16.0);
+    const taskWeightage = Number(taskData.taskWeightage || taskData.task_weightage || 25.0);
+
+    // 5-Day Review Rule: Calculate review target date (5 days prior to dueDate)
+    let reviewTargetDate = taskData.reviewTargetDate || taskData.review_target_date;
+    if (!reviewTargetDate && dueDate) {
+      const d = new Date(dueDate);
+      d.setDate(d.getDate() - 5);
+      reviewTargetDate = d.toISOString().split('T')[0];
+    }
+
     // Resolve Project strictly via ID/Name
     const project = await this.resolveProject(taskData.projectId || taskData.project_id || taskData.projectName || taskData.project_name);
     const projectId = project.id;
     const projectName = project.name;
+    const repositoryUrl = taskData.repositoryUrl || taskData.repository_url || project.repository_url || null;
 
     const category = taskData.category || 'Feature Development';
     const instructions = taskData.instructions || '';
-    const tags = taskData.tags || 'Enterprise, HRMS';
+    const tags = taskData.tags || 'Enterprise, CRM';
+    const creatorName = creatorUser.name || 'Admin';
+    const creatorId = creatorUser.id || creatorUser.empCode || 'ADM-001';
 
     if (!title || !title.trim()) {
       throw new Error('Task title is required.');
     }
-    if (!assignedTo) {
-      throw new Error('Assigned Employee is required.');
-    }
-
-    // 1. Validate Employee exists & is Active (Strict)
-    const emp = await this.resolveEmployee(assignedTo);
-    if (emp.status === 'Exited' || emp.status === 'Terminated') {
-      throw new Error(`Cannot assign task to inactive/exited employee (${emp.name}).`);
-    }
-
-    // 2. Validate Department relationship if specified
-    const empDept = emp.department || 'Engineering';
-    const assignedDept = department && department !== 'ALL' ? department : empDept;
-    const empCode = emp.emp_code || emp.id;
-    const creatorName = creatorUser.name || 'Admin';
-    const creatorId = creatorUser.id || creatorUser.empCode || 'ADM-001';
 
     const taskId = taskData.id || taskData.taskId || `TSK-${Date.now().toString(36).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
-
     const moduleName = taskData.moduleName || taskData.module_name || 'Core Module';
     const deliverableType = taskData.deliverableType || taskData.deliverable_type || 'Code Implementation & Docs';
+    const videoUrl = taskData.videoUrl || taskData.video_url || null;
+    const referenceLink = taskData.referenceLink || taskData.reference_link || taskData.deliverableLink || null;
     let pdfAttachmentName = taskData.pdfAttachmentName || taskData.pdf_attachment_name || null;
     let pdfAttachmentUrl = taskData.pdfAttachmentUrl || taskData.pdf_attachment_url || null;
     const aiRecommendationLog = taskData.aiRecommendationLog || taskData.ai_recommendation_log || null;
     const checklist = taskData.checklist ? (typeof taskData.checklist === 'string' ? taskData.checklist : JSON.stringify(taskData.checklist)) : JSON.stringify([]);
 
-    const savedAttachments = [];
+    let assignedToCode = '';
+    let assignedToName = '';
+    let assignedDept = department;
+    let groupId = null;
+    let groupName = null;
+    let groupMembersList = [];
 
-    // Save primary attachment if present
+    if (assignmentType === 'GROUP') {
+      groupId = taskData.groupId || taskData.group_id;
+      if (!groupId) {
+        throw new Error('Group selection is required for Group task assignment.');
+      }
+
+      // Fetch group details
+      const grpRes = await pool.query(
+        `SELECT * FROM project_groups WHERE id = $1 OR name = $1 LIMIT 1`,
+        [groupId]
+      );
+      if (grpRes.rows.length === 0) {
+        throw new Error(`Project group ${groupId} not found.`);
+      }
+      const group = grpRes.rows[0];
+      groupId = group.id;
+      groupName = group.name;
+      assignedToCode = group.team_head_id;
+      assignedToName = `${group.name} (${group.team_head_name})`;
+
+      // Fetch group members
+      const memRes = await pool.query(
+        `SELECT gm.*, COALESCE(e.name, gm.employee_name) as emp_name, COALESCE(e.emp_code, gm.employee_id) as emp_code, e.department
+         FROM group_members gm
+         LEFT JOIN employees e ON (gm.employee_id = e.emp_code OR gm.employee_id = e.id)
+         WHERE gm.group_id = $1`,
+        [groupId]
+      );
+      if (memRes.rows.length === 0) {
+        throw new Error(`Group "${groupName}" does not have any active members.`);
+      }
+      groupMembersList = memRes.rows;
+      if (groupMembersList[0]?.department) {
+        assignedDept = groupMembersList[0].department;
+      }
+    } else {
+      // INDIVIDUAL ASSIGNMENT
+      let rawAssigned = taskData.assignedTo || taskData.assigned_to || taskData.assignedToId || taskData.employeeId || taskData.assigned_to_employee_id;
+      if (Array.isArray(rawAssigned)) {
+        if (rawAssigned.length === 0) throw new Error('At least one assigned employee is required.');
+        rawAssigned = rawAssigned[0];
+      }
+      if (!rawAssigned) {
+        throw new Error('Assigned Employee is required for Individual assignment.');
+      }
+
+      const emp = await this.resolveEmployee(rawAssigned);
+      if (emp.status === 'Exited' || emp.status === 'Terminated') {
+        throw new Error(`Cannot assign task to inactive/exited employee (${emp.name}).`);
+      }
+      assignedToCode = emp.emp_code || emp.id;
+      assignedToName = emp.name;
+      assignedDept = emp.department || department;
+    }
+
+    const savedAttachments = [];
     if (pdfAttachmentUrl && pdfAttachmentName) {
       const saved = saveAttachmentToDisk(taskId, pdfAttachmentName, pdfAttachmentUrl, creatorName);
       if (saved) {
@@ -559,7 +678,6 @@ export class TaskService {
       }
     }
 
-    // Save multiple attachments if passed in array
     if (Array.isArray(taskData.attachments) && taskData.attachments.length > 0) {
       for (const att of taskData.attachments) {
         const attName = att.name || att.fileName;
@@ -577,6 +695,7 @@ export class TaskService {
       }
     }
 
+    // Insert task row
     const res = await pool.query(
       `INSERT INTO tasks (
         id, task_id, title, description, department_id, department_name, 
@@ -584,7 +703,9 @@ export class TaskService {
         assigned_to, assigned_to_employee_id, assigned_to_name, assigned_by, assigned_by_id,
         priority, status, progress_percent, start_date, due_date,
         estimated_hours, actual_hours, category, instructions, tags,
-        module_name, deliverable_type, pdf_attachment_name, pdf_attachment_url, checklist, ai_recommendation_log,
+        module_name, deliverable_type, video_url, reference_link,
+        pdf_attachment_name, pdf_attachment_url, checklist, ai_recommendation_log,
+        assignment_type, group_id, group_name, task_weightage, repository_url, review_target_date,
         created_at, updated_at
       )
       VALUES (
@@ -593,7 +714,9 @@ export class TaskService {
         $8, $8, $9, $10, $11,
         $12, 'IN_PROGRESS', 0, $13, $14,
         $15, 0.0, $16, $17, $18,
-        $19, $20, $21, $22, $23::jsonb, $24,
+        $19, $20, $21, $22,
+        $23, $24, $25::jsonb, $26,
+        $27, $28, $29, $30, $31, $32,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *`,
@@ -605,23 +728,31 @@ export class TaskService {
         assignedDept,
         projectId,
         projectName,
-        empCode,
-        emp.name,
+        assignedToCode,
+        assignedToName,
         creatorName,
         creatorId,
         priority.toUpperCase(),
         startDate,
         dueDate,
-        Number(estimatedHours) || 8.0,
+        Number(estimatedHours) || 16.0,
         category,
         instructions,
         tags,
         moduleName,
         deliverableType,
+        videoUrl,
+        referenceLink,
         pdfAttachmentName,
         pdfAttachmentUrl,
         checklist,
-        aiRecommendationLog
+        aiRecommendationLog,
+        assignmentType,
+        groupId,
+        groupName,
+        taskWeightage,
+        repositoryUrl,
+        reviewTargetDate
       ]
     );
 
@@ -640,6 +771,76 @@ export class TaskService {
       }
     }
 
+    // Insert task_member_assignments records
+    const memberAssignments = [];
+    if (assignmentType === 'GROUP' && groupMembersList.length > 0) {
+      for (const m of groupMembersList) {
+        const isHead = (m.employee_id === assignedToCode || m.role === 'Team Head');
+        const tmaId = `TMA-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        await pool.query(
+          `INSERT INTO task_member_assignments (
+            id, task_id, group_id, employee_id, employee_name, role, is_team_head,
+            employee_status, employee_progress, assigned_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'IN_PROGRESS', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [
+            tmaId,
+            taskId,
+            groupId,
+            m.emp_code || m.employee_id,
+            m.emp_name || m.employee_name,
+            m.role || (isHead ? 'Team Head' : 'Member'),
+            isHead
+          ]
+        );
+        memberAssignments.push({
+          id: tmaId,
+          taskId,
+          employeeId: m.emp_code || m.employee_id,
+          employeeName: m.emp_name || m.employee_name,
+          role: m.role || (isHead ? 'Team Head' : 'Member'),
+          isTeamHead: isHead,
+          status: 'IN_PROGRESS',
+          progressPercent: 0
+        });
+
+        // Notify member
+        await this.notifyEmployee({
+          employeeId: m.emp_code || m.employee_id,
+          title: `New Group Task Assigned: ${title}`,
+          message: `Your team "${groupName}" was assigned: "${title}". Due date: ${dueDate}. Target review date: ${reviewTargetDate}.`,
+          link: '/employee/tasks'
+        });
+      }
+    } else {
+      // Individual Member Assignment
+      const tmaId = `TMA-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      await pool.query(
+        `INSERT INTO task_member_assignments (
+          id, task_id, group_id, employee_id, employee_name, role, is_team_head,
+          employee_status, employee_progress, assigned_at, updated_at
+        ) VALUES ($1, $2, NULL, $3, $4, 'Assignee', TRUE, 'IN_PROGRESS', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [tmaId, taskId, assignedToCode, assignedToName]
+      );
+      memberAssignments.push({
+        id: tmaId,
+        taskId,
+        employeeId: assignedToCode,
+        employeeName: assignedToName,
+        role: 'Assignee',
+        isTeamHead: true,
+        status: 'IN_PROGRESS',
+        progressPercent: 0
+      });
+
+      // Notify employee
+      await this.notifyEmployee({
+        employeeId: assignedToCode,
+        title: 'New Task Assigned',
+        message: `You have been assigned a new task: "${title}" by ${creatorName}. Due: ${dueDate}. Review target: ${reviewTargetDate}.`,
+        link: '/employee/tasks'
+      });
+    }
+
     // Log Activity
     await this.logTaskActivity({
       taskId,
@@ -648,19 +849,13 @@ export class TaskService {
       performedByName: creatorName,
       oldValue: null,
       newValue: 'ASSIGNED',
-      note: `Task assigned to ${emp.name} (${empCode}) with priority ${priority.toUpperCase()}.`
-    });
-
-    // Send Employee Notification
-    await this.notifyEmployee({
-      employeeId: empCode,
-      title: 'New Task Assigned',
-      message: `You have been assigned a new task: "${title}" by ${creatorName}. Due: ${dueDate}`,
-      link: '/employee/tasks'
+      note: `Task assigned to ${assignedToName} (${assignmentType}) with priority ${priority.toUpperCase()}. Review target: ${reviewTargetDate}.`
     });
 
     const enrichedTask = {
       ...newTask,
+      members: memberAssignments,
+      memberCount: memberAssignments.length,
       attachments: savedAttachments,
       is_overdue: Boolean(newTask.due_date && new Date(newTask.due_date) < new Date() && newTask.status !== 'COMPLETED' && newTask.status !== 'CANCELLED')
     };
@@ -685,8 +880,13 @@ export class TaskService {
     if (taskRes.rows.length === 0) throw new Error(`Task ${taskId} not found.`);
     const task = taskRes.rows[0];
 
-    if (task.assigned_to !== empCode && task.assigned_to !== emp.id) {
-      throw new Error('Unauthorized: You can only start tasks assigned directly to you.');
+    const memCheck = await pool.query(
+      `SELECT * FROM task_member_assignments WHERE task_id = $1 AND employee_id = $2`,
+      [taskId, empCode]
+    );
+
+    if (task.assigned_to !== empCode && task.assigned_to !== emp.id && memCheck.rows.length === 0) {
+      throw new Error('Unauthorized: You can only start tasks assigned directly to you or your group.');
     }
 
     if (task.status === 'COMPLETED') {
@@ -704,6 +904,15 @@ export class TaskService {
        WHERE id = $2
        RETURNING *`,
       [newProgress, taskId]
+    );
+
+    await pool.query(
+      `UPDATE task_member_assignments
+       SET employee_status = 'IN_PROGRESS',
+           employee_progress = GREATEST(employee_progress, $1),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE task_id = $2 AND employee_id = $3`,
+      [newProgress, taskId, empCode]
     );
 
     const updatedTask = res.rows[0];
@@ -735,70 +944,195 @@ export class TaskService {
   /**
    * 5. UPDATE PROGRESS (Employee / Manager)
    */
-  static async updateProgress(taskId, employeeId, { progressPercent, progressNote = '', status = null }) {
-    const emp = await this.resolveEmployee(employeeId);
-    const empCode = emp.emp_code || emp.id;
+  static async updateProgress(taskId, employeeId, { progressPercent, progressNote = '', status = null, targetEmployeeId = null, assignedTo = null, isAdmin = false }) {
+    let empCode = null;
+    let emp = null;
+    if (employeeId && employeeId !== 'ADMIN-001' && employeeId !== 'Admin') {
+      try {
+        emp = await this.resolveEmployee(employeeId);
+        empCode = emp?.emp_code || emp?.id || employeeId;
+      } catch (e) {
+        empCode = employeeId;
+      }
+    } else {
+      empCode = employeeId || 'ADM-001';
+      emp = { name: 'Admin / Manager', emp_code: empCode, id: empCode };
+    }
 
     const taskRes = await pool.query(`SELECT * FROM tasks WHERE id = $1`, [taskId]);
     if (taskRes.rows.length === 0) throw new Error(`Task ${taskId} not found.`);
     const task = taskRes.rows[0];
 
-    // Security check
-    if (task.assigned_to !== empCode && task.assigned_to !== emp.id && task.assigned_by !== emp.name) {
-      throw new Error('Unauthorized: You do not have permission to update this task.');
+    // Security check: Direct assignee, module assignee, or manager/admin
+    if (!isAdmin && empCode && empCode !== 'ADM-001') {
+      const isDirectOwner = (task.assigned_to === empCode || (emp && task.assigned_to === emp.id));
+      
+      // Check if employee is assigned to this task's module in employee_assigned_modules
+      const modCheck = await pool.query(
+        `SELECT * FROM employee_assigned_modules 
+         WHERE (employee_id = $1 OR employee_id = $2)
+           AND (LOWER(module_name) = LOWER($3) OR LOWER(module_id) = LOWER($3))
+           AND (team_id = $4 OR team_id IS NULL)`,
+        [empCode, emp?.id || empCode, task.module_name, task.group_id]
+      );
+      const isModuleOwner = modCheck.rows.length > 0;
+
+      if (!isDirectOwner && !isModuleOwner) {
+        const err = new Error('You are not assigned to this module.');
+        err.statusCode = 403;
+        throw err;
+      }
     }
 
     const progress = Math.max(0, Math.min(100, parseInt(progressPercent, 10) || 0));
+    
+    // Status alignment with progress rules
     let nextStatus = status ? status.toUpperCase() : task.status;
-    if (nextStatus === 'ASSIGNED') nextStatus = 'IN_PROGRESS';
+    if (!status) {
+      if (progress === 0) {
+        nextStatus = task.status === 'COMPLETED' ? 'IN_PROGRESS' : task.status;
+      } else if (progress > 0 && progress < 100) {
+        nextStatus = 'IN_PROGRESS';
+      } else if (progress === 100) {
+        nextStatus = 'COMPLETED';
+      }
+    }
 
-    if (progress === 100 && nextStatus !== 'COMPLETED') {
-      nextStatus = 'READY_FOR_REVIEW';
+    // Determine target employee whose individual progress is being updated
+    let targetEmpCode = targetEmployeeId || (task.assigned_to !== task.group_id ? task.assigned_to : null) || empCode;
+    let targetEmpName = null;
+    if (targetEmployeeId || assignedTo) {
+      const resolvingId = targetEmployeeId || assignedTo;
+      try {
+        const resolvedTarget = await this.resolveEmployee(resolvingId);
+        targetEmpCode = resolvedTarget.emp_code || resolvedTarget.id;
+        targetEmpName = resolvedTarget.name;
+      } catch (e) {
+        targetEmpCode = resolvingId;
+      }
+    }
+
+    // Update or insert member assignments for target employee
+    if (targetEmpCode && targetEmpCode !== 'ADM-001') {
+      const existingTma = await pool.query(
+        `SELECT * FROM task_member_assignments WHERE task_id = $1 AND employee_id = $2`,
+        [taskId, targetEmpCode]
+      );
+      if (existingTma.rows.length > 0) {
+        await pool.query(
+          `UPDATE task_member_assignments
+           SET employee_progress = $1,
+               employee_status = $2,
+               notes = COALESCE($3, notes),
+               updated_at = CURRENT_TIMESTAMP
+           WHERE task_id = $4 AND employee_id = $5`,
+          [progress, nextStatus, progressNote, taskId, targetEmpCode]
+        );
+      } else {
+        const tmaId = `TMA-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+        await pool.query(
+          `INSERT INTO task_member_assignments (
+            id, task_id, group_id, employee_id, employee_name, role, is_team_head,
+            employee_status, employee_progress, notes, assigned_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, 'Assignee', FALSE, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [tmaId, taskId, task.group_id, targetEmpCode, targetEmpName || targetEmpCode, nextStatus, progress, progressNote]
+        );
+      }
+    }
+
+    let effectiveProgress = progress;
+
+    let updateAssignedClause = '';
+    const updateParams = [effectiveProgress, nextStatus, taskId, progressNote || 'Updated progress.'];
+    if (assignedTo || targetEmpName) {
+      updateParams.push(targetEmpCode, targetEmpName || targetEmpCode);
+      updateAssignedClause = `, assigned_to = $5, assigned_to_employee_id = $5, assigned_to_name = $6`;
     }
 
     const res = await pool.query(
       `UPDATE tasks
        SET progress_percent = $1,
            status = $2::text,
-           submitted_at = CASE WHEN $2::text = 'READY_FOR_REVIEW' THEN COALESCE(submitted_at, CURRENT_TIMESTAMP) ELSE submitted_at END,
-           completion_note = CASE WHEN $2::text = 'READY_FOR_REVIEW' THEN COALESCE($4, completion_note) ELSE completion_note END,
+           completed_at = CASE WHEN $2::text = 'COMPLETED' THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+           submitted_at = CASE WHEN $2::text IN ('READY_FOR_REVIEW', 'COMPLETED') THEN COALESCE(submitted_at, CURRENT_TIMESTAMP) ELSE submitted_at END,
+           completion_note = CASE WHEN $2::text IN ('READY_FOR_REVIEW', 'COMPLETED') THEN COALESCE($4, completion_note) ELSE completion_note END,
            updated_at = CURRENT_TIMESTAMP
+           ${updateAssignedClause}
        WHERE id = $3
        RETURNING *`,
-      [progress, nextStatus, taskId, progressNote || 'Completed 100% work, submitted for review.']
+      updateParams
     );
 
     const updatedTask = res.rows[0];
 
+    // Recalculate module progress, employee individual progress, and overall project progress
+    let moduleProgress = progress;
+    let employeeProgress = progress;
+    let projectOverallProgress = progress;
+
+    if (task.group_id) {
+      // 1. Module Progress
+      const modRes = await pool.query(
+        `SELECT ROUND(COALESCE(AVG(progress_percent), 0)) as avg_progress 
+         FROM tasks 
+         WHERE group_id = $1 AND LOWER(module_name) = LOWER($2)`,
+        [task.group_id, task.module_name]
+      );
+      moduleProgress = Number(modRes.rows[0]?.avg_progress) || progress;
+
+      // 2. Employee Individual Progress
+      const empRes = await pool.query(
+        `SELECT ROUND(COALESCE(AVG(progress_percent), 0)) as avg_progress 
+         FROM tasks 
+         WHERE group_id = $1 AND (assigned_to = $2 OR assigned_to_employee_id = $2)`,
+        [task.group_id, targetEmpCode || empCode]
+      );
+      employeeProgress = Number(empRes.rows[0]?.avg_progress) || progress;
+
+      // 3. Project / Group Overall Progress
+      const prjRes = await pool.query(
+        `SELECT ROUND(COALESCE(AVG(progress_percent), 0)) as avg_progress 
+         FROM tasks 
+         WHERE group_id = $1`,
+        [task.group_id]
+      );
+      projectOverallProgress = Number(prjRes.rows[0]?.avg_progress) || progress;
+    }
+
     // Log Activity
     await this.logTaskActivity({
       taskId,
-      action: progress === 100 ? 'TASK_SUBMITTED_FOR_REVIEW' : 'PROGRESS_UPDATED',
+      action: progress === 100 ? 'TASK_COMPLETED' : 'PROGRESS_UPDATED',
       performedBy: empCode,
       performedByName: emp.name,
       oldValue: `${task.progress_percent}% (${task.status})`,
-      newValue: `${progress}% (${nextStatus})`,
-      note: progressNote || `Progress updated to ${progress}%.`
+      newValue: `${effectiveProgress}% (${nextStatus})`,
+      note: progressNote || `Progress updated to ${progress}% by ${emp.name}.`
     });
 
-    if (nextStatus === 'READY_FOR_REVIEW') {
-      await this.notifyAdmin({
-        type: 'TASK_100_PERCENT_REVIEW',
-        employeeId: empCode,
-        employeeName: emp.name,
-        entityId: taskId,
-        message: `${emp.name} has completed task "${task.title}" and submitted it for review.`
-      });
-    }
+    const resultPayload = {
+      ...updatedTask,
+      moduleProgress,
+      employeeProgress,
+      projectOverallProgress
+    };
 
-    broadcastTaskEvent({ action: 'TASK_PROGRESS_UPDATED', task: updatedTask, progressNote });
-    return updatedTask;
+    broadcastTaskEvent({ 
+      action: 'TASK_PROGRESS_UPDATED', 
+      task: updatedTask, 
+      moduleProgress, 
+      employeeProgress, 
+      projectOverallProgress, 
+      progressNote 
+    });
+
+    return resultPayload;
   }
 
   /**
    * 6. SUBMIT TASK FOR REVIEW (Employee)
    */
-  static async submitForReview(taskId, employeeId, { completionNote = '', actualHours = null }) {
+  static async submitForReview(taskId, employeeId, { completionNote = '', actualHours = null, videoUrl = null, referenceLink = null } = {}) {
     const emp = await this.resolveEmployee(employeeId);
     const empCode = emp.emp_code || emp.id;
 
@@ -806,8 +1140,20 @@ export class TaskService {
     if (taskRes.rows.length === 0) throw new Error(`Task ${taskId} not found.`);
     const task = taskRes.rows[0];
 
-    if (task.assigned_to !== empCode && task.assigned_to !== emp.id) {
-      throw new Error('Unauthorized: You can only submit tasks assigned to you.');
+    // Verify permission: Direct assignee or member of group
+    const memCheck = await pool.query(
+      `SELECT * FROM task_member_assignments WHERE task_id = $1 AND employee_id = $2`,
+      [taskId, empCode]
+    );
+
+    if (task.assigned_to !== empCode && task.assigned_to !== emp.id && memCheck.rows.length === 0) {
+      throw new Error('Unauthorized: You can only submit tasks assigned to you or your group.');
+    }
+
+    // Auto-detect link from completionNote if referenceLink not explicitly passed
+    let effectiveRefLink = referenceLink;
+    if (!effectiveRefLink && completionNote && (completionNote.startsWith('http://') || completionNote.startsWith('https://'))) {
+      effectiveRefLink = completionNote.trim();
     }
 
     const res = await pool.query(
@@ -817,10 +1163,28 @@ export class TaskService {
            submitted_at = CURRENT_TIMESTAMP,
            completion_note = $1,
            actual_hours = COALESCE($2, actual_hours, estimated_hours),
+           video_url = COALESCE($4, video_url),
+           reference_link = COALESCE($5, reference_link),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3
        RETURNING *`,
-      [completionNote || 'Task completed and submitted for manager approval.', actualHours ? Number(actualHours) : null, taskId]
+      [
+        completionNote || 'Task completed and submitted for manager approval.',
+        actualHours ? Number(actualHours) : null,
+        taskId,
+        videoUrl,
+        effectiveRefLink
+      ]
+    );
+
+    // Also update member assignments
+    await pool.query(
+      `UPDATE task_member_assignments
+       SET employee_status = 'READY_FOR_REVIEW',
+           employee_progress = 100,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE task_id = $1`,
+      [taskId]
     );
 
     const updatedTask = res.rows[0];
@@ -866,12 +1230,25 @@ export class TaskService {
            progress_percent = 100,
            completed_at = CURRENT_TIMESTAMP,
            completed_by = $1,
+           approved_by = $1,
+           approved_at = CURRENT_TIMESTAMP,
+           approval_comment = $2,
            manager_feedback = COALESCE($2, manager_feedback),
            actual_hours = COALESCE($3, actual_hours, estimated_hours),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $4
        RETURNING *`,
       [reviewerName, managerFeedback || 'Approved and signed off.', actualHours ? Number(actualHours) : null, taskId]
+    );
+
+    // Update all member assignments to COMPLETED
+    await pool.query(
+      `UPDATE task_member_assignments
+       SET employee_status = 'COMPLETED',
+           employee_progress = 100,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE task_id = $1`,
+      [taskId]
     );
 
     const completedTask = res.rows[0];
@@ -887,16 +1264,22 @@ export class TaskService {
       note: managerFeedback || `Task approved and completed by ${reviewerName}.`
     });
 
-    // Notify Employee
-    await this.notifyEmployee({
-      employeeId: task.assigned_to,
-      title: 'Task Approved & Completed',
-      message: `Your submitted task "${task.title}" has been approved by ${reviewerName}. Feedback: ${managerFeedback || 'Great job!'}`,
-      link: '/employee/tasks'
-    });
+    // Notify Employee or group members
+    const membersRes = await pool.query(
+      `SELECT employee_id FROM task_member_assignments WHERE task_id = $1`,
+      [taskId]
+    );
+    const targetEmployees = membersRes.rows.length > 0 ? membersRes.rows.map(m => m.employee_id) : [task.assigned_to];
 
-    // Automatically recalculate & update performance review record
-    await this.recalculateEmployeePerformance(task.assigned_to);
+    for (const empTarget of targetEmployees) {
+      await this.notifyEmployee({
+        employeeId: empTarget,
+        title: 'Task Approved & Completed',
+        message: `Task "${task.title}" has been approved by ${reviewerName}. Feedback: ${managerFeedback || 'Great job!'}`,
+        link: '/employee/tasks'
+      });
+      await this.recalculateEmployeePerformance(empTarget);
+    }
 
     broadcastTaskEvent({ action: 'TASK_COMPLETED', task: completedTask });
     return completedTask;
@@ -926,6 +1309,16 @@ export class TaskService {
       [managerFeedback, taskId]
     );
 
+    // Update member assignments status
+    await pool.query(
+      `UPDATE task_member_assignments
+       SET employee_status = 'CHANGES_REQUESTED',
+           employee_progress = CASE WHEN employee_progress >= 100 THEN 85 ELSE employee_progress END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE task_id = $1`,
+      [taskId]
+    );
+
     const updatedTask = res.rows[0];
 
     // Log activity
@@ -939,13 +1332,21 @@ export class TaskService {
       note: `Changes requested by ${reviewerName}: ${managerFeedback}`
     });
 
-    // Notify Employee
-    await this.notifyEmployee({
-      employeeId: task.assigned_to,
-      title: 'Task Changes Requested',
-      message: `Changes requested for "${task.title}": "${managerFeedback}". Please review and update.`,
-      link: '/employee/tasks'
-    });
+    // Notify Employees
+    const membersRes = await pool.query(
+      `SELECT employee_id FROM task_member_assignments WHERE task_id = $1`,
+      [taskId]
+    );
+    const targetEmployees = membersRes.rows.length > 0 ? membersRes.rows.map(m => m.employee_id) : [task.assigned_to];
+
+    for (const empTarget of targetEmployees) {
+      await this.notifyEmployee({
+        employeeId: empTarget,
+        title: 'Task Changes Requested',
+        message: `Changes requested for "${task.title}": "${managerFeedback}". Please review and update.`,
+        link: '/employee/tasks'
+      });
+    }
 
     broadcastTaskEvent({ action: 'TASK_REOPENED', task: updatedTask });
     return updatedTask;
