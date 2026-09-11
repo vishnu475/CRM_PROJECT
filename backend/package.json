@@ -6,7 +6,11 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "setup": "node setup_hrms.js && node setup_crm.js",
+    "setup:hrms": "node setup_hrms.js",
+    "setup:crm": "node setup_crm.js",
+    "migrate": "node setup_hrms.js && node setup_crm.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

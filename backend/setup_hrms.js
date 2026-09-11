@@ -49,23 +49,9 @@ export async function ensureDatabaseAndMigrate() {
     console.log(`✅ Connected to database "${res.rows[0].current_database}" as user "${res.rows[0].current_user}"`);
 
     const migrationsDir = path.join(__dirname, 'db', 'migrations');
-    const migrationFiles = [
-      '001_initial_schema.sql',
-      '002_enterprise_complete_schema.sql',
-      '003_automatic_database_triggers.sql',
-      '004_db_first_complete.sql',
-      '005_master_prompt_complete_schema.sql',
-      '006_central_payroll_engine.sql',
-      '007_ess_portal_engine.sql',
-      '008_ess_admin_two_way_integration.sql',
-      '009_admin_notifications_and_two_way_sync.sql',
-      '010_enterprise_task_management_and_performance.sql',
-      '011_task_attachments.sql',
-      '012_intern_management_complete.sql',
-      '013_enterprise_document_management_system.sql',
-      '014_modules_and_employee_assignments.sql',
-      '015_team_chat_messages.sql',
-    ];
+    const migrationFiles = fs.readdirSync(migrationsDir)
+      .filter(file => file.endsWith('.sql'))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     for (const file of migrationFiles) {
       const filePath = path.join(migrationsDir, file);

@@ -80,33 +80,21 @@ app.use('/uploads', express.static(uploadsDir));
 
 // ─── HRMS Migration runner (runs on boot against hrmsPool) ──────────────────
 async function initializeHRMSSchema() {
-  const migrations = [
-    '001_initial_schema.sql',
-    '002_enterprise_complete_schema.sql',
-    '003_automatic_database_triggers.sql',
-    '004_db_first_complete.sql',
-    '005_master_prompt_complete_schema.sql',
-    '006_central_payroll_engine.sql',
-    '007_ess_portal_engine.sql',
-    '008_ess_admin_two_way_integration.sql',
-    '009_admin_notifications_and_two_way_sync.sql',
-    '010_enterprise_task_management_and_performance.sql',
-    '011_task_attachments.sql',
-    '012_intern_management_complete.sql',
-    '013_enterprise_document_management_system.sql',
-    '014_modules_and_employee_assignments.sql',
-  ];
+  const migrationsDir = path.join(__dirname, 'db', 'migrations');
+  if (!fs.existsSync(migrationsDir)) return;
 
-  for (const migrationFile of migrations) {
-    const migrationPath = path.join(__dirname, 'db', 'migrations', migrationFile);
-    if (fs.existsSync(migrationPath)) {
-      try {
-        const sql = fs.readFileSync(migrationPath, 'utf8');
-        await hrmsPool.query(sql);
-        console.log(`✅ [HRMS] Migration applied: ${migrationFile}`);
-      } catch (err) {
-        console.warn(`⚠️  [HRMS] Migration note [${migrationFile}]: ${err.message}`);
-      }
+  const migrationFiles = fs.readdirSync(migrationsDir)
+    .filter(file => file.endsWith('.sql'))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  for (const migrationFile of migrationFiles) {
+    const migrationPath = path.join(migrationsDir, migrationFile);
+    try {
+      const sql = fs.readFileSync(migrationPath, 'utf8');
+      await hrmsPool.query(sql);
+      console.log(`✅ [HRMS] Migration applied: ${migrationFile}`);
+    } catch (err) {
+      console.warn(`⚠️  [HRMS] Migration note [${migrationFile}]: ${err.message}`);
     }
   }
 }

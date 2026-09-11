@@ -56,30 +56,9 @@ export async function ensureCRMDatabaseAndMigrate() {
     console.log(`✅ [CRM] Connected to "${res.rows[0].current_database}" as "${res.rows[0].current_user}"`);
 
     const migrationsDir = path.join(__dirname, 'db', 'migrations', 'crm');
-    const migrationFiles = [
-      '001_crm_schema.sql',
-      '002_crm_seed.sql',  // Seed initial data into crm DB
-      '003_qualification_fields.sql',
-      '004_proposal_fields.sql',
-      '005_activity_purpose.sql',
-      '006_won_fields.sql',
-      '007_lost_fields.sql',
-      '008_lead_conversion_fields.sql',
-      '009_lead_reopen_fields.sql',
-      '010_lead_notes_field.sql',
-      '011_projects_table.sql',
-      '012_contacts_lead_and_fields.sql',
-      '013_sales_workflow_lifecycle.sql',
-      '014_procurement_workflow.sql',
-      '015_vendor_invoices_and_payments.sql',
-      '016_vendor_enhancements.sql',
-      '017_inventory_stock_movements.sql',
-      '018_crm_followups_enhancements.sql',
-      '019_projects_priority.sql',
-      '020_leads_assigned_employee_id.sql',
-      '021_leads_attachments_jsonb.sql',
-      '022_leads_address_and_tags.sql',
-    ];
+    const migrationFiles = fs.readdirSync(migrationsDir)
+      .filter(file => file.endsWith('.sql'))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     for (const file of migrationFiles) {
       const filePath = path.join(migrationsDir, file);
