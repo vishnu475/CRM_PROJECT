@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { CrmView, Opportunity } from '../../../types';
-import { formatINR } from '../utils/crmUtils';
+import { formatINR, getLeadStageColor } from '../utils/crmUtils';
 import { 
   Plus, TrendingUp, Building2, Calendar, User, Search, Filter,
   ChevronRight, ChevronLeft, MoreVertical, Edit2, CheckCircle2,
@@ -16,9 +16,9 @@ interface CrmOpportunitiesProps {
 
 const STAGES: { id: Opportunity['stage']; label: string; badgeBg: string }[] = [
   { id: 'New', label: 'New', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { id: 'Qualified', label: 'Qualified', badgeBg: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { id: 'Proposal', label: 'Proposal', badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  { id: 'Negotiation', label: 'Negotiation', badgeBg: 'bg-purple-50 text-purple-700 border-purple-200' },
+  { id: 'Qualified', label: 'Qualified', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { id: 'Proposal', label: 'Proposal', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { id: 'Negotiation', label: 'Negotiation', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
   { id: 'Won', label: 'Won', badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   { id: 'Lost', label: 'Lost', badgeBg: 'bg-rose-50 text-rose-700 border-rose-200' },
 ];
@@ -43,7 +43,6 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
-  const [selectedOpps, setSelectedOpps] = useState<Set<string>>(new Set());
 
   // Add / Edit Modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -137,21 +136,6 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
     return filteredOpportunities.slice(start, start + itemsPerPage);
   }, [filteredOpportunities, currentPage, itemsPerPage]);
 
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedOpps(new Set(paginatedOpportunities.map(o => o.id)));
-    } else {
-      setSelectedOpps(new Set());
-    }
-  };
-
-  const handleSelectOne = (id: string) => {
-    const newSet = new Set(selectedOpps);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
-    setSelectedOpps(newSet);
-  };
-
   const handleOpenAddModal = () => {
     setEditingOpp(null);
     setFormName('');
@@ -228,15 +212,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
   };
 
   const getStageBadge = (stage: Opportunity['stage']) => {
-    switch (stage) {
-      case 'New': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'Qualified': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Proposal': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-      case 'Negotiation': return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'Won': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'Lost': return 'bg-rose-50 text-rose-700 border-rose-200';
-      default: return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
+    return getLeadStageColor(stage);
   };
 
   const clearAllFilters = () => {
@@ -462,14 +438,6 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 sticky top-0 z-10">
                   <tr>
-                    <th className="p-4 w-12">
-                      <input 
-                        type="checkbox" 
-                        onChange={handleSelectAll} 
-                        checked={selectedOpps.size > 0 && selectedOpps.size === paginatedOpportunities.length} 
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" 
-                      />
-                    </th>
                     <th className="p-4 font-semibold">Opportunity</th>
                     <th className="p-4 font-semibold">Customer / Company</th>
                     <th className="p-4 font-semibold text-right">Value</th>
@@ -483,15 +451,6 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {paginatedOpportunities.map(opp => (
                     <tr key={opp.id} className="hover:bg-slate-50 transition-colors group">
-                      <td className="p-4">
-                        <input 
-                          type="checkbox" 
-                          checked={selectedOpps.has(opp.id)} 
-                          onChange={() => handleSelectOne(opp.id)} 
-                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" 
-                        />
-                      </td>
-                      
                       {/* Opportunity Name */}
                       <td className="p-4">
                         <div 

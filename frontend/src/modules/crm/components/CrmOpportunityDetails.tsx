@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { CrmView, Opportunity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
-import { formatINR } from '../utils/crmUtils';
+import { formatINR, getLeadStageColor } from '../utils/crmUtils';
 import { 
   ChevronRight, ArrowLeft, TrendingUp, Building2, Calendar, User, 
   DollarSign, Percent, CheckCircle2, XCircle, Clock, FileText, 
@@ -105,15 +105,7 @@ export const CrmOpportunityDetails: React.FC<CrmOpportunityDetailsProps> = ({
   }
 
   const getStageBadge = (stage: Opportunity['stage']) => {
-    switch (stage) {
-      case 'New': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'Qualified': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Proposal': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-      case 'Negotiation': return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'Won': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'Lost': return 'bg-rose-50 text-rose-700 border-rose-200';
-      default: return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
+    return getLeadStageColor(stage);
   };
 
   const handleStageTransition = async (targetStage: Opportunity['stage']) => {
@@ -279,8 +271,22 @@ export const CrmOpportunityDetails: React.FC<CrmOpportunityDetailsProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {STAGES.map((s) => {
             const isCurrent = opportunity.stage === s.id;
-            const isWon = opportunity.stage === 'Won';
-            const isLost = opportunity.stage === 'Lost';
+            const isWon = s.id === 'Won';
+            const isLost = s.id === 'Lost';
+
+            let activeContainer = 'border-blue-600 bg-blue-50/50 shadow-xs ring-2 ring-blue-500/20';
+            let activeText = 'text-blue-700';
+            let activeIcon = 'text-blue-600';
+
+            if (isWon) {
+              activeContainer = 'border-emerald-600 bg-emerald-50/50 shadow-xs ring-2 ring-emerald-500/20';
+              activeText = 'text-emerald-700';
+              activeIcon = 'text-emerald-600';
+            } else if (isLost) {
+              activeContainer = 'border-rose-600 bg-rose-50/50 shadow-xs ring-2 ring-rose-500/20';
+              activeText = 'text-rose-700';
+              activeIcon = 'text-rose-600';
+            }
 
             return (
               <button
@@ -289,15 +295,15 @@ export const CrmOpportunityDetails: React.FC<CrmOpportunityDetailsProps> = ({
                 onClick={() => handleStageTransition(s.id)}
                 className={`p-3 rounded-xl border text-left transition-all relative ${
                   isCurrent 
-                    ? 'border-indigo-600 bg-indigo-50/50 shadow-xs ring-2 ring-indigo-500/20' 
+                    ? activeContainer 
                     : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80 hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className={`text-xs font-bold ${isCurrent ? 'text-indigo-700' : 'text-slate-800'}`}>
+                  <span className={`text-xs font-bold ${isCurrent ? activeText : 'text-slate-800'}`}>
                     {s.label}
                   </span>
-                  {isCurrent && <CheckCircle2 size={14} className="text-indigo-600" />}
+                  {isCurrent && <CheckCircle2 size={14} className={activeIcon} />}
                 </div>
                 <p className="text-[10px] text-slate-500 line-clamp-2">{s.description}</p>
               </button>

@@ -15,6 +15,7 @@ import { CrmPipeline } from '../components/CrmPipeline';
 import { CrmOpportunityDetails } from '../components/CrmOpportunityDetails';
 import { CrmContactsList } from '../components/CrmContactsList';
 import { CrmActivitiesList } from '../components/CrmActivitiesList';
+import { CrmFollowUpsList } from '../components/CrmFollowUpsList';
 
 const PlaceholderContent: React.FC<{ title: string }> = ({ title }) => (
   <div>
@@ -61,8 +62,22 @@ export const CrmPage: React.FC = () => {
           onCustomerSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('customer-details'); }}
         />
       );
-      case 'activities': return <CrmActivitiesList onViewChange={setActiveCrmView} />;
-      case 'follow-ups': return <CrmActivitiesList onViewChange={setActiveCrmView} />;
+      case 'activities': return (
+        <CrmActivitiesList
+          onViewChange={setActiveCrmView}
+          onLeadSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('lead-details'); }}
+          onCustomerSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('customer-details'); }}
+          onOpportunitySelect={(id) => { setSelectedEntityId(id); setActiveCrmView('opportunity-details'); }}
+        />
+      );
+      case 'follow-ups': return (
+        <CrmFollowUpsList
+          onViewChange={setActiveCrmView}
+          onLeadSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('lead-details'); }}
+          onCustomerSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('customer-details'); }}
+          onOpportunitySelect={(id) => { setSelectedEntityId(id); setActiveCrmView('opportunity-details'); }}
+        />
+      );
       case 'notes': return <CrmActivitiesList onViewChange={setActiveCrmView} />;
       default: return <CrmOverview onViewChange={setActiveCrmView} />;
     }

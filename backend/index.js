@@ -34,6 +34,7 @@ import customersRouter from './routes/customers.js';
 import contactsRouter from './routes/contacts.js';
 import opportunitiesRouter from './routes/opportunities.js';
 import crmActivitiesRouter from './routes/crm_activities.js';
+import crmFollowUpsRouter from './routes/crm_followups.js';
 import quotationsRouter from './routes/quotations.js';
 import salesOrdersRouter from './routes/sales_orders.js';
 import crmInvoicesRouter from './routes/crm_invoices.js';
@@ -57,15 +58,19 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Ensure uploads/tasks and uploads/documents directories exist
+// Ensure uploads/tasks, uploads/documents, and uploads/leads directories exist
 const uploadsDir = path.join(__dirname, 'uploads');
 const tasksUploadsDir = path.join(uploadsDir, 'tasks');
 const docsUploadsDir = path.join(uploadsDir, 'documents');
+const leadsUploadsDir = path.join(uploadsDir, 'leads');
 if (!fs.existsSync(tasksUploadsDir)) {
   fs.mkdirSync(tasksUploadsDir, { recursive: true });
 }
 if (!fs.existsSync(docsUploadsDir)) {
   fs.mkdirSync(docsUploadsDir, { recursive: true });
+}
+if (!fs.existsSync(leadsUploadsDir)) {
+  fs.mkdirSync(leadsUploadsDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDir));
 
@@ -139,6 +144,8 @@ app.use('/api/customers',       customersRouter);
 app.use('/api/contacts',        contactsRouter);
 app.use('/api/opportunities',   opportunitiesRouter);
 app.use('/api/crm/activities',  crmActivitiesRouter);
+app.use('/api/crm/followups',   crmFollowUpsRouter);
+app.use('/api/crm/follow-ups',  crmFollowUpsRouter);
 app.use('/api/quotations',      quotationsRouter);
 app.use('/api/sales-orders',    salesOrdersRouter);
 app.use('/api/crm/invoices',    crmInvoicesRouter);

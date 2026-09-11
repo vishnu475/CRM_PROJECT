@@ -74,6 +74,17 @@ export interface UserProfile {
   department?: string;
 }
 
+export interface LeadAttachment {
+  id: string;
+  name: string;
+  originalName?: string;
+  url: string;
+  type: string;
+  mimeType?: string;
+  size: number;
+  uploadedAt: string;
+}
+
 export interface Lead {
   id: string;
   name: string;
@@ -85,6 +96,7 @@ export interface Lead {
   score: number;
   source: string;
   assignedTo: string;
+  assignedToEmployeeId?: string;
   createdAt: string;
   industry?: string;
   campaign?: string;
@@ -123,7 +135,7 @@ export interface Lead {
   postalCode?: string;
   tags?: string[];
   notes?: string;
-  attachments?: any[];
+  attachments?: LeadAttachment[];
   status?: string;
   updatedAt?: string;
 }
@@ -740,6 +752,7 @@ export interface Project {
   spent: number;
   progress: number;
   status: 'Not Started' | 'In Progress' | 'On Hold' | 'Completed' | 'Planning';
+  priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
   createdAt?: string;
   updatedAt?: string;
 }
@@ -826,22 +839,49 @@ export interface Activity {
   relatedTo: string;
   customerId?: string;
   opportunityId?: string;
+  leadId?: string;
+  contactId?: string;
   assignedTo: string;
   dueDate: string;
   priority: 'Low' | 'Medium' | 'High';
-  status: 'Pending' | 'Completed' | 'Overdue';
+  status: 'Pending' | 'Scheduled' | 'Completed' | 'Cancelled' | 'Overdue';
   outcome?: string;
+  createdAt?: string;
 }
 
 export interface FollowUp {
   id: string;
-  relatedEntity: string; // e.g., Lead Name or Customer Name
+  title?: string;
+  action?: string;
+  notes?: string;
+  relatedEntity?: string; // e.g., Lead Name or Customer Name
+  related_entity?: string;
+  customerId?: string;
+  customer_id?: string;
   opportunityId?: string;
-  activityType: 'Call' | 'Email' | 'Meeting';
+  opportunity_id?: string;
+  leadId?: string;
+  lead_id?: string;
+  contactId?: string;
+  contact_id?: string;
+  activityId?: string;
+  activity_id?: string;
+  activityType?: 'Call' | 'Email' | 'Meeting' | 'Task' | string;
   dueDate: string;
-  owner: string;
+  due_date?: string;
+  dueTime?: string;
+  due_time?: string;
+  owner?: string;
+  assignedTo?: string;
+  assigned_to?: string;
+  priority?: 'Low' | 'Medium' | 'High' | 'Urgent' | 'low' | 'medium' | 'high' | 'urgent' | string;
   value?: number;
-  status: 'Overdue' | 'Today' | 'Upcoming';
+  status: 'Pending' | 'Today' | 'Upcoming' | 'Overdue' | 'Completed' | 'Done' | 'Cancelled' | 'Scheduled' | 'In Progress' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled' | 'pending' | string;
+  createdAt?: string;
+  created_at?: string;
+  completedAt?: string;
+  completed_at?: string;
+  reminder?: 'none' | '15m' | '1h' | '1d' | string;
 }
 
 export interface Note {

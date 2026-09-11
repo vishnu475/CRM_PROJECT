@@ -110,11 +110,11 @@ export const useCrmOverviewData = (): CrmOverviewData => {
   const mappedFollowUps = followUps.map(fu => ({
     id: fu.id,
     category: (fu.status === 'Overdue' ? 'Overdue' : fu.status === 'Today' ? 'Today' : 'Upcoming') as 'Overdue' | 'Today' | 'Upcoming',
-    relatedRecord: fu.relatedEntity,
+    relatedRecord: fu.relatedEntity || '',
     relatedOpportunity: fu.opportunityId,
-    activityType: fu.activityType,
+    activityType: fu.activityType || 'Follow-up',
     dueDateTime: fu.dueDate,
-    owner: fu.owner,
+    owner: fu.owner || fu.assignedTo || 'Unassigned',
     priority: 'Medium',
     status: fu.status
   }));

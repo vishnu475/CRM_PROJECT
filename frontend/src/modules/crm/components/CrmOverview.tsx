@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useCrmOverviewData } from '../hooks/useCrmOverviewData';
-import { useApp } from '../../../context/AppContext';
+import { getCrmStageBarColor } from '../utils/crmUtils';
 import { 
   Users, UserCheck, Briefcase, IndianRupee, Building2, BellRing, 
   BarChart4, ArrowRight, Phone, Mail, Calendar, CheckSquare, 
@@ -14,7 +14,6 @@ interface CrmOverviewProps {
 
 export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
   const dynamicData = useCrmOverviewData();
-  const { addLead, addCustomer } = useApp();
   const [data, setData] = useState(dynamicData);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,38 +77,6 @@ export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
     );
   }
 
-  const handleAddMockLead = () => {
-    addLead({
-      name: `New Lead ${Math.floor(Math.random() * 1000)}`,
-      company: 'Test Corp',
-      email: 'test@example.com',
-      phone: '555-0000',
-      value: 50000,
-      stage: 'New',
-      score: 85,
-      source: 'Website',
-      assignedTo: 'Mike Ross'
-    });
-  };
-
-  const handleAddMockCustomer = () => {
-    addCustomer({
-      customerCode: `CUST${Math.floor(Math.random() * 1000)}`,
-      customerName: 'New Customer',
-      customerType: 'Company',
-      ownerId: 'usr-1',
-      status: 'Active',
-      primaryContact: {
-        name: 'New Contact',
-        email: 'new@example.com',
-        phone: '555-1234'
-      },
-      billingAddress: {
-        city: 'NY'
-      }
-    });
-  };
-
   if (!data || data.stats.totalLeads === 0) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 flex flex-col items-center justify-center text-center">
@@ -118,14 +85,11 @@ export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
         </div>
         <h2 className="text-lg font-bold text-[#0f172a] mb-2">No CRM activity yet</h2>
         <p className="text-sm text-slate-500 mb-6 max-w-sm">
-          Add your first lead or customer to start building your CRM workspace.
+          Add your first lead to start building your CRM workspace.
         </p>
         <div className="flex space-x-3">
           <button onClick={() => onViewChange('leads')} className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
             View All Leads
-          </button>
-          <button onClick={handleAddMockCustomer} className="px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2">
-            <Plus size={14} /> Add Customer
           </button>
           <button onClick={() => onViewChange('add-lead')} className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 transition-colors flex items-center gap-2">
             <Plus size={14} /> Add Lead
@@ -161,9 +125,6 @@ export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
         <div className="flex space-x-2">
           <button onClick={() => onViewChange('leads')} className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-[#0f172a] rounded-lg text-xs font-semibold shadow-sm transition-all">
             <span>View All Leads</span>
-          </button>
-          <button onClick={handleAddMockCustomer} className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-[#0f172a] rounded-lg text-xs font-semibold shadow-sm transition-all">
-            <Plus size={14} /> <span>Add Customer</span>
           </button>
           <button onClick={() => onViewChange('add-lead')} className="flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all">
             <Plus size={14} /> <span>Add Lead</span>
@@ -256,7 +217,7 @@ export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
                   <div className="flex justify-between items-end mb-0.5 font-medium">
                     <span className="text-slate-600 w-20">{stage.stage}</span>
                     <div className="w-full mx-3 bg-slate-50 rounded h-1.5 self-center border border-slate-100 flex overflow-hidden">
-                      <div className={`h-full rounded ${isWon ? 'bg-emerald-500' : isLost ? 'bg-rose-400' : 'bg-indigo-500'}`} style={{ width }}></div>
+                      <div className={`h-full rounded ${getCrmStageBarColor(stage.stage)}`} style={{ width }}></div>
                     </div>
                     <div className="flex items-center space-x-2 text-right w-16 justify-end">
                       <span className="font-bold text-[#0f172a]">{stage.count}</span>
@@ -274,7 +235,7 @@ export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
             </div>
             <div>
               <p className="text-[9px] text-slate-400 uppercase font-semibold">Qual → Opp</p>
-              <p className="text-sm font-bold text-indigo-600">51.2%</p>
+              <p className="text-sm font-bold text-blue-600">51.2%</p>
             </div>
           </div>
         </div>
@@ -296,7 +257,7 @@ export const CrmOverview: React.FC<CrmOverviewProps> = ({ onViewChange }) => {
                     <div className="font-bold text-[#0f172a] text-right w-16">₹{(stage.value / 100000).toFixed(1)}L</div>
                   </div>
                   <div className="w-full bg-slate-50 rounded-full h-1.5 flex overflow-hidden">
-                    <div className="h-full bg-purple-500 rounded-full" style={{ width }}></div>
+                    <div className={`h-full rounded-full ${getCrmStageBarColor(stage.stage)}`} style={{ width }}></div>
                   </div>
                 </div>
               );

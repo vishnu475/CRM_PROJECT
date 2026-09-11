@@ -3,7 +3,7 @@ import { Lead, Customer, Project } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { 
   X, FolderKanban, Building2, User, Calendar, DollarSign, FileText, 
-  CheckCircle2, AlertCircle, Sparkles, Clock, ShieldCheck
+  CheckCircle2, AlertCircle, Sparkles, Clock, ShieldCheck, Flag
 } from 'lucide-react';
 import { formatINR } from '../utils/crmUtils';
 
@@ -39,7 +39,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   const companyName = customer?.customerName || lead.company || lead.name;
   const initialProjectName = `${companyName} - ${getRequirementSummary(lead.requirement)}`;
   const initialBudget = lead.finalAgreedAmount || lead.value || lead.budget || 0;
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = lead.wonDate || new Date().toISOString().split('T')[0];
   const defaultEndDate = lead.expectedCloseDate || new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0];
 
   const [formData, setFormData] = useState({
@@ -52,6 +52,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     endDate: defaultEndDate,
     budget: initialBudget.toString(),
     status: 'Not Started' as Project['status'],
+    priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Urgent',
   });
 
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +67,11 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         projectRequirement: lead.requirement || '',
         projectNotes: lead.notes || '',
         projectManager: lead.assignedTo || (employees[0]?.name || 'Emma Watson'),
-        startDate: new Date().toISOString().split('T')[0],
+        startDate: lead.wonDate || new Date().toISOString().split('T')[0],
         endDate: lead.expectedCloseDate || new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0],
         budget: (lead.finalAgreedAmount || lead.value || lead.budget || 0).toString(),
         status: 'Not Started',
+        priority: 'Medium',
       });
       setError(null);
     }
@@ -102,6 +104,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         endDate: formData.endDate,
         budget: parseFloat(formData.budget) || 0,
         status: formData.status,
+        priority: formData.priority,
       });
 
       if (res.success && res.projectId) {
@@ -174,6 +177,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               </label>
               <input
                 type="text"
+                required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -188,6 +192,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               </label>
               <input
                 type="text"
+                required
                 value={formData.client}
                 onChange={(e) => setFormData({ ...formData, client: e.target.value })}
                 className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -198,7 +203,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
             {/* Project Manager */}
             <div>
               <label className="block font-bold text-slate-700 mb-1">
-                Project Manager <span className="text-rose-500">*</span>
+                Project Manager / Owner <span className="text-rose-500">*</span>
               </label>
               <select
                 value={formData.projectManager}
@@ -225,7 +230,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               <div className="flex items-center justify-between mb-1">
                 <label className="font-bold text-slate-700 flex items-center gap-1.5">
                   <FileText size={13} className="text-indigo-600" />
-                  Project Requirement (Copied from Lead)
+                  Project Scope / Requirements (Copied from Lead)
                 </label>
                 <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
                   Canonical Scope
@@ -278,7 +283,7 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
             {/* Budget */}
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Project Budget (₹)</label>
+              <label className="block font-bold text-slate-700 mb-1">Project Budget / Value (₹)</label>
               <input
                 type="number"
                 min="0"
@@ -289,8 +294,23 @@ export const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               />
             </div>
 
-            {/* Initial Status */}
+            {/* Priority */}
             <div>
+              <label className="block font-bold text-slate-700 mb-1">Priority</label>
+              <select
+                value={formData.priority}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Urgent">Urgent</option>
+              </select>
+            </div>
+
+            {/* Initial Status */}
+            <div className="sm:col-span-2">
               <label className="block font-bold text-slate-700 mb-1">Initial Status</label>
               <select
                 value={formData.status}

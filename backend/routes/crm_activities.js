@@ -38,17 +38,67 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/crm/activities/:id — Mark complete, update outcome / purpose
+// PATCH /api/crm/activities/:id — Update activity fields
 router.patch('/:id', async (req, res) => {
   const { id } = req.params;
-  const { status, outcome, purpose } = req.body;
+  const {
+    title,
+    type,
+    purpose,
+    relatedTo,
+    customerId,
+    opportunityId,
+    assignedTo,
+    dueDate,
+    priority,
+    status,
+    outcome,
+  } = req.body;
+
   try {
     const result = await pool.query(
-      `UPDATE activities SET status = COALESCE($2, status), outcome = COALESCE($3, outcome), purpose = COALESCE($4, purpose) WHERE id = $1 RETURNING *`,
-      [id, status, outcome, purpose]
+      `UPDATE activities SET
+        title = COALESCE($2, title),
+        type = COALESCE($3, type),
+        purpose = COALESCE($4, purpose),
+        related_to = COALESCE($5, related_to),
+        customer_id = COALESCE($6, customer_id),
+        opportunity_id = COALESCE($7, opportunity_id),
+        assigned_to = COALESCE($8, assigned_to),
+        due_date = COALESCE($9, due_date),
+        priority = COALESCE($10, priority),
+        status = COALESCE($11, status),
+        outcome = COALESCE($12, outcome)
+       WHERE id = $1 RETURNING *`,
+      [
+        id,
+        title,
+        type,
+        purpose,
+        relatedTo,
+        customerId,
+        opportunityId,
+        assignedTo,
+        dueDate,
+        priority,
+        status,
+        outcome,
+      ]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Activity not found' });
     res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/crm/activities/:id
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM activities WHERE id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Activity not found' });
+    res.json({ success: true, message: 'Activity deleted successfully', data: result.rows[0] });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }

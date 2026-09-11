@@ -5,6 +5,7 @@ import {
   ContactsAPI,
   OpportunitiesAPI,
   CRMActivitiesAPI,
+  CRMFollowUpsAPI,
   QuotationsAPI,
   SalesOrdersAPI,
   CRMInvoicesAPI,
@@ -132,9 +133,11 @@ interface AppContextType {
   activities: Activity[];
   addActivity: (activity: Omit<Activity, 'id'>) => void;
   updateActivity: (id: string, updates: Partial<Activity>) => void;
+  deleteActivity: (id: string) => Promise<void> | void;
   followUps: FollowUp[];
   addFollowUp: (fu: Omit<FollowUp, 'id'>) => void;
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
+  deleteFollowUp: (id: string) => Promise<void> | void;
   notes: Note[];
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
   products: Product[];
@@ -210,6 +213,7 @@ interface AppContextType {
       endDate?: string;
       budget?: number;
       status?: Project['status'];
+      priority?: Project['priority'];
     }
   ) => Promise<{ success: boolean; projectId?: string; message?: string }>;
   tasks: Task[];
@@ -880,6 +884,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             score: parseInt(r.score) || 50,
             source: r.source || 'Manual/Other',
             assignedTo: r.assigned_to || '',
+            assignedToEmployeeId: r.assigned_to_employee_id || '',
+            attachments: Array.isArray(r.attachments)
+              ? r.attachments
+              : (typeof r.attachments === 'string' && r.attachments.trim() !== ''
+                  ? (() => { try { return JSON.parse(r.attachments); } catch { return []; } })()
+                  : []),
             createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
           })));
         }
@@ -957,12 +967,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             title: r.title,
             type: r.type || 'Task',
             relatedTo: r.related_to || '',
+            customerId: r.customer_id || undefined,
+            opportunityId: r.opportunity_id || undefined,
             assignedTo: r.assigned_to || '',
             dueDate: r.due_date || '',
             priority: r.priority || 'Medium',
             purpose: r.purpose || 'General',
             status: r.status || 'Pending',
             outcome: r.outcome || '',
+            createdAt: r.created_at || undefined,
+          })));
+        }
+
+        // 15b. Load Follow-ups from CRM PostgreSQL
+        const followUpsRes = await CRMFollowUpsAPI.getAll();
+        if (followUpsRes.success && Array.isArray(followUpsRes.data)) {
+          setFollowUps(followUpsRes.data.map((r: any) => ({
+            id: r.id,
+            title: r.title || 'Follow up with customer',
+            notes: r.notes || '',
+            relatedEntity: r.related_entity || '',
+            customerId: r.customer_id || undefined,
+            opportunityId: r.opportunity_id || undefined,
+            leadId: r.lead_id || undefined,
+            contactId: r.contact_id || undefined,
+            activityId: r.activity_id || undefined,
+            activityType: r.activity_type || 'Call',
+            dueDate: r.due_date || '',
+            owner: r.owner || r.assigned_to || '',
+            assignedTo: r.assigned_to || r.owner || '',
+            priority: r.priority || 'Medium',
+            status: r.status || 'Pending',
+            reminder: r.reminder || 'none',
+            createdAt: r.created_at || undefined,
+            completedAt: r.completed_at || undefined,
           })));
         }
 
@@ -1474,6 +1512,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         score: leadData.score,
         source: leadData.source,
         assignedTo: leadData.assignedTo,
+        assignedToEmployeeId: leadData.assignedToEmployeeId,
         requirement: leadData.requirement,
         notes: leadData.notes,
         decisionMaker: leadData.decisionMaker || leadData.contactPerson,
@@ -1485,6 +1524,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         website: leadData.website,
         industry: leadData.industry,
         campaign: leadData.campaign,
+        attachments: leadData.attachments || [],
       });
       if (res.success && res.data) {
         setLeads((prev) => prev.map((l) => l.id === tempId ? { ...newLead, id: res.data.id } : l));
@@ -1863,6 +1903,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       endDate?: string;
       budget?: number;
       status?: Project['status'];
+      priority?: Project['priority'];
     }
   ): Promise<{ success: boolean; projectId?: string; message?: string }> => {
     const lead = leads.find((l) => l.id === leadId);
@@ -1934,6 +1975,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       spent: 0,
       progress: 0,
       status: customData?.status || 'Not Started',
+      priority: customData?.priority || 'Medium',
       createdAt: today,
       updatedAt: today,
     };
@@ -1948,6 +1990,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               projectId: projectId,
               isProjectCreated: true,
               projectCreatedAt: new Date().toISOString(),
+              isConverted: true,
+              convertedAt: l.convertedAt || new Date().toISOString(),
             }
           : l
       )
@@ -1971,29 +2015,119 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         spent: newProject.spent,
         progress: newProject.progress,
         status: newProject.status,
+        priority: newProject.priority,
       });
 
       if (res.success && res.data) {
-        setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...newProject, id: res.data.id, code: res.data.code } : p)));
+        const createdProj = res.data;
+        const resAny = res as any;
+        const resolvedCustId = resAny.customerId || lead.convertedToCustomerId || customer?.id || '';
+        const resolvedContId = resAny.contactId || lead.convertedToContactId || '';
+        const resolvedOppId = resAny.opportunityId || lead.convertedToOpportunityId || '';
+
+        setProjects((prev) =>
+          prev.map((p) =>
+            p.id === projectId
+              ? {
+                  ...p,
+                  id: createdProj.id,
+                  code: createdProj.code,
+                  customerId: resolvedCustId,
+                  sourceOpportunityId: resolvedOppId,
+                }
+              : p
+          )
+        );
+
         setLeads((prev) =>
           prev.map((l) =>
             l.id === leadId
               ? {
                   ...l,
-                  projectId: res.data.id,
+                  projectId: createdProj.id,
                   isProjectCreated: true,
+                  convertedToCustomerId: resolvedCustId,
+                  convertedToContactId: resolvedContId,
+                  convertedToOpportunityId: resolvedOppId,
+                  isConverted: true,
+                  convertedAt: l.convertedAt || new Date().toISOString(),
                 }
               : l
           )
         );
-        return { success: true, projectId: res.data.id, message: 'Project created successfully from the won lead.' };
+
+        // Synchronize customer in state if newly created
+        if (resolvedCustId && !customers.some((c) => c.id === resolvedCustId)) {
+          const newCust: Customer = {
+            id: resolvedCustId,
+            customerCode: resolvedCustId,
+            customerName: clientName,
+            customerType: lead.company ? 'Company' : 'Individual',
+            industry: lead.industry || '',
+            ownerId: lead.assignedTo || '',
+            status: 'Active',
+            primaryContact: {
+              name: lead.contactPerson || lead.decisionMaker || lead.name,
+              email: lead.email || '',
+              phone: lead.phone || '',
+            },
+            billingAddress: {
+              city: (lead as any).city || (lead as any).address || '',
+              country: (lead as any).country || '',
+            },
+            creditLimit: 0,
+            convertedFromLeadId: lead.id,
+            createdAt: today,
+            updatedAt: today,
+          };
+          setCustomers((prev) => [newCust, ...prev]);
+        }
+
+        // Synchronize contact in state if newly created
+        if (resolvedContId && !contacts.some((ct) => ct.id === resolvedContId)) {
+          const newCont: Contact = {
+            id: resolvedContId,
+            name: lead.contactPerson || lead.decisionMaker || lead.name,
+            customerId: resolvedCustId,
+            customerName: clientName,
+            designation: lead.designation || 'Primary Contact',
+            email: lead.email || '',
+            phone: lead.phone || '',
+            owner: lead.assignedTo || '',
+            lastInteraction: lead.wonDate || today,
+            status: 'Active',
+          };
+          setContacts((prev) => [newCont, ...prev]);
+        }
+
+        // Synchronize opportunity in state if newly created
+        if (resolvedOppId && !opportunities.some((o) => o.id === resolvedOppId)) {
+          const newOpp: Opportunity = {
+            id: resolvedOppId,
+            name: `${clientName} - Implementation`,
+            customerId: resolvedCustId,
+            customerName: clientName,
+            value: customData?.budget !== undefined ? customData.budget : (lead.finalAgreedAmount || lead.value || lead.budget || 0),
+            probability: 100,
+            expectedClose: customData?.startDate || lead.wonDate || today,
+            owner: lead.assignedTo || '',
+            stage: 'Won',
+          };
+          setOpportunities((prev) => [newOpp, ...prev]);
+        }
+
+        return {
+          success: true,
+          projectId: createdProj.id,
+          message: 'Project created successfully from the won lead.',
+        };
       }
     } catch (err: any) {
       console.warn('⚠️ [CRM -> Projects] Failed to persist project:', err.message);
     }
 
     return { success: true, projectId, message: 'Project created successfully from the won lead.' };
-  }, [leads, customers, employees]);
+  }, [leads, customers, contacts, opportunities, employees]);
 
   const addCustomer = useCallback(async (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => {
     const now = new Date().toISOString();
@@ -2133,6 +2267,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         type: activity.type,
         purpose: activity.purpose || 'General',
         relatedTo: activity.relatedTo,
+        customerId: activity.customerId,
+        opportunityId: activity.opportunityId,
         assignedTo: activity.assignedTo,
         dueDate: activity.dueDate,
         priority: activity.priority,
@@ -2147,9 +2283,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((act) => (act.id === id ? { ...act, ...updates } : act))
     );
     try {
-      await CRMActivitiesAPI.update(id, updates);
+      await CRMActivitiesAPI.update(id, {
+        title: updates.title,
+        type: updates.type,
+        purpose: updates.purpose,
+        relatedTo: updates.relatedTo,
+        customerId: updates.customerId,
+        opportunityId: updates.opportunityId,
+        assignedTo: updates.assignedTo,
+        dueDate: updates.dueDate,
+        priority: updates.priority,
+        status: updates.status,
+        outcome: updates.outcome,
+      });
     } catch (err) {
       console.warn('⚠️ [CRM] updateActivity failed:', err);
+    }
+  }, []);
+
+  const deleteActivity = useCallback(async (id: string) => {
+    setActivities((prev) => prev.filter((a) => a.id !== id)); // Optimistic
+    try {
+      await CRMActivitiesAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteActivity failed:', err);
+    }
+  }, []);
+
+  const addFollowUp = useCallback(async (fu: Omit<FollowUp, 'id'>) => {
+    const tempId = `FU-${Date.now()}`;
+    setFollowUps((prev) => [{ ...fu, id: tempId }, ...prev]); // Optimistic
+    try {
+      await CRMFollowUpsAPI.create({
+        id: tempId,
+        title: fu.title,
+        notes: fu.notes,
+        relatedEntity: fu.relatedEntity,
+        customerId: fu.customerId,
+        opportunityId: fu.opportunityId,
+        leadId: fu.leadId,
+        contactId: fu.contactId,
+        activityId: fu.activityId,
+        activityType: fu.activityType,
+        dueDate: fu.dueDate,
+        owner: fu.owner || fu.assignedTo,
+        assignedTo: fu.assignedTo || fu.owner,
+        priority: fu.priority,
+        status: fu.status,
+        reminder: fu.reminder,
+      });
+    } catch (err) {
+      console.warn('⚠️ [CRM] addFollowUp failed:', err);
+    }
+  }, []);
+
+  const updateFollowUp = useCallback(async (id: string, updates: Partial<FollowUp>) => {
+    setFollowUps((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
+    );
+    try {
+      await CRMFollowUpsAPI.update(id, {
+        title: updates.title,
+        notes: updates.notes,
+        relatedEntity: updates.relatedEntity,
+        customerId: updates.customerId,
+        opportunityId: updates.opportunityId,
+        leadId: updates.leadId,
+        contactId: updates.contactId,
+        activityId: updates.activityId,
+        activityType: updates.activityType,
+        dueDate: updates.dueDate,
+        owner: updates.owner || updates.assignedTo,
+        assignedTo: updates.assignedTo || updates.owner,
+        priority: updates.priority,
+        status: updates.status,
+        reminder: updates.reminder,
+        completedAt: updates.completedAt,
+      });
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateFollowUp failed:', err);
+    }
+  }, []);
+
+  const deleteFollowUp = useCallback(async (id: string) => {
+    setFollowUps((prev) => prev.filter((f) => f.id !== id)); // Optimistic
+    try {
+      await CRMFollowUpsAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteFollowUp failed:', err);
     }
   }, []);
 
@@ -2522,14 +2743,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const addFollowUp = (fu: Omit<FollowUp, 'id'>) => {
-    setFollowUps((prev) => [{ ...fu, id: `FU-${Date.now()}` }, ...prev]);
-  };
-
-  const updateFollowUp = (id: string, updates: Partial<FollowUp>) => {
-    setFollowUps((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
-  };
-
   const addNote = (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newNote: Note = {
       ...note,
@@ -2802,9 +3015,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activities,
         addActivity,
         updateActivity,
+        deleteActivity,
         followUps,
         addFollowUp,
         updateFollowUp,
+        deleteFollowUp,
         notes,
         addNote,
         products,

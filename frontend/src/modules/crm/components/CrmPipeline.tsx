@@ -33,26 +33,26 @@ const STAGES: {
   { 
     id: 'Qualified', 
     label: 'Qualified', 
-    badgeBg: 'bg-amber-50 text-amber-700 border-amber-200',
-    headerBg: 'border-amber-200 bg-amber-50/50',
+    badgeBg: 'bg-blue-50 text-blue-700 border-blue-200',
+    headerBg: 'border-blue-200 bg-blue-50/50',
     columnBg: 'bg-slate-50/80',
-    accentBorder: 'border-amber-300'
+    accentBorder: 'border-blue-300'
   },
   { 
     id: 'Proposal', 
     label: 'Proposal', 
-    badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    headerBg: 'border-indigo-200 bg-indigo-50/50',
+    badgeBg: 'bg-blue-50 text-blue-700 border-blue-200',
+    headerBg: 'border-blue-200 bg-blue-50/50',
     columnBg: 'bg-slate-50/80',
-    accentBorder: 'border-indigo-300'
+    accentBorder: 'border-blue-300'
   },
   { 
     id: 'Negotiation', 
     label: 'Negotiation', 
-    badgeBg: 'bg-purple-50 text-purple-700 border-purple-200',
-    headerBg: 'border-purple-200 bg-purple-50/50',
+    badgeBg: 'bg-blue-50 text-blue-700 border-blue-200',
+    headerBg: 'border-blue-200 bg-blue-50/50',
     columnBg: 'bg-slate-50/80',
-    accentBorder: 'border-purple-300'
+    accentBorder: 'border-blue-300'
   },
   { 
     id: 'Won', 

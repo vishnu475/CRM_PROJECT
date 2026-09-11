@@ -198,11 +198,21 @@ export const ProjectsDeliveryView: React.FC = () => {
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-indigo-800 p-6 text-white flex justify-between items-start">
               <div>
-                <div className="flex items-center gap-2 mb-1.5">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                   <span className="font-mono text-xs font-bold text-purple-200 bg-white/10 px-2.5 py-0.5 rounded">
                     {selectedProject.code || selectedProject.id}
                   </span>
                   {getStatusBadge(selectedProject.status)}
+                  {selectedProject.priority && (
+                    <span className="px-2 py-0.5 bg-amber-400/20 text-amber-200 border border-amber-300/30 text-xs font-bold rounded-full">
+                      Priority: {selectedProject.priority}
+                    </span>
+                  )}
+                  {selectedProject.sourceLeadId && (
+                    <span className="px-2 py-0.5 bg-indigo-400/20 text-indigo-200 border border-indigo-300/30 text-xs font-bold rounded-full">
+                      Source Lead: {selectedProject.sourceLeadId}
+                    </span>
+                  )}
                 </div>
                 <h2 className="text-xl font-bold">{selectedProject.name}</h2>
                 <div className="flex items-center gap-2 text-xs text-purple-100 mt-1">

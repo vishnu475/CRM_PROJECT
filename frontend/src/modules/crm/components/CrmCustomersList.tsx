@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { CrmView, Customer } from '../../../types';
 import { useApp } from '../../../context/AppContext';
-import { formatINR } from '../utils/crmUtils';
+import { formatINR, getCustomerStatusColor } from '../utils/crmUtils';
 import { 
   Search, Filter, Plus, MoreVertical, Edit2, Archive, Phone, Mail, 
   ChevronLeft, ChevronRight, User, Building2, AlertCircle, Calendar,
@@ -22,7 +22,6 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
   const [activeTab, setActiveTab] = useState<'All' | 'Active' | 'At Risk' | 'Inactive' | 'Archived'>('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
-  const [selectedCustomers, setSelectedCustomers] = useState<Set<string>>(new Set());
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
 
   // Advanced Filters State
@@ -204,24 +203,6 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
     return filteredCustomers.slice(start, start + itemsPerPage);
   }, [filteredCustomers, currentPage, itemsPerPage]);
 
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedCustomers(new Set(paginatedCustomers.map(c => c.id)));
-    } else {
-      setSelectedCustomers(new Set());
-    }
-  };
-
-  const handleSelectOne = (id: string) => {
-    const newSet = new Set(selectedCustomers);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
-    setSelectedCustomers(newSet);
-  };
-
   const handleArchive = (id: string) => {
     if (window.confirm("Archive Customer?\nThis customer will be moved to archived customers.")) {
       updateCustomer(id, { status: 'Archived' });
@@ -233,13 +214,7 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
   };
 
   const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'Active': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'At Risk': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Inactive': return 'bg-slate-100 text-slate-700 border-slate-200';
-      case 'Archived': return 'bg-rose-50 text-rose-700 border-rose-200';
-      default: return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
+    return getCustomerStatusColor(status);
   };
 
   return (
@@ -507,14 +482,6 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 sticky top-0 z-10">
                   <tr>
-                    <th className="p-4 w-12">
-                      <input 
-                        type="checkbox" 
-                        onChange={handleSelectAll} 
-                        checked={selectedCustomers.size > 0 && selectedCustomers.size === paginatedCustomers.length} 
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" 
-                      />
-                    </th>
                     <th className="p-4 font-semibold w-28">Code</th>
                     <th className="p-4 font-semibold">Company</th>
                     <th className="p-4 font-semibold">Industry</th>
@@ -533,15 +500,6 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
 
                     return (
                       <tr key={customer.id} className="hover:bg-slate-50/80 transition-colors group">
-                        <td className="p-4">
-                          <input 
-                            type="checkbox" 
-                            checked={selectedCustomers.has(customer.id)} 
-                            onChange={() => handleSelectOne(customer.id)} 
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" 
-                          />
-                        </td>
-                        
                         {/* Customer Code */}
                         <td className="p-4 font-mono text-xs font-semibold text-indigo-600">
                           {customer.customerCode || '—'}

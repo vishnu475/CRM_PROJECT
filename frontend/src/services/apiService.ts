@@ -207,6 +207,10 @@ export const LeadsAPI = {
   create:  (data: any)  => request('POST', '/leads', data),
   update:  (id: string, data: any) => request('PATCH', `/leads/${id}`, data),
   delete:  (id: string) => request('DELETE', `/leads/${id}`),
+  uploadAttachment: (payload: { fileName: string; fileData: string; fileSize?: number; fileType?: string }) =>
+    request('POST', '/leads/upload-attachment', payload),
+  deleteAttachment: (filename: string) =>
+    request('DELETE', `/leads/upload-attachment/${encodeURIComponent(filename)}`),
 };
 
 // ────────────────────────────────────────────────────────────
@@ -269,6 +273,24 @@ export const CRMActivitiesAPI = {
   },
   create: (data: any)  => request('POST', '/crm/activities', data),
   update: (id: string, data: any) => request('PATCH', `/crm/activities/${id}`, data),
+  delete: (id: string) => request('DELETE', `/crm/activities/${id}`),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — FOLLOW-UPS
+// ────────────────────────────────────────────────────────────
+export const CRMFollowUpsAPI = {
+  getAll: (filters?: { status?: string; assignedTo?: string; customerId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.assignedTo) params.set('assignedTo', filters.assignedTo);
+    if (filters?.customerId) params.set('customerId', filters.customerId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/crm/followups${query}`);
+  },
+  create: (data: any)  => request('POST', '/crm/followups', data),
+  update: (id: string, data: any) => request('PATCH', `/crm/followups/${id}`, data),
+  delete: (id: string) => request('DELETE', `/crm/followups/${id}`),
 };
 
 // ────────────────────────────────────────────────────────────

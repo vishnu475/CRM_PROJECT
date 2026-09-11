@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { CrmView, Lead } from '../../../types';
 import { useApp } from '../../../context/AppContext';
-import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
+import { formatINR, getLeadScoreColor, getLeadStageColor } from '../utils/crmUtils';
 import { 
   Plus, Search, Filter, MoreVertical, ChevronLeft, ChevronRight, 
   Building2, User, Mail,
-  Rocket, CheckCheck
+  Rocket, CheckCheck, FolderKanban
 } from 'lucide-react';
 import { ConvertLeadModal } from './ConvertLeadModal';
 
@@ -15,7 +15,15 @@ interface CrmLeadsListProps {
 }
 
 export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLeadSelect }) => {
-  const { leads, updateLead } = useApp();
+  const { leads, employees, updateLead } = useApp();
+
+  const getLeadOwnerDisplay = (lead: Lead) => {
+    const emp = employees.find(e =>
+      (lead.assignedToEmployeeId && (e.id === lead.assignedToEmployeeId || e.empCode === lead.assignedToEmployeeId)) ||
+      (lead.assignedTo && e.name.toLowerCase() === lead.assignedTo.toLowerCase())
+    );
+    return emp ? `${emp.name} (${emp.empCode || emp.id})` : (lead.assignedTo || 'Unassigned');
+  };
   
   // Filtering and Search State
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,9 +32,6 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
-  
-  // Selection State
-  const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   
   // Archive & Convert Modal State
   const [leadToArchive, setLeadToArchive] = useState<string | null>(null);
@@ -58,12 +63,17 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
     // 2. Search Query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(l => 
-        l.name.toLowerCase().includes(q) ||
-        l.company.toLowerCase().includes(q) ||
-        l.email.toLowerCase().includes(q) ||
-        l.phone.includes(q)
-      );
+      result = result.filter(l => {
+        const ownerName = getLeadOwnerDisplay(l).toLowerCase();
+        return (
+          l.name.toLowerCase().includes(q) ||
+          l.company.toLowerCase().includes(q) ||
+          l.email.toLowerCase().includes(q) ||
+          l.phone.includes(q) ||
+          (l.assignedTo && l.assignedTo.toLowerCase().includes(q)) ||
+          ownerName.includes(q)
+        );
+      });
     }
 
     // 3. Sort (Default by creation date descending)
@@ -80,44 +90,10 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
     return filteredLeads.slice(start, start + itemsPerPage);
   }, [filteredLeads, currentPage, itemsPerPage]);
 
-  // Handlers
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedLeads(new Set(paginatedLeads.map(l => l.id)));
-    } else {
-      setSelectedLeads(new Set());
-    }
-  };
-
-  const handleSelectOne = (id: string) => {
-    const newSet = new Set(selectedLeads);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
-    setSelectedLeads(newSet);
-  };
-
   const handleArchive = () => {
     if (leadToArchive) {
       updateLead(leadToArchive, { status: 'archived' });
       setLeadToArchive(null);
-      setSelectedLeads(prev => {
-        const next = new Set(prev);
-        next.delete(leadToArchive);
-        return next;
-      });
-    }
-  };
-
-  const getStageBadgeColor = (stage: string) => {
-    switch (stage) {
-      case 'New': return 'bg-blue-100 text-blue-700';
-      case 'Contacted': return 'bg-indigo-100 text-indigo-700';
-      case 'Qualified': return 'bg-violet-100 text-violet-700';
-      case 'Proposal': return 'bg-amber-100 text-amber-700';
-      case 'Negotiation': return 'bg-orange-100 text-orange-700';
-      case 'Won': return 'bg-emerald-100 text-emerald-700';
-      case 'Lost': return 'bg-rose-100 text-rose-700';
-      default: return 'bg-slate-100 text-slate-700';
     }
   };
 
@@ -176,26 +152,16 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
 
       {/* TOOLBAR */}
       <div className="bg-white rounded-t-xl border border-b-0 border-slate-200 p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-        
-        {selectedLeads.size > 0 ? (
-          <div className="flex items-center gap-4 w-full sm:w-auto bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-semibold text-sm animate-in fade-in duration-200">
-            <span>{selectedLeads.size} selected</span>
-            <div className="h-4 w-px bg-indigo-200"></div>
-            <button className="hover:text-indigo-900 transition-colors">Assign</button>
-            <button className="hover:text-indigo-900 transition-colors">Export</button>
-          </div>
-        ) : (
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search leads..." 
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all"
-            />
-          </div>
-        )}
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input 
+            type="text" 
+            placeholder="Search leads..." 
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all"
+          />
+        </div>
 
         <button className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
           <Filter size={16} /> Filters
@@ -207,7 +173,6 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="p-4 w-12"><input type="checkbox" onChange={handleSelectAll} checked={paginatedLeads.length > 0 && selectedLeads.size === paginatedLeads.length} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" /></th>
               <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Lead</th>
               <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Company</th>
               <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Stage</th>
@@ -220,7 +185,6 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
           <tbody className="divide-y divide-slate-100">
             {paginatedLeads.map(lead => (
               <tr key={lead.id} className="hover:bg-slate-50 transition-colors group">
-                <td className="p-4"><input type="checkbox" checked={selectedLeads.has(lead.id)} onChange={() => handleSelectOne(lead.id)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" /></td>
                 <td className="p-4">
                   <div 
                     className="font-semibold text-[#0f172a] cursor-pointer hover:text-indigo-600"
@@ -239,23 +203,10 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                 <td className="p-4">
                   <div className="flex items-center gap-2">
                     <span
-                      className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}
+                      className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getLeadStageColor(lead.stage)}`}
                     >
                       {lead.stage}
                     </span>
-
-                    {lead.stage === 'Won' && !lead.isConverted && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setLeadToConvert(lead);
-                        }}
-                        className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1 transition-all whitespace-nowrap transform hover:scale-105"
-                        title="Convert Won Lead to Customer, Contact & Opportunity"
-                      >
-                        <Rocket size={13} className="text-amber-300" /> Convert Lead
-                      </button>
-                    )}
 
                     {lead.isConverted && (
                       <span 
@@ -263,6 +214,15 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                         title="Lead successfully converted to Customer Account"
                       >
                         <CheckCheck size={13} className="text-emerald-600" /> Converted
+                      </span>
+                    )}
+
+                    {(lead.isProjectCreated || lead.projectId) && (
+                      <span
+                        className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1 whitespace-nowrap shadow-xs"
+                        title="Project created in Projects delivery module"
+                      >
+                        <FolderKanban size={13} className="text-emerald-600" /> Project Created
                       </span>
                     )}
                   </div>
@@ -277,24 +237,14 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                 </td>
                 <td className="p-4">
                   <div className="flex items-center text-sm text-slate-600">
-                    <User size={14} className="mr-2 text-slate-400" />
-                    {lead.assignedTo}
+                    <User size={14} className="mr-2 text-slate-400 shrink-0" />
+                    <span className="truncate max-w-[180px]" title={getLeadOwnerDisplay(lead)}>
+                      {getLeadOwnerDisplay(lead)}
+                    </span>
                   </div>
                 </td>
                 <td className="p-4 text-right">
                   <div className="flex items-center justify-end gap-1.5">
-                    {lead.stage === 'Won' && !lead.isConverted && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setLeadToConvert(lead);
-                        }}
-                        className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-md text-xs font-bold transition flex items-center gap-1"
-                        title="Convert Lead"
-                      >
-                        <Rocket size={12} /> Convert
-                      </button>
-                    )}
                     <button 
                       onClick={() => setLeadToArchive(lead.id)} 
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100"
@@ -308,7 +258,7 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
             ))}
             {paginatedLeads.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-12 text-center">
+                <td colSpan={7} className="p-12 text-center">
                   <div className="flex flex-col items-center">
                     <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
                       <Search size={24} className="text-slate-400" />
@@ -345,24 +295,18 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
             <div className="flex items-center justify-between mt-4">
               <div className="flex items-center gap-2 flex-wrap">
                 <span
-                  className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStageBadgeColor(lead.stage)}`}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getLeadStageColor(lead.stage)}`}
                 >
                   {lead.stage}
                 </span>
-                {lead.stage === 'Won' && !lead.isConverted && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLeadToConvert(lead);
-                    }}
-                    className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-xs rounded-lg shadow-sm flex items-center gap-1"
-                  >
-                    <Rocket size={13} className="text-amber-300" /> Convert Lead
-                  </button>
-                )}
                 {lead.isConverted && (
                   <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1">
                     <CheckCheck size={12} className="text-emerald-600" /> Converted
+                  </span>
+                )}
+                {(lead.isProjectCreated || lead.projectId) && (
+                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1">
+                    <FolderKanban size={12} className="text-emerald-600" /> Project Created
                   </span>
                 )}
               </div>
@@ -370,7 +314,7 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
             </div>
             
             <div className="flex items-center gap-4 mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500">
-              <div className="flex items-center"><User size={12} className="mr-1" /> {lead.assignedTo}</div>
+              <div className="flex items-center"><User size={12} className="mr-1" /> {getLeadOwnerDisplay(lead)}</div>
               <div className="flex items-center"><Mail size={12} className="mr-1" /> Email</div>
             </div>
           </div>

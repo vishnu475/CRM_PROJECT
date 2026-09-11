@@ -1,13 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
-import { formatINR, getLeadScoreColor } from '../utils/crmUtils';
+import { formatINR, getLeadScoreColor, getLeadStageColor } from '../utils/crmUtils';
 import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
 import { findMatchingCustomer, DuplicateCustomerMatch } from '../utils/duplicateCustomerDetection';
 import { 
   ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
   CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award,
-  XCircle, AlertOctagon, Rocket, Sparkles, CheckCheck, ShieldCheck, FolderKanban, Users
+  XCircle, AlertOctagon, Rocket, Sparkles, CheckCheck, ShieldCheck, FolderKanban, Users,
+  Trash2, ExternalLink, Image as FileImage
 } from 'lucide-react';
 import { ConvertLeadModal } from './ConvertLeadModal';
 import { CreateProjectModal } from './CreateProjectModal';
@@ -22,13 +23,38 @@ type TabType = 'overview' | 'activities' | 'notes' | 'documents';
 const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
 
 export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewChange }) => {
-  const { leads, customers, contacts, opportunities, activities, notes, documents, followUps, quotations, projects, updateLead, addActivity, updateActivity, addQuotation, updateQuotation, addNote, addFollowUp, addDocument, convertLead, setActiveModule } = useApp();
+  const { leads, customers, contacts, opportunities, activities, notes, documents, followUps, quotations, projects, employees, updateLead, addActivity, updateActivity, addQuotation, updateQuotation, addNote, addFollowUp, addDocument, convertLead, setActiveModule } = useApp();
   
   const lead = leads.find(l => l.id === leadId);
+
+  // Confirmed HRMS employees eligible for assignments
+  const eligibleEmployees = useMemo(() => {
+    return employees.filter(emp => (emp.status || '').toLowerCase() === 'confirmed');
+  }, [employees]);
+
+  // Resolve assigned employee from HRMS employees list
+  const assignedEmployee = useMemo(() => {
+    if (!lead) return null;
+    return employees.find(e => 
+      (lead.assignedToEmployeeId && (e.id === lead.assignedToEmployeeId || e.empCode === lead.assignedToEmployeeId)) ||
+      (lead.assignedTo && e.name.toLowerCase() === lead.assignedTo.toLowerCase())
+    ) || null;
+  }, [lead, employees]);
+
+  const displayOwnerName = assignedEmployee 
+    ? `${assignedEmployee.name} (${assignedEmployee.empCode || assignedEmployee.id})`
+    : (lead?.assignedTo || 'Unassigned');
+  const displayOwnerInitials = (assignedEmployee?.name || lead?.assignedTo || 'U').charAt(0).toUpperCase();
+
   const associatedContact = useMemo(() => {
     if (!lead) return null;
     return contacts.find(c => (c.leadId && c.leadId === lead.id) || (lead.convertedToContactId && c.id === lead.convertedToContactId)) || null;
   }, [lead, contacts]);
+  const linkedProject = useMemo(() => {
+    if (!lead) return null;
+    return projects.find(p => p.sourceLeadId === lead.id || (lead.projectId && p.id === lead.projectId)) || null;
+  }, [lead, projects]);
+  const hasProject = Boolean(lead?.isProjectCreated || lead?.projectId || linkedProject);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -110,6 +136,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     expectedCloseDate: '',
     industry: '',
     source: '',
+    assignedTo: '',
+    assignedToEmployeeId: '',
   });
 
   const leadQuotation = useMemo(() => {
@@ -416,6 +444,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       expectedCloseDate: lead.expectedCloseDate || '',
       industry: lead.industry || '',
       source: lead.source || '',
+      assignedTo: lead.assignedTo || '',
+      assignedToEmployeeId: lead.assignedToEmployeeId || '',
     });
     setShowEditModal(true);
   };
@@ -437,6 +467,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       expectedCloseDate: editForm.expectedCloseDate,
       industry: editForm.industry,
       source: editForm.source,
+      assignedTo: editForm.assignedTo || lead.assignedTo,
+      assignedToEmployeeId: editForm.assignedToEmployeeId || lead.assignedToEmployeeId,
     };
     updateLead(lead.id, updates);
     setShowEditModal(false);
@@ -614,48 +646,34 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               <span className="hidden sm:inline text-slate-300">•</span>
               <span className="flex items-center"><User size={14} className="mr-1" /> {lead.contactPerson || lead.email}</span>
               <span className="hidden sm:inline text-slate-300">•</span>
-              <div className="inline-flex items-center gap-1.5">
+              <div className="inline-flex items-center gap-1.5 select-none" aria-label={`Current Lead Stage: ${lead.stage}`}>
                 <span className="text-xs font-semibold text-slate-400">Stage:</span>
-                <select
-                  value={lead.stage}
-                  onChange={(e) => handleStageChange(e.target.value as Lead['stage'])}
-                  className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  title="Change Lead Stage"
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${getLeadStageColor(lead.stage)}`}
                 >
-                  {leadStages.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                  {lead.stage}
+                </span>
               </div>
             </div>
           </div>
           
           <div className="flex items-center gap-3">
-            {lead.stage === 'Won' && !lead.isConverted && (
-              <button
-                onClick={openConvertModal}
-                className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm rounded-lg shadow-md transition flex items-center gap-2 transform hover:scale-[1.02]"
-                title="Convert Won Lead to Customer, Primary Contact, and Won Opportunity"
-              >
-                <Rocket size={16} className="text-amber-300" /> Convert Lead
-              </button>
-            )}
             {lead.stage === 'Won' && (
-              lead.isProjectCreated || lead.projectId ? (
+              hasProject ? (
                 <button
                   onClick={() => setActiveModule('projects')}
-                  className="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-sm rounded-lg shadow-xs transition flex items-center gap-1.5"
+                  className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-sm rounded-lg shadow-xs transition flex items-center gap-1.5"
                   title="View associated Project in Projects & Client Delivery"
                 >
-                  <FolderKanban size={15} className="text-purple-600" /> Project Created • View Project
+                  <FolderKanban size={15} className="text-emerald-600" /> View Project
                 </button>
               ) : (
                 <button
                   onClick={() => setShowCreateProjectModal(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white font-bold text-sm rounded-lg shadow-md transition flex items-center gap-2 transform hover:scale-[1.02]"
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 via-indigo-600 to-indigo-700 hover:from-emerald-500 hover:to-indigo-600 text-white font-bold text-sm rounded-lg shadow-md transition flex items-center gap-2 transform hover:scale-[1.02]"
                   title="Create Project from Won Lead Requirements"
                 >
-                  <FolderKanban size={16} className="text-amber-300" /> Create Project
+                  <FolderKanban size={16} className="text-white" /> Create Project
                 </button>
               )
             )}
@@ -693,24 +711,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </button>
               {showMoreMenu && (
                 <div className="absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
-                  {lead.stage === 'Won' && !lead.isConverted && (
-                    <>
-                      <button
-                        onClick={() => { openConvertModal(); setShowMoreMenu(false); }}
-                        className="w-full text-left px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 font-bold flex items-center gap-2"
-                      >
-                        <Rocket size={14} className="text-indigo-600" /> Convert to Customer
-                      </button>
-                      <div className="h-px bg-slate-200 my-1"></div>
-                    </>
-                  )}
                   {lead.isConverted && (
                     <div className="px-4 py-1.5 text-xs text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 mb-1">
                       <CheckCheck size={14} /> Converted to Customer
                     </div>
                   )}
                   {lead.stage === 'Won' && (
-                    lead.isProjectCreated || lead.projectId ? (
+                    hasProject ? (
                       <button
                         onClick={() => { setActiveModule('projects'); setShowMoreMenu(false); }}
                         className="w-full text-left px-4 py-2 text-sm text-purple-700 hover:bg-purple-50 font-bold flex items-center gap-2"
@@ -762,7 +769,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               <p className="text-xs text-emerald-800 leading-relaxed mb-3.5">
                 This Won deal has been successfully converted into your CRM Master database. Linked records are live and navigable below:
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div
                   onClick={() => onViewChange('customers')}
                   className="p-3 bg-white/90 hover:bg-white rounded-lg border border-emerald-200 hover:border-indigo-300 cursor-pointer transition-all shadow-xs group"
@@ -806,7 +813,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </div>
 
                 {/* Linked Project Card */}
-                {lead.isProjectCreated || lead.projectId ? (
+                {hasProject ? (
                   <div
                     onClick={() => setActiveModule('projects')}
                     className="p-3 bg-white/90 hover:bg-white rounded-lg border border-purple-200 hover:border-purple-400 cursor-pointer transition-all shadow-xs group"
@@ -816,9 +823,9 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                       <ChevronRight size={14} className="text-slate-400 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" />
                     </div>
                     <div className="text-sm font-bold text-slate-900 truncate mt-1 group-hover:text-purple-600 transition-colors">
-                      {lead.projectId || 'Project Active'}
+                      {linkedProject?.name || lead.projectId || 'Project Active'}
                     </div>
-                    <div className="text-[11px] text-emerald-600 font-semibold mt-0.5">Status: Not Started</div>
+                    <div className="text-[11px] text-emerald-600 font-semibold mt-0.5">Status: {linkedProject?.status || 'Not Started'}</div>
                   </div>
                 ) : (
                   <div
@@ -978,9 +985,9 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Owner</p>
             <div className="flex items-center">
               <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2">
-                {lead.assignedTo.charAt(0)}
+                {displayOwnerInitials}
               </div>
-              <span className="text-sm font-bold text-[#0f172a]">{lead.assignedTo}</span>
+              <span className="text-sm font-bold text-[#0f172a]" title={displayOwnerName}>{displayOwnerName}</span>
             </div>
           </div>
         </div>
@@ -989,21 +996,30 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
         <div className="mt-8 pt-6 border-t border-slate-100">
           <div className="flex justify-between items-center mb-3">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Sales Stage</p>
-            <span className="text-[11px] text-slate-400">Click a stage bubble or select above to move stage</span>
+            <span className="text-[11px] text-slate-400">Click a stage bubble to advance stage based on workflow rules</span>
           </div>
           <div className="flex items-center justify-between relative">
             <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-slate-100 z-0"></div>
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-indigo-500 z-0 transition-all duration-500" style={{ width: `${Math.max(0, (currentStageIndex / (leadStages.length - 1)) * 100)}%` }}></div>
+            <div 
+              className={`absolute left-0 top-1/2 -translate-y-1/2 h-1 z-0 transition-all duration-500 ${
+                lead.stage === 'Won' ? 'bg-emerald-500' : lead.stage === 'Lost' ? 'bg-rose-500' : 'bg-blue-600'
+              }`} 
+              style={{ width: `${Math.max(0, (currentStageIndex / (leadStages.length - 1)) * 100)}%` }}
+            ></div>
             
             {leadStages.map((stage, idx) => {
               const isPast = idx < currentStageIndex;
               const isCurrent = idx === currentStageIndex;
               const isLost = stage === 'Lost' && isCurrent;
+              const isWon = stage === 'Won' && isCurrent;
               
-              let bubbleColor = 'bg-slate-200 border-white text-transparent hover:border-indigo-200';
-              if (isPast) bubbleColor = 'bg-indigo-500 border-white text-white hover:bg-indigo-600';
-              if (isCurrent) bubbleColor = 'bg-indigo-600 border-indigo-200 shadow-md shadow-indigo-500/30 text-white';
-              if (isLost) bubbleColor = 'bg-rose-500 border-rose-200 text-white';
+              let bubbleColor = 'bg-slate-200 border-white text-transparent hover:border-blue-200';
+              if (isPast) bubbleColor = 'bg-blue-500 border-white text-white hover:bg-blue-600';
+              if (isCurrent) {
+                if (isWon) bubbleColor = 'bg-emerald-600 border-emerald-200 shadow-md shadow-emerald-500/30 text-white';
+                else if (isLost) bubbleColor = 'bg-rose-600 border-rose-200 shadow-md shadow-rose-500/30 text-white';
+                else bubbleColor = 'bg-blue-600 border-blue-200 shadow-md shadow-blue-500/30 text-white';
+              }
 
               return (
                 <button
@@ -1016,7 +1032,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <div className={`w-6 h-6 rounded-full border-4 flex items-center justify-center transition-colors ${bubbleColor}`}>
                     {isPast && <CheckCircle2 size={12} />}
                   </div>
-                  <span className={`absolute top-8 text-[10px] font-bold whitespace-nowrap transition-colors ${isCurrent ? (isLost ? 'text-rose-600' : 'text-indigo-600') : 'text-slate-400 group-hover:text-slate-700'}`}>
+                  <span className={`absolute top-8 text-[10px] font-bold whitespace-nowrap transition-colors ${
+                    isCurrent 
+                      ? (isLost ? 'text-rose-600' : isWon ? 'text-emerald-600' : 'text-blue-600') 
+                      : 'text-slate-400 group-hover:text-slate-700'
+                  }`}>
                     {stage}
                   </span>
                 </button>
@@ -1074,6 +1094,141 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       {/* TAB CONTENT: OVERVIEW */}
       {activeTab === 'overview' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* WON LEAD PROJECT DELIVERY CARD */}
+          {lead.stage === 'Won' && (
+            <div className="bg-gradient-to-br from-purple-50/70 via-white to-indigo-50/50 rounded-xl border border-purple-200 shadow-xs p-6 md:col-span-2">
+              <div className="flex justify-between items-center mb-4 pb-3 border-b border-purple-100 flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-purple-100 text-purple-700 rounded-lg">
+                    <FolderKanban size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-[#0f172a]">
+                        Project Delivery Container
+                      </h2>
+                      {hasProject ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                          Project Created
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          Ready for Project Creation
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Client implementation and delivery tracking linked to this Won lead
+                    </p>
+                  </div>
+                </div>
+
+                {hasProject ? (
+                  <button
+                    onClick={() => setActiveModule('projects')}
+                    className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1.5"
+                    title="Open Project Details in Projects module"
+                  >
+                    <FolderKanban size={14} /> View Project
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowCreateProjectModal(true)}
+                    className="px-4 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1.5"
+                    title="Initialize delivery project from this Won lead"
+                  >
+                    <Plus size={14} /> Create Project
+                  </button>
+                )}
+              </div>
+
+              {hasProject ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-3.5 bg-white rounded-lg border border-purple-100 shadow-2xs">
+                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider block mb-1">
+                      Project Name
+                    </span>
+                    <p className="text-sm font-bold text-slate-900 truncate">
+                      {linkedProject?.name || `${lead.company || lead.name} - Implementation`}
+                    </p>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ID: {linkedProject?.id || lead.projectId || 'Linked'}
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 bg-white rounded-lg border border-purple-100 shadow-2xs">
+                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider block mb-1">
+                      Delivery Status
+                    </span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {linkedProject?.status || 'Not Started'}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        {linkedProject?.progress ?? 0}% Progress
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-white rounded-lg border border-purple-100 shadow-2xs">
+                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider block mb-1">
+                      Project Value / Budget
+                    </span>
+                    <p className="text-sm font-bold text-slate-900">
+                      {formatINR(linkedProject?.budget || lead.finalAgreedAmount || lead.value || 0)}
+                    </p>
+                    <span className="text-[10px] text-slate-500">
+                      Owner: {linkedProject?.projectManager || lead.assignedTo || 'Unassigned'}
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 bg-white rounded-lg border border-purple-100 shadow-2xs">
+                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider block mb-1">
+                      Start Date
+                    </span>
+                    <p className="text-sm font-bold text-slate-900">
+                      {linkedProject?.startDate || lead.wonDate || 'Scheduled'}
+                    </p>
+                    <span className="text-[10px] text-purple-700 font-semibold">
+                      Priority: {linkedProject?.priority || 'Medium'}
+                    </span>
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-4 p-3.5 bg-white rounded-lg border border-purple-100 shadow-2xs">
+                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider block mb-1">
+                      Project Scope & Requirements
+                    </span>
+                    <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                      {linkedProject?.projectRequirement || lead.requirement || 'Full client scope transferred from Won lead requirements.'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-white/80 rounded-lg border border-dashed border-purple-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[11px] font-bold rounded-full border border-purple-200">
+                        Eligible for Project Creation
+                      </span>
+                      <span className="text-xs font-semibold text-slate-600">
+                        Deal Closed Won {lead.wonDate ? `on ${lead.wonDate}` : ''}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1">
+                      Click <strong className="text-purple-700">Create Project</strong> to copy customer requirements into an active project in the Projects delivery module.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowCreateProjectModal(true)}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                  >
+                    <FolderKanban size={14} /> Create Project Now
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* LEAD QUALIFICATION SECTION */}
           <div className="bg-white rounded-xl border border-indigo-100 shadow-xs p-6 md:col-span-2">
             <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
@@ -1098,6 +1253,24 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <p className="text-sm text-slate-800 font-medium whitespace-pre-wrap">
                   {lead.requirement || lead.notes || <span className="text-slate-400 italic">No requirement recorded yet.</span>}
                 </p>
+                {lead.attachments && lead.attachments.length > 0 && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-500">Attachments ({lead.attachments.length}):</span>
+                    {lead.attachments.map(att => (
+                      <a
+                        key={att.id}
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold border border-indigo-200 transition"
+                        title="Click to view/download file"
+                      >
+                        <FileText size={12} className="text-indigo-600" />
+                        <span className="truncate max-w-[150px]">{att.name}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
@@ -1557,11 +1730,60 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       {activeTab === 'documents' && (
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-base font-bold text-[#0f172a]">Documents</h2>
-            <button className="px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors">
-              + Upload Document
-            </button>
+            <h2 className="text-base font-bold text-[#0f172a]">Documents & Attachments</h2>
           </div>
+
+          {/* PROJECT REQUIREMENTS ATTACHMENTS */}
+          {lead.attachments && lead.attachments.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                Project Requirement Attachments ({lead.attachments.length})
+              </h3>
+              <div className="space-y-2.5">
+                {lead.attachments.map((att) => (
+                  <div key={att.id} className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/60 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border ${
+                        att.type === 'PDF' ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                      }`}>
+                        {att.type === 'PDF' ? <FileText size={18} /> : <FileImage size={18} />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-[#0f172a] truncate max-w-sm">{att.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {att.type} • {att.size ? `${(att.size / 1024).toFixed(1)} KB` : ''} {att.uploadedAt ? `• ${new Date(att.uploadedAt).toLocaleDateString()}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {att.url && (
+                        <a
+                          href={att.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition"
+                          title="View or Download"
+                        >
+                          <ExternalLink size={16} />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (lead.attachments || []).filter(a => a.id !== att.id);
+                          updateLead(lead.id, { attachments: updated });
+                        }}
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition"
+                        title="Remove attachment"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3">
             {leadDocs.map(doc => (
@@ -1580,13 +1802,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </button>
               </div>
             ))}
-            {leadDocs.length === 0 && (
+            {leadDocs.length === 0 && (!lead.attachments || lead.attachments.length === 0) && (
               <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 flex flex-col items-center justify-center bg-slate-50">
                 <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center border border-slate-200 mb-3">
                   <Plus className="text-slate-400" />
                 </div>
-                <p className="text-sm font-bold text-[#0f172a]">No documents attached</p>
-                <p className="text-xs text-slate-500 mt-1">Upload proposals, contracts, or NDAs here.</p>
+                <p className="text-sm font-bold text-[#0f172a]">No documents or attachments</p>
+                <p className="text-xs text-slate-500 mt-1">Upload proposals, contracts, or project requirement files.</p>
               </div>
             )}
           </div>
@@ -1902,6 +2124,31 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     onChange={(e) => setEditForm({ ...editForm, source: e.target.value })}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Assigned To (HRMS Confirmed Employees)
+                  </label>
+                  <select
+                    value={editForm.assignedToEmployeeId || ''}
+                    onChange={(e) => {
+                      const empId = e.target.value;
+                      const emp = eligibleEmployees.find(em => em.id === empId || em.empCode === empId);
+                      setEditForm({
+                        ...editForm,
+                        assignedToEmployeeId: empId,
+                        assignedTo: emp ? emp.name : (empId ? editForm.assignedTo : '')
+                      });
+                    }}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                  >
+                    <option value="">Select Employee</option>
+                    {eligibleEmployees.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.empCode || emp.id}){emp.department ? ` • ${emp.department}` : ''}{emp.designation ? ` - ${emp.designation}` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
