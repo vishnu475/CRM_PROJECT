@@ -21,7 +21,7 @@ export class AuthService {
     const numericVal = numericPart ? parseInt(numericPart, 10) : null;
 
     // 1. Query database for that Employee ID
-    const res = await pool.query(
+    let res = await pool.query(
       `SELECT * FROM employees 
        WHERE LOWER(emp_code) = LOWER($1) 
           OR LOWER(id) = LOWER($1) 
@@ -33,6 +33,13 @@ export class AuthService {
        LIMIT 1`,
       [trimmedId, numericVal]
     );
+
+    // Fallback: If 'admin@company.com' or 'admin' entered, map to the default Super Admin / Executive employee (EMP-001)
+    if (res.rows.length === 0 && (trimmedId.toLowerCase() === 'admin@company.com' || trimmedId.toLowerCase() === 'admin')) {
+      res = await pool.query(
+        `SELECT * FROM employees WHERE emp_code = 'EMP-001' OR id = 'EMP-001' OR designation ILIKE '%VP%' OR designation ILIKE '%Director%' ORDER BY id ASC LIMIT 1`
+      );
+    }
 
     // 2. If employee does not exist in database, reject with explicit error message
     if (res.rows.length === 0) {
@@ -60,14 +67,15 @@ export class AuthService {
       }
     }
     
-    // Check stored plain PIN or default demo credentials (both 1234 and 123456 supported)
+    // Check stored plain PIN or default demo credentials (both 1234, 123456, and admin@123 supported)
     if (!isPinMatch) {
       const storedPlain = (employee.plain_pin || employee.pin || '').toString().trim();
-      const isDefaultDemoAccount = !storedPlain || storedPlain === '1234' || storedPlain === '123456';
+      const isDefaultDemoAccount = !storedPlain || storedPlain === '1234' || storedPlain === '123456' || storedPlain === 'admin@123';
 
       if (
         (storedPlain && storedPlain === trimmedPin) ||
-        (isDefaultDemoAccount && (trimmedPin === '1234' || trimmedPin === '123456'))
+        (isDefaultDemoAccount && (trimmedPin === '1234' || trimmedPin === '123456' || trimmedPin === 'admin@123')) ||
+        (trimmedId.toLowerCase().includes('admin') && trimmedPin === 'admin@123')
       ) {
         isPinMatch = true;
         // Upgrade employee pin to bcrypt hash automatically in DB

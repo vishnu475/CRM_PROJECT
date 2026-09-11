@@ -267,6 +267,82 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               </button>
             </form>
 
+            {/* Quick Demo Credentials Assistant */}
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+                Quick Access / Demo Accounts
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('admin@company.com');
+                    setPassword('admin@123');
+                    setRole('Executive');
+                    setError(null);
+                  }}
+                  className="p-2.5 bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-colors group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">Executive Admin</span>
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded">All Access</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">admin@company.com • 1234</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('EMP-001');
+                    setPassword('1234');
+                    setRole('Executive');
+                    setError(null);
+                  }}
+                  className="p-2.5 bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-colors group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">Sarah Jenkins</span>
+                    <span className="text-[10px] font-bold text-purple-600 bg-purple-100/60 px-1.5 py-0.5 rounded">VP Eng</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">EMP-001 • PIN 1234</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('EMP-003');
+                    setPassword('1234');
+                    setRole('Executive');
+                    setError(null);
+                  }}
+                  className="p-2.5 bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-colors group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">Priya Sharma</span>
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.5 rounded">HR Lead</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">EMP-003 • PIN 1234</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail('EMP-008');
+                    setPassword('1234');
+                    setRole('Employee');
+                    setError(null);
+                  }}
+                  className="p-2.5 bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-colors group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">Ramesh (ESS)</span>
+                    <span className="text-[10px] font-bold text-amber-600 bg-amber-100/60 px-1.5 py-0.5 rounded">Engineer</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">EMP-008 / 8 • PIN 1234</div>
+                </button>
+              </div>
+            </div>
+
             {/* Mobile Register Link */}
             <div className="mt-8 text-center text-sm font-bold text-slate-500 sm:hidden">
               Don't have an account?{' '}

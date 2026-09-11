@@ -65,6 +65,31 @@ async function migrate() {
   // 5. Ensure projects table columns in both HRMS & CRM DB
   for (const p of [hrmsPool, crmPool]) {
     await p.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id VARCHAR(50) PRIMARY KEY,
+        code VARCHAR(50),
+        name VARCHAR(150) NOT NULL,
+        client VARCHAR(150),
+        customer_id VARCHAR(50),
+        source_lead_id VARCHAR(50),
+        source_opportunity_id VARCHAR(50),
+        project_requirement TEXT,
+        project_notes TEXT,
+        project_manager VARCHAR(100),
+        start_date DATE,
+        end_date DATE,
+        budget NUMERIC(15,2) DEFAULT 0,
+        spent NUMERIC(15,2) DEFAULT 0,
+        progress INTEGER DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'Not Started',
+        priority VARCHAR(50) DEFAULT 'Medium',
+        weightage NUMERIC DEFAULT 100.0,
+        repository_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await p.query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS weightage NUMERIC DEFAULT 100.0;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS repository_url TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS requirement_documents JSONB DEFAULT '[]'::jsonb;

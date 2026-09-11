@@ -63,6 +63,8 @@ export async function ensureDatabaseAndMigrate() {
       '011_task_attachments.sql',
       '012_intern_management_complete.sql',
       '013_enterprise_document_management_system.sql',
+      '014_modules_and_employee_assignments.sql',
+      '015_team_chat_messages.sql',
     ];
 
     for (const file of migrationFiles) {
