@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS project_groups (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE project_groups ADD COLUMN IF NOT EXISTS repository_url TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_project_groups_project_id ON project_groups (project_id);
 CREATE INDEX IF NOT EXISTS idx_project_groups_team_head ON project_groups (team_head_id);
 
