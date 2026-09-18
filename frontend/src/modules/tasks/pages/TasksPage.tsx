@@ -48,8 +48,10 @@ import {
   ExternalLink,
   Users,
   Crown,
-  ShieldAlert
+  ShieldAlert,
+  Trash2
 } from 'lucide-react';
+
 import { DocumentPreviewModal } from '../../../components/common/DocumentPreviewModal';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
@@ -263,6 +265,26 @@ export const TasksPage: React.FC = () => {
   const [commentInput, setCommentInput] = useState<string>('');
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [isPostingComment, setIsPostingComment] = useState<boolean>(false);
+
+  // Task Deletion State
+  const [taskToDelete, setTaskToDelete] = useState<TaskItem | null>(null);
+  const [isDeletingTask, setIsDeletingTask] = useState<boolean>(false);
+
+  const handleDeleteTask = async (task: TaskItem) => {
+    if (!task) return;
+    setIsDeletingTask(true);
+    try {
+      await taskApiService.deleteTask(task.id);
+      setSelectedTaskDetail(null);
+      setTaskToDelete(null);
+      await fetchTasksData();
+      setActionSuccessMsg(`Task "${task.title}" deleted permanently from database.`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete task from database');
+    } finally {
+      setIsDeletingTask(false);
+    }
+  };
 
   const handleSelectTaskDetail = async (task: TaskItem) => {
     setSelectedTaskDetail(task);
@@ -729,6 +751,7 @@ export const TasksPage: React.FC = () => {
           analytics={analytics}
           onSelectTask={handleSelectTaskDetail}
           onAssignTask={() => setActiveSubSection('assign-task')}
+          onDeleteTask={setTaskToDelete}
           onViewAllOverdue={() => {
             setActiveSubSection('all-tasks');
             setSelectedStatus('OVERDUE');
@@ -748,8 +771,10 @@ export const TasksPage: React.FC = () => {
         onReassignTask={setReassignModalTask}
         onReviewTask={setReviewTaskModal}
         onOpenComments={handleSelectTaskDetail}
+        onDeleteTask={setTaskToDelete}
       />
     );
+
   };
 
   return (
@@ -1148,9 +1173,18 @@ export const TasksPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Reassign Button */}
-            <div className="flex justify-end">
+            {/* Actions: Reassign & Delete */}
+            <div className="flex items-center justify-end gap-2">
               <button
+                type="button"
+                onClick={() => setTaskToDelete(selectedTaskDetail)}
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                title="Delete this task permanently from database"
+              >
+                <Trash2 size={13} /> Delete Task
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setReassignModalTask(selectedTaskDetail);
                   setNewAssigneeId(employees[0]?.empCode || employees[0]?.id || '');
@@ -1160,6 +1194,7 @@ export const TasksPage: React.FC = () => {
                 <UserPlus size={13} /> Reassign Employee
               </button>
             </div>
+
 
             {/* Audit History */}
             <div className="space-y-2">
@@ -1360,6 +1395,50 @@ export const TasksPage: React.FC = () => {
         projectName={previewDocModal?.projectName}
         scopeOfWork={previewDocModal?.scopeOfWork}
       />
+
+      {/* Delete Task Confirmation Modal */}
+      {taskToDelete && (
+        <Modal
+          isOpen={Boolean(taskToDelete)}
+          onClose={() => !isDeletingTask && setTaskToDelete(null)}
+          title="Confirm Task Deletion"
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4 p-2 text-xs">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-900 text-sm">Delete Task Permanently?</h3>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Are you sure you want to delete task <strong className="text-slate-800">{taskToDelete.title}</strong> ({taskToDelete.id}) from the database?
+                  This will permanently erase all milestone steps, member assignments, comments, and activity logs. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeletingTask}
+                onClick={() => setTaskToDelete(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingTask}
+                onClick={() => handleDeleteTask(taskToDelete)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                {isDeletingTask ? 'Deleting...' : 'Yes, Delete from Database'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
+

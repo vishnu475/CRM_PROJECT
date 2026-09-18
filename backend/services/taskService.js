@@ -1885,4 +1885,34 @@ export class TaskService {
       aiRationale: `AI Analyzed "${rawTitle}". Assigned target module "${detectedModule}", estimated effort of ${estimatedHours}h, SLA deadline of ${calculatedDueDate}, and recommended ${bestFit.name} based on skill alignment and current workload.`
     };
   }
+
+  /**
+   * Permanently delete a task and all related child records from database
+   */
+  static async deleteTask(taskId) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const check = await client.query('SELECT id, title, project_id FROM tasks WHERE id = $1', [taskId]);
+      if (check.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { found: false };
+      }
+
+      await client.query('DELETE FROM task_member_assignments WHERE task_id = $1', [taskId]);
+      await client.query('DELETE FROM task_comments WHERE task_id = $1', [taskId]);
+      await client.query('DELETE FROM task_activities WHERE task_id = $1', [taskId]);
+      await client.query('DELETE FROM task_attachments WHERE task_id = $1', [taskId]);
+      await client.query('DELETE FROM tasks WHERE id = $1', [taskId]);
+
+      await client.query('COMMIT');
+      broadcastTaskEvent('task_deleted', { id: taskId, title: check.rows[0].title });
+      return { found: true, task: check.rows[0] };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }

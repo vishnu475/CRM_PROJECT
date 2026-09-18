@@ -1184,5 +1184,39 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// DELETE /api/groups/:id — Permanently delete group and clean up members and assignments from database
+router.delete('/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    await client.query('BEGIN');
+
+    const check = await client.query('SELECT id, name FROM project_groups WHERE id = $1', [id]);
+    if (check.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Group not found' });
+    }
+
+    // Clean up members and assignments
+    await client.query('DELETE FROM group_members WHERE group_id = $1', [id]);
+    await client.query('DELETE FROM task_member_assignments WHERE group_id = $1', [id]);
+    await client.query('UPDATE tasks SET group_id = NULL, group_name = NULL WHERE group_id = $1', [id]);
+    await client.query('DELETE FROM project_groups WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: `Group "${check.rows[0].name}" permanently deleted from database`,
+      id
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting group:', err);
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;
 

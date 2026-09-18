@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, LayoutGrid, List, Network, BarChart2, FileText, Shield, RefreshCw, LogOut, History, CheckCircle2, Award, Calendar, DollarSign, CreditCard, Pencil, GraduationCap } from 'lucide-react';
+import { UserCheck, Plus, Search, Filter, Phone, Mail, Building, Briefcase, LayoutGrid, List, Network, BarChart2, FileText, Shield, RefreshCw, LogOut, History, CheckCircle2, Award, Calendar, DollarSign, CreditCard, Pencil, GraduationCap, Trash2 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { Button } from '../../../components/common/Button';
 import { Badge } from '../../../components/common/Badge';
@@ -20,12 +20,37 @@ import { InternDetailPage } from './InternDetailPage';
 import { fetchAllEmployeesFromDB, saveEmployeeToDB, updateEmployeeInDB } from '../../../services/employeePersistence';
 
 export const HrmsPage: React.FC = () => {
-  const { employees, addEmployee, updateEmployee, transferEmployee, exitEmployee, confirmEmployee, reloadEmployeesFromDB } = useApp();
+  const { employees, addEmployee, updateEmployee, transferEmployee, exitEmployee, confirmEmployee, deleteEmployee, reloadEmployeesFromDB } = useApp();
   
   const [dbEmployees, setDbEmployees] = useState<ExtendedEmployee[]>([]);
   const [dbLoadCount, setDbLoadCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
+  // Employee Deletion State
+  const [employeeToDelete, setEmployeeToDelete] = useState<ExtendedEmployee | null>(null);
+  const [isDeletingEmployee, setIsDeletingEmployee] = useState(false);
+
+  const handleDeleteEmployee = async (emp: ExtendedEmployee) => {
+    if (!emp) return;
+    setIsDeletingEmployee(true);
+    try {
+      const ok = await deleteEmployee(emp.empCode || emp.id);
+      if (ok) {
+        setEmployeeToDelete(null);
+        await refreshFromDB();
+        setRefreshMessage(`Employee ${emp.name} permanently deleted from database.`);
+        setTimeout(() => setRefreshMessage(null), 3000);
+      } else {
+        alert('Failed to delete employee from database.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete employee');
+    } finally {
+      setIsDeletingEmployee(false);
+    }
+  };
+
 
   // Reload employees from PostgreSQL - called on mount, on new employee added, and on F5
   const refreshFromDB = useCallback(async () => {
@@ -635,7 +660,19 @@ export const HrmsPage: React.FC = () => {
                         </button>
                       )}
                       <button onClick={() => setActiveSubSection(`employees/${emp.empCode || emp.id}`)} className="text-purple-600 font-bold hover:underline">Profile &rarr;</button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEmployeeToDelete(emp);
+                        }}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                        title="Delete Employee Permanently from Database"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     </div>
+
                   </div>
                 </div>
               ))}
@@ -719,7 +756,16 @@ export const HrmsPage: React.FC = () => {
                             </button>
                           )}
                           <button onClick={() => setActiveSubSection(`employees/${emp.empCode || emp.id}`)} className="text-purple-600 font-bold hover:underline">Profile</button>
+                          <button
+                            type="button"
+                            onClick={() => setEmployeeToDelete(emp)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                            title="Delete Employee Permanently from Database"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
+
                       </td>
                     </tr>
                   ))}
@@ -1013,6 +1059,50 @@ export const HrmsPage: React.FC = () => {
           }
         }}
       />
+
+      {/* Employee Deletion Confirmation Modal */}
+      {employeeToDelete && (
+        <Modal
+          isOpen={Boolean(employeeToDelete)}
+          onClose={() => !isDeletingEmployee && setEmployeeToDelete(null)}
+          title="Confirm Employee Deletion"
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4 p-2 text-xs">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-900 text-sm">Delete Employee Permanently?</h3>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Are you sure you want to delete <strong className="text-slate-800">{employeeToDelete.name}</strong> ({employeeToDelete.empCode || employeeToDelete.id}) from the database?
+                  This will permanently erase all associated onboarding, attendance, leave balances, and employee records. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeletingEmployee}
+                onClick={() => setEmployeeToDelete(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingEmployee}
+                onClick={() => handleDeleteEmployee(employeeToDelete)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                {isDeletingEmployee ? 'Deleting...' : 'Yes, Delete from Database'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
+

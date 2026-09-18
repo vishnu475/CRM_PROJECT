@@ -22,7 +22,8 @@ import {
   Crown,
   Info,
   Layers,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { TaskItem, TaskPriority, TaskStatus } from '../types';
 import { Modal } from '../../../components/common/Modal';
@@ -37,6 +38,7 @@ interface AllTasksViewProps {
   onReassignTask?: (task: TaskItem) => void;
   onReviewTask?: (task: TaskItem) => void;
   onOpenComments?: (task: TaskItem) => void;
+  onDeleteTask?: (task: TaskItem) => void;
 }
 
 export const AllTasksView: React.FC<AllTasksViewProps> = ({
@@ -47,7 +49,8 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
   onSelectTask,
   onReassignTask,
   onReviewTask,
-  onOpenComments
+  onOpenComments,
+  onDeleteTask
 }) => {
   const [selectedProject, setSelectedProject] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
@@ -499,18 +502,34 @@ export const AllTasksView: React.FC<AllTasksViewProps> = ({
 
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (onSelectTask) onSelectTask(task);
-                        }}
-                        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition"
-                      >
-                        <Eye size={12} />
-                        <span>Details</span>
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            if (onSelectTask) onSelectTask(task);
+                          }}
+                          className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <Eye size={12} />
+                          <span>Details</span>
+                        </button>
+                        {onDeleteTask && (
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              onDeleteTask(task);
+                            }}
+                            className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center justify-center transition cursor-pointer"
+                            title="Delete Task from Database"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
+
                   </tr>
                 );
               })}

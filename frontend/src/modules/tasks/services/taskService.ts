@@ -75,6 +75,17 @@ export const taskApiService = {
     return json.data;
   },
 
+  // Delete project group permanently from database
+  async deleteGroup(groupId: string): Promise<boolean> {
+    const res = await fetch(`/api/groups/${groupId}`, {
+      method: 'DELETE'
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to delete group');
+    return true;
+  },
+
+
   // Fetch project workspace with calculated progress and tasks
   async getProjectWorkspace(projectId: string): Promise<any> {
     const res = await fetch(`/api/projects/${projectId}/workspace`);
@@ -94,6 +105,17 @@ export const taskApiService = {
     if (!json.success) throw new Error(json.message || 'Failed to create task');
     return json.data;
   },
+
+  // Delete task permanently from database
+  async deleteTask(taskId: string): Promise<boolean> {
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: 'DELETE'
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to delete task');
+    return true;
+  },
+
 
   // Start Task
   async startTask(taskId: string, employeeId?: string): Promise<TaskItem> {

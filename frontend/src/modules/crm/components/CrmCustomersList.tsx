@@ -6,7 +6,7 @@ import { fetchAllEmployeesFromDB } from '../../../services/employeePersistence';
 import { 
   Search, Filter, Plus, MoreVertical, Building2, AlertTriangle, 
   CheckCircle2, DollarSign, X, ChevronLeft, ChevronRight, User, 
-  Mail, XCircle, ChevronDown
+  Mail, XCircle, ChevronDown, Trash2
 } from 'lucide-react';
 
 interface CrmCustomersListProps {
@@ -15,7 +15,7 @@ interface CrmCustomersListProps {
 }
 
 export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange, onCustomerSelect }) => {
-  const { customers, salesOrders, invoices, updateCustomer } = useApp();
+  const { customers, salesOrders, invoices, updateCustomer, deleteCustomer } = useApp();
   
   // State
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,6 +26,24 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+
+  // Customer Deletion State
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+
+  const handleDeleteCustomer = async (cust: Customer) => {
+    if (!cust) return;
+    setIsDeletingCustomer(true);
+    try {
+      await deleteCustomer(cust.id);
+      setCustomerToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete customer from database');
+    } finally {
+      setIsDeletingCustomer(false);
+    }
+  };
+
 
   // Live Employee Map for resolving Owner names from HRMS
   const [employeeMap, setEmployeeMap] = useState<Map<string, string>>(new Map());
@@ -541,9 +559,19 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
                                   >
                                     View Opportunities
                                   </button>
+                                  <button 
+                                    onClick={() => {
+                                      setActiveActionMenuId(null);
+                                      setCustomerToDelete(customer);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-medium flex items-center gap-1.5 border-t border-slate-100 cursor-pointer"
+                                  >
+                                    <Trash2 size={12} /> Delete Customer
+                                  </button>
                                 </div>
                               </>
                             )}
+
                           </div>
                         </td>
                       </tr>
@@ -626,6 +654,45 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
           </div>
         )}
       </div>
+
+      {/* Confirmation Modal for Customer Deletion */}
+      {customerToDelete && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-900 text-sm">Delete Customer Permanently?</h3>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Are you sure you want to permanently delete customer <strong className="text-slate-800">{customerToDelete.customerName}</strong> ({customerToDelete.customerCode || customerToDelete.id}) from the database?
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeletingCustomer}
+                onClick={() => setCustomerToDelete(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingCustomer}
+                onClick={() => handleDeleteCustomer(customerToDelete)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 text-xs"
+              >
+                {isDeletingCustomer ? 'Deleting...' : 'Yes, Delete from Database'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

@@ -583,4 +583,44 @@ router.get('/:id/leave-balance', async (req, res) => {
   }
 });
 
+// DELETE /api/employees/:id — Permanent Delete employee from Database
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const empRes = await client.query('SELECT id, emp_code FROM employees WHERE id = $1 OR emp_code = $1', [id]);
+    if (empRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    const emp = empRes.rows[0];
+    const empId = emp.id;
+    const empCode = emp.emp_code;
+
+    // Clean up dependent tables
+    await client.query('DELETE FROM employee_history WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('DELETE FROM leave_balances WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('DELETE FROM employee_onboarding WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('DELETE FROM attendance WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('DELETE FROM leave_requests WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('DELETE FROM payroll_records WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('DELETE FROM group_members WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('DELETE FROM task_member_assignments WHERE employee_id = $1 OR employee_id = $2', [empId, empCode]).catch(() => {});
+    await client.query('UPDATE tasks SET assigned_to = NULL WHERE assigned_to = $1 OR assigned_to = $2', [empId, empCode]).catch(() => {});
+    await client.query('UPDATE project_groups SET team_head_id = NULL WHERE team_head_id = $1 OR team_head_id = $2', [empId, empCode]).catch(() => {});
+
+    // Delete from employees table
+    const delResult = await client.query('DELETE FROM employees WHERE id = $1 RETURNING *', [empId]);
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Employee permanently deleted from database', data: delResult.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;
+

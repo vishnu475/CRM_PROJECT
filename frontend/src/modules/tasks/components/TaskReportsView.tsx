@@ -29,7 +29,8 @@ import {
   RotateCcw,
   SlidersHorizontal,
   ChevronRight,
-  Database
+  Database,
+  Trash2
 } from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
 import { TaskItem, TaskAnalytics } from '../types';
@@ -40,6 +41,7 @@ interface TaskReportsViewProps {
   onViewAllOverdue?: () => void;
   onSelectTask?: (task: TaskItem) => void;
   onAssignTask?: () => void;
+  onDeleteTask?: (task: TaskItem) => void;
 }
 
 export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
@@ -47,7 +49,8 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
   analytics,
   onViewAllOverdue,
   onSelectTask,
-  onAssignTask
+  onAssignTask,
+  onDeleteTask
 }) => {
   const { employees = [], projects = [] } = useApp();
 
@@ -839,13 +842,27 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
 
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={() => onSelectTask && onSelectTask(task)}
-                        className="px-2.5 py-1 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-600 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 ml-auto transition cursor-pointer"
-                      >
-                        <Eye size={12} /> View Details
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onSelectTask && onSelectTask(task)}
+                          className="px-2.5 py-1 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-600 border border-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <Eye size={12} /> View Details
+                        </button>
+                        {onDeleteTask && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteTask(task)}
+                            className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center justify-center transition cursor-pointer"
+                            title="Delete Task from Database"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
+
                   </tr>
                 );
               })}

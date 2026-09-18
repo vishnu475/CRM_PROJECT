@@ -367,4 +367,23 @@ router.get('/attachments/:filename', (req, res) => {
   res.status(404).json({ success: false, message: 'Attachment not found.' });
 });
 
+// DELETE /api/tasks/:id — Permanently delete task from database
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await TaskService.deleteTask(id);
+    if (!result.found) {
+      return res.status(404).json({ success: false, message: 'Task not found' });
+    }
+    res.json({
+      success: true,
+      message: `Task "${result.task.title}" permanently deleted from database`,
+      id
+    });
+  } catch (err) {
+    console.error('Error deleting task:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;

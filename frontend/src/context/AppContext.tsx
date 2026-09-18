@@ -122,6 +122,7 @@ interface AppContextType {
   customers: Customer[];
   addCustomer: (customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<Customer, 'createdAt' | 'updatedAt'>>) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
+  deleteCustomer: (id: string) => Promise<void>;
   contacts: Contact[];
   addContact: (contact: Omit<Contact, 'id'>) => Promise<void> | void;
   updateContact: (id: string, updates: Partial<Contact>) => Promise<void> | void;
@@ -175,6 +176,7 @@ interface AppContextType {
   transferEmployee: (id: string, transferData: { newDepartment: string; newDesignation?: string; newManagerName?: string; reason?: string }) => void;
   exitEmployee: (id: string, exitReason?: string) => void;
   confirmEmployee: (id: string, notes?: string) => void;
+  deleteEmployee: (id: string) => Promise<boolean>;
   convertCandidateToEmployee: (candidateId: string, customDetails?: Partial<Employee>) => Employee;
   attendanceRecords: DetailedAttendanceRecord[];
   shifts: ShiftMasterConfig[];
@@ -187,6 +189,7 @@ interface AppContextType {
   approveRegularization: (requestId: string, reviewerName?: string) => { success: boolean; message: string };
   rejectRegularization: (requestId: string, reviewerName?: string) => { success: boolean; message: string };
   saveShiftMaster: (shiftConfig: ShiftMasterConfig) => void;
+
   toggleShiftStatus: (shiftId: string) => void;
   leaveRequests: LeaveRequest[];
   approveLeave: (id: string) => void;
@@ -201,6 +204,7 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   addProject: (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => Promise<Project | null>;
+  deleteProject: (id: string) => Promise<boolean>;
   createProjectFromLead: (
     leadId: string,
     customData?: {
@@ -1898,6 +1902,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newProject;
   }, []);
 
+  const deleteProject = useCallback(async (id: string): Promise<boolean> => {
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    try {
+      const res = await ProjectsAPI.delete(id);
+      return Boolean(res.success);
+    } catch (err) {
+      console.warn('⚠️ [Projects] deleteProject failed:', err);
+      return false;
+    }
+  }, []);
+
+
   const createProjectFromLead = useCallback(async (
     leadId: string,
     customData?: {
@@ -2177,6 +2193,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
     } catch (err) { console.warn('⚠️ [CRM] updateCustomer failed:', err); }
   }, []);
+
+  const deleteCustomer = useCallback(async (id: string) => {
+    setCustomers((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await CustomersAPI.delete(id);
+    } catch (err) { console.warn('⚠️ [CRM] deleteCustomer failed:', err); }
+  }, []);
+
 
   const addContact = useCallback(async (contact: Omit<Contact, 'id'>) => {
     const tempId = `CON-${Date.now()}`;
@@ -2938,6 +2962,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(err => console.warn('DB confirm error:', err));
   };
 
+  const deleteEmployee = useCallback(async (id: string): Promise<boolean> => {
+    setEmployees(prev => prev.filter(emp => emp.id !== id && emp.empCode !== id));
+    try {
+      const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const json = await res.json();
+      return Boolean(json.success);
+    } catch (err) {
+      console.warn('DB delete employee error:', err);
+      return false;
+    }
+  }, []);
+
+
   const convertCandidateToEmployee = (candidateId: string, customDetails?: Partial<Employee>): Employee => {
     const candidate = jobCandidates.find(c => c.id === candidateId);
     let empCode = customDetails?.empCode || customDetails?.id;
@@ -3017,6 +3054,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customers,
         addCustomer,
         updateCustomer,
+        deleteCustomer,
         contacts,
         addContact,
         updateContact,
@@ -3070,6 +3108,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         transferEmployee,
         exitEmployee,
         confirmEmployee,
+        deleteEmployee,
         convertCandidateToEmployee,
         attendanceRecords,
         shifts,
@@ -3096,6 +3135,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         projects,
         setProjects,
         addProject,
+        deleteProject,
         createProjectFromLead,
         tasks,
         helpdeskTickets,

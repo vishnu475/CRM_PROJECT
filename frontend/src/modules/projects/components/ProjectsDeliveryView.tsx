@@ -4,14 +4,31 @@ import { Project } from '../../../types';
 import { 
   FolderKanban, Search, Filter, Calendar, User, DollarSign, 
   CheckCircle2, Clock, FileText, X, ArrowRight, Building2, 
-  Sparkles, ShieldCheck, ChevronRight
+  Sparkles, ShieldCheck, ChevronRight, Trash2
 } from 'lucide-react';
 
 export const ProjectsDeliveryView: React.FC = () => {
-  const { projects } = useApp();
+  const { projects, deleteProject } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeletingProject, setIsDeletingProject] = useState<boolean>(false);
+
+  const handleDeleteProject = async (prj: Project) => {
+    if (!prj) return;
+    setIsDeletingProject(true);
+    try {
+      await deleteProject(prj.id);
+      setSelectedProject(null);
+      setProjectToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete project from database');
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
+
 
   const filteredProjects = projects.filter((prj) => {
     const matchesSearch =
@@ -122,8 +139,22 @@ export const ProjectsDeliveryView: React.FC = () => {
                 <span className="font-mono text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
                   {prj.code || prj.id}
                 </span>
-                {getStatusBadge(prj.status)}
+                <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  {getStatusBadge(prj.status)}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setProjectToDelete(prj);
+                    }}
+                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                    title="Delete Project from Database"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
+
 
               <div>
                 <h3 className="font-bold text-[#0f172a] text-sm group-hover:text-purple-600 transition-colors line-clamp-2">
@@ -295,12 +326,59 @@ export const ProjectsDeliveryView: React.FC = () => {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
               <button
+                type="button"
+                onClick={() => setProjectToDelete(selectedProject)}
+                className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+                title="Delete project permanently from database"
+              >
+                <Trash2 size={14} /> Delete Project
+              </button>
+              <button
+                type="button"
                 onClick={() => setSelectedProject(null)}
-                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-100 transition"
+                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold transition cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Project Deletion */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-900 text-sm">Delete Project Permanently?</h3>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Are you sure you want to delete <strong className="text-slate-800">{projectToDelete.name}</strong> ({projectToDelete.code || projectToDelete.id}) from the database?
+                  This will permanently erase the project and disconnect any related tasks or lead associations. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeletingProject}
+                onClick={() => setProjectToDelete(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingProject}
+                onClick={() => handleDeleteProject(projectToDelete)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 text-xs"
+              >
+                {isDeletingProject ? 'Deleting...' : 'Yes, Delete from Database'}
               </button>
             </div>
           </div>
@@ -309,3 +387,4 @@ export const ProjectsDeliveryView: React.FC = () => {
     </div>
   );
 };
+

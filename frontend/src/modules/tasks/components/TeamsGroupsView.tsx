@@ -24,7 +24,8 @@ import {
   Sliders,
   Award,
   Activity,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 import { ProjectGroup, TaskItem } from '../types';
 import { taskApiService } from '../services/taskService';
@@ -50,6 +51,10 @@ export const TeamsGroupsView: React.FC<TeamsGroupsViewProps> = ({
   const [groupDetailsData, setGroupDetailsData] = useState<any | null>(null);
   const [groupMembersModules, setGroupMembersModules] = useState<Record<string, any[]>>({});
 
+  // Group Deletion State
+  const [groupToDelete, setGroupToDelete] = useState<ProjectGroup | null>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState<boolean>(false);
+
   // Progress Report Modal State
   const [progressModalOpen, setProgressModalOpen] = useState<boolean>(false);
   const [selectedTaskForProgress, setSelectedTaskForProgress] = useState<any | null>(null);
@@ -60,6 +65,22 @@ export const TeamsGroupsView: React.FC<TeamsGroupsViewProps> = ({
   const [isSavingProgress, setIsSavingProgress] = useState<boolean>(false);
   const [progressSaveError, setProgressSaveError] = useState<string | null>(null);
   const [progressSaveSuccess, setProgressSaveSuccess] = useState<string | null>(null);
+
+  const handleDeleteGroup = async (group: ProjectGroup) => {
+    if (!group) return;
+    setIsDeletingGroup(true);
+    try {
+      await taskApiService.deleteGroup(group.id);
+      setSelectedGroupModal(null);
+      setGroupToDelete(null);
+      await fetchGroups();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete group from database');
+    } finally {
+      setIsDeletingGroup(false);
+    }
+  };
+
 
   const fetchGroups = async () => {
     setIsLoading(true);
@@ -431,10 +452,24 @@ export const TeamsGroupsView: React.FC<TeamsGroupsViewProps> = ({
                       <FolderGit2 size={12} />
                       <span className="truncate max-w-[170px]">{group.project_name || group.project_id}</span>
                     </span>
-                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                      {memberList.length} Members
-                    </span>
+                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                        {memberList.length} Members
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setGroupToDelete(group);
+                        }}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                        title="Delete Team/Group from Database"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
+
 
                   <h3 className="font-bold text-sm text-slate-900 group-hover:text-purple-700 transition">
                     {group.name}
@@ -590,7 +625,16 @@ export const TeamsGroupsView: React.FC<TeamsGroupsViewProps> = ({
                     <span className="px-3 py-1 rounded-xl bg-purple-500 text-white font-bold text-xs shadow-xs">
                       📋 {groupDetailsData?.tasks?.length || 0} Tasks Assigned
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => setGroupToDelete(groupDetailsData || selectedGroupModal)}
+                      className="px-3 py-1 rounded-xl bg-rose-600/85 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1 shadow-xs transition cursor-pointer"
+                      title="Permanently delete group from database"
+                    >
+                      <Trash2 size={13} /> Delete Team
+                    </button>
                   </div>
+
                 </div>
 
                 {groupDetailsData?.description && (
@@ -1031,6 +1075,50 @@ export const TeamsGroupsView: React.FC<TeamsGroupsViewProps> = ({
           </div>
         </Modal>
       )}
+
+      {/* Confirmation Modal for Group Deletion */}
+      {groupToDelete && (
+        <Modal
+          isOpen={Boolean(groupToDelete)}
+          onClose={() => !isDeletingGroup && setGroupToDelete(null)}
+          title="Confirm Group Deletion"
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4 p-2 text-xs">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-900 text-sm">Delete Group Permanently?</h3>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Are you sure you want to delete <strong className="text-slate-800">{groupToDelete.name}</strong> from the database?
+                  This will unassign all group members and disconnect any associated tasks. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeletingGroup}
+                onClick={() => setGroupToDelete(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingGroup}
+                onClick={() => handleDeleteGroup(groupToDelete)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                {isDeletingGroup ? 'Deleting...' : 'Yes, Delete from Database'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
+
