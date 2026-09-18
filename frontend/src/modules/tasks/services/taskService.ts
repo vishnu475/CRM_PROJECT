@@ -305,6 +305,26 @@ export const taskApiService = {
     const json = await res.json();
     if (!json.success) return {};
     return json.data || {};
+  },
+
+  // Directly assign or update an employee's group/module progress in database
+  async updateMemberGroupProgress(
+    groupId: string,
+    payload: {
+      employeeId: string;
+      progressPercent: number;
+      moduleName?: string;
+      progressNote?: string;
+    }
+  ): Promise<any> {
+    const res = await fetch(`/api/groups/${encodeURIComponent(groupId)}/member-progress`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to update module progress');
+    return json;
   }
 };
 
