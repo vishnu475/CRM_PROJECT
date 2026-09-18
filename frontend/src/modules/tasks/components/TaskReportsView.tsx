@@ -283,152 +283,155 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-fade-in pb-16">
       {/* 1. TOP HEADER BAR */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <BarChart3 size={18} />
-            </div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-              Work Portion & Deliverable Progress Report
-            </h1>
+      <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm shadow-blue-500/20 shrink-0 mt-0.5">
+            <BarChart3 size={20} />
           </div>
-          <p className="text-xs text-slate-500 max-w-2xl pl-10">
-            Real-time tracking of assigned work deliverables, execution percentages, employee workloads, and live database sync.
-          </p>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                Work Portion &amp; Deliverable Progress Report
+              </h1>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[11px] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Database Sync
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
+              Real-time tracking of assigned deliverables, execution percentages, employee workloads, and operational efficiency.
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-xs font-medium">
-            <Database size={13} className="text-blue-600 shrink-0" />
-            <span>Database Synced</span>
-          </div>
-
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
           {onAssignTask && (
             <button
               onClick={onAssignTask}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm shadow-blue-500/10 transition-all hover:shadow cursor-pointer"
             >
-              <Plus size={14} /> Assign Work Order
+              <Plus size={15} /> Assign Work Order
             </button>
           )}
 
           <button
             type="button"
             onClick={handleExportReport}
-            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+            className="px-3.5 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
           >
-            <Download size={13} /> Export CSV
+            <Download size={14} className="text-slate-400" /> Export CSV
           </button>
         </div>
       </div>
 
-      {/* 2. PROGRESS TIER FILTER PILLS */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 overflow-x-auto select-none">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 shrink-0 px-2">
-          <Target size={14} className="text-slate-400" />
+      {/* 2. PROGRESS TIER FILTER TABS */}
+      <div className="bg-white p-2.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center gap-2">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-500 shrink-0 px-3 py-1">
+          <Target size={14} className="text-blue-600" />
           <span>Progress Tiers:</span>
         </div>
 
-        {/* Pill: ALL */}
-        <button
-          onClick={() => setSelectedProgressTier('ALL')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-            selectedProgressTier === 'ALL'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-          }`}
-        >
-          <span>All Tasks</span>
-          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono ${selectedProgressTier === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-            {tierCounts.all}
-          </span>
-        </button>
+        <div className="flex items-center gap-1.5 overflow-x-auto select-none flex-1 pb-1 sm:pb-0">
+          {/* Pill: ALL */}
+          <button
+            onClick={() => setSelectedProgressTier('ALL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
+              selectedProgressTier === 'ALL'
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+            }`}
+          >
+            <span>All Tasks</span>
+            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold ${selectedProgressTier === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+              {tierCounts.all}
+            </span>
+          </button>
 
-        {/* Pill: 100% Completed */}
-        <button
-          onClick={() => setSelectedProgressTier('100')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-            selectedProgressTier === '100'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span>100% Completed</span>
-          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-medium ${selectedProgressTier === '100' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-            {tierCounts.count100}
-          </span>
-        </button>
+          {/* Pill: 100% Completed */}
+          <button
+            onClick={() => setSelectedProgressTier('100')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
+              selectedProgressTier === '100'
+                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${selectedProgressTier === '100' ? 'bg-white' : 'bg-emerald-500'}`} />
+            <span>100% Completed</span>
+            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold ${selectedProgressTier === '100' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+              {tierCounts.count100}
+            </span>
+          </button>
 
-        {/* Pill: 75-99% Near Done */}
-        <button
-          onClick={() => setSelectedProgressTier('75_99')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-            selectedProgressTier === '75_99'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-blue-500" />
-          <span>75% - 99% Near Done</span>
-          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-medium ${selectedProgressTier === '75_99' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-            {tierCounts.count75_99}
-          </span>
-        </button>
+          {/* Pill: 75-99% Near Done */}
+          <button
+            onClick={() => setSelectedProgressTier('75_99')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
+              selectedProgressTier === '75_99'
+                ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${selectedProgressTier === '75_99' ? 'bg-white' : 'bg-blue-500'}`} />
+            <span>75% - 99% Near Done</span>
+            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold ${selectedProgressTier === '75_99' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+              {tierCounts.count75_99}
+            </span>
+          </button>
 
-        {/* Pill: 50-74% Halfway */}
-        <button
-          onClick={() => setSelectedProgressTier('50_74')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-            selectedProgressTier === '50_74'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-indigo-500" />
-          <span>50% - 74% Halfway</span>
-          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-medium ${selectedProgressTier === '50_74' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-            {tierCounts.count50_74}
-          </span>
-        </button>
+          {/* Pill: 50-74% Halfway */}
+          <button
+            onClick={() => setSelectedProgressTier('50_74')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
+              selectedProgressTier === '50_74'
+                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${selectedProgressTier === '50_74' ? 'bg-white' : 'bg-indigo-500'}`} />
+            <span>50% - 74% Halfway</span>
+            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold ${selectedProgressTier === '50_74' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+              {tierCounts.count50_74}
+            </span>
+          </button>
 
-        {/* Pill: 25-49% Early Stage */}
-        <button
-          onClick={() => setSelectedProgressTier('25_49')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-            selectedProgressTier === '25_49'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-amber-500" />
-          <span>25% - 49% Early Stage</span>
-          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-medium ${selectedProgressTier === '25_49' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-            {tierCounts.count25_49}
-          </span>
-        </button>
+          {/* Pill: 25-49% Early Stage */}
+          <button
+            onClick={() => setSelectedProgressTier('25_49')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
+              selectedProgressTier === '25_49'
+                ? 'bg-amber-600 text-white shadow-sm shadow-amber-600/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${selectedProgressTier === '25_49' ? 'bg-white' : 'bg-amber-500'}`} />
+            <span>25% - 49% Early Stage</span>
+            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold ${selectedProgressTier === '25_49' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+              {tierCounts.count25_49}
+            </span>
+          </button>
 
-        {/* Pill: 0-24% Just Started */}
-        <button
-          onClick={() => setSelectedProgressTier('0_24')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition flex items-center gap-1.5 cursor-pointer ${
-            selectedProgressTier === '0_24'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-slate-400" />
-          <span>0% - 24% Just Started</span>
-          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-medium ${selectedProgressTier === '0_24' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-            {tierCounts.count0_24}
-          </span>
-        </button>
+          {/* Pill: 0-24% Just Started */}
+          <button
+            onClick={() => setSelectedProgressTier('0_24')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-2 cursor-pointer ${
+              selectedProgressTier === '0_24'
+                ? 'bg-slate-700 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${selectedProgressTier === '0_24' ? 'bg-white' : 'bg-slate-400'}`} />
+            <span>0% - 24% Just Started</span>
+            <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-mono font-bold ${selectedProgressTier === '0_24' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+              {tierCounts.count0_24}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* 3. ASSIGNEE SPOTLIGHT (When an employee filter is chosen) */}
       {selectedAssigneeStats ? (
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4 animate-fade-in">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4 animate-fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
               <img
@@ -495,18 +498,18 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
         /* 4 CLEAN CORPORATE KPI CARDS (Global Overview) */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: AVG PORTION DONE */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-xs space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-sm transition-all flex flex-col justify-between space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Avg Portion Done</span>
-              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                <TrendingUp size={16} />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Avg Portion Done</span>
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                <TrendingUp size={17} />
               </div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 tracking-tight">{workPortionMetrics.avgPortionCompleted}%</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Across {filteredTasks.length} work orders</div>
+              <div className="text-3xl font-extrabold text-slate-900 tracking-tight">{workPortionMetrics.avgPortionCompleted}%</div>
+              <div className="text-xs text-slate-500 font-medium mt-1">Across {filteredTasks.length} work orders</div>
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
               <div
                 className="bg-blue-600 h-full rounded-full transition-all duration-500"
                 style={{ width: `${workPortionMetrics.avgPortionCompleted}%` }}
@@ -515,20 +518,20 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
           </div>
 
           {/* Card 2: COMPLETED TASKS */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-xs space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-sm transition-all flex flex-col justify-between space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Completed Tasks</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                <CheckCircle2 size={16} />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Completed Tasks</span>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <CheckCircle2 size={17} />
               </div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 tracking-tight">{workPortionMetrics.completedCount}</div>
-              <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+              <div className="text-3xl font-extrabold text-slate-900 tracking-tight">{workPortionMetrics.completedCount}</div>
+              <div className="text-xs text-emerald-600 font-semibold mt-1">
                 {workPortionMetrics.total > 0 ? ((workPortionMetrics.completedCount / workPortionMetrics.total) * 100).toFixed(1) : '0.0'}% finalized
               </div>
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
               <div
                 className="bg-emerald-600 h-full rounded-full transition-all duration-500"
                 style={{ width: `${workPortionMetrics.total > 0 ? (workPortionMetrics.completedCount / workPortionMetrics.total) * 100 : 0}%` }}
@@ -537,20 +540,20 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
           </div>
 
           {/* Card 3: IN PROGRESS TASKS */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-xs space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-sm transition-all flex flex-col justify-between space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">In Progress Work</span>
-              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <Clock size={16} />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">In Progress Work</span>
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Clock size={17} />
               </div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 tracking-tight">{workPortionMetrics.inProgressCount}</div>
-              <div className="text-[11px] text-indigo-700 font-semibold mt-0.5">
+              <div className="text-3xl font-extrabold text-slate-900 tracking-tight">{workPortionMetrics.inProgressCount}</div>
+              <div className="text-xs text-indigo-600 font-semibold mt-1">
                 {workPortionMetrics.total > 0 ? ((workPortionMetrics.inProgressCount / workPortionMetrics.total) * 100).toFixed(1) : '0.0'}% active
               </div>
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
               <div
                 className="bg-indigo-600 h-full rounded-full transition-all duration-500"
                 style={{ width: `${workPortionMetrics.total > 0 ? (workPortionMetrics.inProgressCount / workPortionMetrics.total) * 100 : 0}%` }}
@@ -559,22 +562,22 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
           </div>
 
           {/* Card 4: HOURS LOGGED */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-xs space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-sm transition-all flex flex-col justify-between space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Hours Logged</span>
-              <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center">
-                <Layers size={16} />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Hours Logged</span>
+              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold">
+                <Layers size={17} />
               </div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 tracking-tight">
-                {workPortionMetrics.totalActHours} <span className="text-xs font-normal text-slate-400 font-mono">/ {workPortionMetrics.totalEstHours}h</span>
+              <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                {workPortionMetrics.totalActHours} <span className="text-sm font-normal text-slate-400 font-mono">/ {workPortionMetrics.totalEstHours}h</span>
               </div>
-              <div className="text-[11px] text-slate-600 font-semibold mt-0.5">
+              <div className="text-xs text-slate-600 font-semibold mt-1">
                 {workPortionMetrics.hoursExecutionPercent}% of total budgeted
               </div>
             </div>
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
               <div
                 className="bg-slate-700 h-full rounded-full transition-all duration-500"
                 style={{ width: `${Math.min(100, Number(workPortionMetrics.hoursExecutionPercent))}%` }}
@@ -585,110 +588,110 @@ export const TaskReportsView: React.FC<TaskReportsViewProps> = ({
       )}
 
       {/* 4. FILTER TOOLBAR */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 flex-1 min-w-[280px] flex-wrap">
-            {/* Search Input */}
-            <div className="relative flex-1 min-w-[180px]">
-              <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search tasks, projects, employees..."
-                className="w-full pl-9 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 transition"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {/* Assignee Selector */}
-            <div className="relative">
-              <select
-                value={selectedAssigneeFilter}
-                onChange={e => setSelectedAssigneeFilter(e.target.value)}
-                className="pl-3 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-xl text-xs font-semibold focus:outline-none cursor-pointer appearance-none"
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+        {/* Top row: Generous search bar & summary status */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search tasks, deliverables, projects, or employees..."
+              className="w-full pl-10 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5 cursor-pointer"
               >
-                <option value="ALL">👤 All Assigned Employees</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.empCode || emp.id}>
-                    {emp.name} ({emp.empCode || emp.id}) — {emp.department || 'Staff'}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
-
-            {/* Department Selector */}
-            <div className="relative">
-              <select
-                value={selectedDeptFilter}
-                onChange={e => setSelectedDeptFilter(e.target.value)}
-                className="pl-3 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-xl text-xs font-medium text-slate-700 focus:outline-none cursor-pointer appearance-none"
-              >
-                <option value="ALL">All Departments</option>
-                <option value="Engineering">Engineering</option>
-                <option value="Product">Product</option>
-                <option value="Design">Design</option>
-                <option value="QA">QA</option>
-                <option value="Operations">Operations</option>
-                <option value="HR">HR</option>
-                <option value="Finance">Finance</option>
-              </select>
-              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
-
-            {/* Project Selector */}
-            <div className="relative">
-              <select
-                value={selectedProjectFilter}
-                onChange={e => setSelectedProjectFilter(e.target.value)}
-                className="pl-3 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-xl text-xs font-medium text-slate-700 focus:outline-none cursor-pointer appearance-none"
-              >
-                <option value="ALL">All Assigned Projects</option>
-                {availableProjects.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
-
-            {/* Priority Selector */}
-            <div className="relative">
-              <select
-                value={selectedPriorityFilter}
-                onChange={e => setSelectedPriorityFilter(e.target.value)}
-                className="pl-3 pr-7 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 rounded-xl text-xs font-medium text-slate-700 focus:outline-none cursor-pointer appearance-none"
-              >
-                <option value="ALL">All Priorities</option>
-                <option value="URGENT">Urgent</option>
-                <option value="HIGH">High</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="LOW">Low</option>
-              </select>
-              <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            </div>
+                ✕
+              </button>
+            )}
           </div>
 
-          {/* Results Summary & Clear All */}
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-500 font-medium">
-              Showing <b className="text-slate-800 font-bold">{filteredTasks.length}</b> tasks
+          <div className="flex items-center gap-2.5 shrink-0">
+            <span className="text-xs text-slate-500 font-medium px-2.5 py-1.5 bg-slate-50 rounded-xl border border-slate-200/60">
+              Showing <b className="text-slate-900 font-bold">{filteredTasks.length}</b> tasks
             </span>
             {hasActiveFilters && (
               <button
                 onClick={handleResetFilters}
-                className="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1 transition cursor-pointer"
+                className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/80 border border-rose-200/80 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
               >
                 <RotateCcw size={12} /> Clear Filters
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Bottom row: Filter Selectors Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100">
+          {/* Assignee Selector */}
+          <div className="relative">
+            <select
+              value={selectedAssigneeFilter}
+              onChange={e => setSelectedAssigneeFilter(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-800 rounded-xl text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer appearance-none transition"
+            >
+              <option value="ALL">👤 All Assigned Employees</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.empCode || emp.id}>
+                  {emp.name} ({emp.empCode || emp.id})
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* Department Selector */}
+          <div className="relative">
+            <select
+              value={selectedDeptFilter}
+              onChange={e => setSelectedDeptFilter(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-800 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer appearance-none transition"
+            >
+              <option value="ALL">All Departments</option>
+              <option value="Engineering">Engineering</option>
+              <option value="Product">Product</option>
+              <option value="Design">Design</option>
+              <option value="QA">QA</option>
+              <option value="Operations">Operations</option>
+              <option value="HR">HR</option>
+              <option value="Finance">Finance</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* Project Selector */}
+          <div className="relative">
+            <select
+              value={selectedProjectFilter}
+              onChange={e => setSelectedProjectFilter(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-800 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer appearance-none transition"
+            >
+              <option value="ALL">All Assigned Projects</option>
+              {availableProjects.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* Priority Selector */}
+          <div className="relative">
+            <select
+              value={selectedPriorityFilter}
+              onChange={e => setSelectedPriorityFilter(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-800 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer appearance-none transition"
+            >
+              <option value="ALL">All Priorities</option>
+              <option value="URGENT">🔴 Urgent</option>
+              <option value="HIGH">🟠 High</option>
+              <option value="MEDIUM">🟡 Medium</option>
+              <option value="LOW">🟢 Low</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
         </div>
       </div>
