@@ -10,9 +10,9 @@ router.get('/', async (req, res) => {
     const employeeId = req.query.employeeId || req.headers['x-employee-id'] || null;
 
     if (employeeId && employeeId !== 'ALL' && employeeId !== 'ADMIN-001') {
-      // Scoped view for logged-in employee: return their assigned project groups
+      // Scoped view for logged-in employee: return their assigned project groups without duplicates
       const query = `
-        SELECT 
+        SELECT DISTINCT ON (LOWER(TRIM(g.name)))
           g.id,
           g.name,
           g.project_id,
@@ -101,7 +101,22 @@ router.get('/', async (req, res) => {
           ORDER BY group_id, created_at DESC
         ) my_tsk_mod ON g.id = my_tsk_mod.group_id
         WHERE (
-          -- 1. Groups where employee has assigned tasks
+          -- 1. Assigned in group_members
+          g.id IN (
+            SELECT DISTINCT group_id FROM group_members 
+            WHERE employee_id = $1
+          )
+          OR
+          -- 2. Designated team head
+          g.team_head_id = $1
+          OR
+          -- 3. Assigned module
+          g.id IN (
+            SELECT DISTINCT team_id FROM employee_assigned_modules 
+            WHERE employee_id = $1
+          )
+          OR
+          -- 4. Groups where employee has assigned tasks
           g.id IN (
             SELECT DISTINCT group_id FROM tasks 
             WHERE (assigned_to = $1 OR assigned_to_employee_id = $1)
@@ -111,11 +126,8 @@ router.get('/', async (req, res) => {
             WHERE employee_id = $1
               AND group_id IS NOT NULL
           )
-          OR
-          -- 2. Groups where employee is designated team head AND active tasks exist
-          (g.team_head_id = $1 AND COALESCE(tsk.task_count, 0) > 0)
         )
-        ORDER BY g.created_at ASC
+        ORDER BY LOWER(TRIM(g.name)), COALESCE(tsk.task_count, 0) DESC, (CASE WHEN g.repository_url IS NOT NULL THEN 1 ELSE 0 END) DESC, g.created_at ASC
       `;
 
       const result = await pool.query(query, [employeeId]);
@@ -221,7 +233,7 @@ router.get('/messages', async (req, res) => {
 
     let messages = [];
     if (targetId === 'GROUP' || type === 'group') {
-      const gId = groupId || 'grp_crm_core_01';
+      const gId = groupId || 'GRP-CMS-01';
       const msgRes = await pool.query(
         `SELECT id, group_id, sender_id, sender_name, receiver_id, receiver_name, message, is_read, created_at
          FROM team_chat_messages
@@ -318,7 +330,7 @@ router.put('/messages/read', async (req, res) => {
   try {
     const { senderId, receiverId, groupId } = req.body;
     if (receiverId === 'GROUP' || receiverId === 'ALL') {
-      const gId = groupId || 'grp_crm_core_01';
+      const gId = groupId || 'GRP-CMS-01';
       await pool.query(
         `UPDATE team_chat_messages
          SET is_read = true

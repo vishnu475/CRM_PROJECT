@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { hrmsPool, crmPool } from './db/pool.js';
 import { initWebSocketServer } from './utils/websocket.js';
+import { getMigrationStatus } from './db/migrator.js';
 // Reload trigger: sequential-employee-id-flow-v2
 
 // ─── HRMS Routes (Friend 2 — Employees, Payroll, Attendance) ────────────────
@@ -78,27 +79,6 @@ if (!fs.existsSync(leadsUploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
-// ─── HRMS Migration runner (runs on boot against hrmsPool) ──────────────────
-async function initializeHRMSSchema() {
-  const migrationsDir = path.join(__dirname, 'db', 'migrations');
-  if (!fs.existsSync(migrationsDir)) return;
-
-  const migrationFiles = fs.readdirSync(migrationsDir)
-    .filter(file => file.endsWith('.sql'))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-
-  for (const migrationFile of migrationFiles) {
-    const migrationPath = path.join(migrationsDir, migrationFile);
-    try {
-      const sql = fs.readFileSync(migrationPath, 'utf8');
-      await hrmsPool.query(sql);
-      console.log(`✅ [HRMS] Migration applied: ${migrationFile}`);
-    } catch (err) {
-      console.warn(`⚠️  [HRMS] Migration note [${migrationFile}]: ${err.message}`);
-    }
-  }
-}
-
 // Global Authentication Middleware
 app.use(authenticateUser);
 // Global Module Authorization Protection Middleware
@@ -152,36 +132,66 @@ app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/projects',        projectsRouter);
 app.use('/api/groups',          groupsRouter);
 
-// ─── Health Check (shows both DB connections) ─────────────────────────────────
+// ─── Health Check (shows both DB connections & migration status) ──────────────
 app.get('/api/health', async (req, res) => {
-  try {
-    const hrmsInfo = await hrmsPool.query('SELECT current_database(), current_user, version()');
-    const crmInfo  = await crmPool.query('SELECT current_database(), current_user');
-    const empCount = await hrmsPool.query('SELECT COUNT(*) FROM employees');
-    const leadCount = await crmPool.query('SELECT COUNT(*) FROM leads');
+  let hrmsInfo = null;
+  let crmInfo = null;
+  let empCount = 0;
+  let leadCount = 0;
+  let hrmsError = null;
+  let crmError = null;
 
-    res.json({
-      status: 'OK',
-      message: 'CRM + HRMS Dual-DB Enterprise API — 100% DB-First',
-      databases: {
-        hrms: {
-          name: hrmsInfo.rows[0].current_database,
-          user: hrmsInfo.rows[0].current_user,
-          purpose: 'Friend 2 — Employees, Payroll, Attendance, Leave, Recruitment',
-          stats: { employees: parseInt(empCount.rows[0].count) },
-        },
-        crm: {
-          name: crmInfo.rows[0].current_database,
-          user: crmInfo.rows[0].current_user,
-          purpose: 'Friend 1 — Leads, Customers, Opportunities, Sales, Invoices',
-          stats: { leads: parseInt(leadCount.rows[0].count) },
-        },
-      },
-      postgresVersion: hrmsInfo.rows[0].version,
-    });
+  try {
+    const resH = await hrmsPool.query('SELECT current_database(), current_user, version()');
+    hrmsInfo = resH.rows[0];
+    const resE = await hrmsPool.query('SELECT COUNT(*) FROM employees');
+    empCount = parseInt(resE.rows[0].count, 10);
   } catch (err) {
-    res.json({ status: 'OK', message: 'Backend active (one or both DBs offline)', error: err.message });
+    hrmsError = err.message;
   }
+
+  try {
+    const resC = await crmPool.query('SELECT current_database(), current_user');
+    crmInfo = resC.rows[0];
+    const resL = await crmPool.query('SELECT COUNT(*) FROM leads');
+    leadCount = parseInt(resL.rows[0].count, 10);
+  } catch (err) {
+    crmError = err.message;
+  }
+
+  const hrmsMigrations = await getMigrationStatus(hrmsPool);
+  const crmMigrations = await getMigrationStatus(crmPool);
+
+  const isHealthy = !hrmsError && !crmError;
+  const statusCode = isHealthy ? 200 : 503;
+
+  res.status(statusCode).json({
+    status: isHealthy ? 'OK' : 'DEGRADED',
+    message: isHealthy 
+      ? 'CRM + HRMS Dual-DB Enterprise API — All Systems Healthy'
+      : 'One or more databases are offline or degraded',
+    databases: {
+      hrms: {
+        status: hrmsError ? 'DISCONNECTED' : 'HEALTHY',
+        name: hrmsInfo?.current_database || process.env.DB_NAME || 'HRMS',
+        user: hrmsInfo?.current_user || process.env.DB_USER || 'postgres',
+        purpose: 'Friend 2 — Employees, Payroll, Attendance, Leave, Recruitment',
+        stats: { employees: empCount },
+        migrationsApplied: hrmsMigrations.count,
+        error: hrmsError
+      },
+      crm: {
+        status: crmError ? 'DISCONNECTED' : 'HEALTHY',
+        name: crmInfo?.current_database || process.env.CRM_DB_NAME || 'crm',
+        user: crmInfo?.current_user || process.env.CRM_DB_USER || 'postgres',
+        purpose: 'Friend 1 — Leads, Customers, Opportunities, Sales, Invoices',
+        stats: { leads: leadCount },
+        migrationsApplied: crmMigrations.count,
+        error: crmError
+      }
+    },
+    postgresVersion: hrmsInfo?.version || null
+  });
 });
 
 // Central Error Handler
@@ -204,7 +214,6 @@ server.listen(PORT, async () => {
   } catch (e) {
     console.error('[HRMS] Database startup check failed:', e.message);
   }
-  await initializeHRMSSchema();
 
   // Initialize CRM database (Friend 1)
   try {

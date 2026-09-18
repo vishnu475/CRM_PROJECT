@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { runMigrations } from './db/migrator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,36 +50,12 @@ export async function ensureDatabaseAndMigrate() {
     console.log(`✅ Connected to database "${res.rows[0].current_database}" as user "${res.rows[0].current_user}"`);
 
     const migrationsDir = path.join(__dirname, 'db', 'migrations');
-    const migrationFiles = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.sql'))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    await runMigrations({ pool, migrationsDir, label: 'HRMS' });
 
-    for (const file of migrationFiles) {
-      const filePath = path.join(migrationsDir, file);
-      if (fs.existsSync(filePath)) {
-        const sql = fs.readFileSync(filePath, 'utf8');
-        try {
-          await pool.query(sql);
-          console.log(`  ✅ Migration executed: ${file}`);
-        } catch (err) {
-          console.warn(`  ⚠️ Migration notice [${file}]: ${err.message}`);
-        }
-      }
-    }
-
-    // Run HRMS-specific seed data (accounts, bank accounts, expenses, journal entries)
-    const hrmsSeeds = ['hrms/001_hrms_seed.sql'];
-    for (const file of hrmsSeeds) {
-      const filePath = path.join(migrationsDir, file);
-      if (fs.existsSync(filePath)) {
-        const sql = fs.readFileSync(filePath, 'utf8');
-        try {
-          await pool.query(sql);
-          console.log(`  ✅ HRMS Seed executed: ${file}`);
-        } catch (err) {
-          console.warn(`  ⚠️ HRMS Seed notice [${file}]: ${err.message}`);
-        }
-      }
+    // Run HRMS-specific seed data
+    const hrmsSeedDir = path.join(migrationsDir, 'hrms');
+    if (fs.existsSync(hrmsSeedDir)) {
+      await runMigrations({ pool, migrationsDir: hrmsSeedDir, label: 'HRMS-Seed', isSeed: true });
     }
 
     const empCount = await pool.query('SELECT COUNT(*) FROM employees');

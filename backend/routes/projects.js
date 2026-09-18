@@ -25,7 +25,71 @@ router.get('/', async (req, res) => {
 
     query += ` ORDER BY created_at DESC`;
     const result = await crmPool.query(query, params);
-    res.json({ success: true, count: result.rows.length, data: result.rows });
+    const projects = result.rows;
+
+    try {
+      // 1. Fetch active tasks and assigned employees from tasks table in HRMS
+      const taskStats = await hrmsPool.query(`
+        SELECT project_id,
+               COUNT(*) as total_tasks,
+               COUNT(*) FILTER (WHERE status != 'COMPLETED') as active_tasks,
+               json_agg(DISTINCT assigned_to_name) FILTER (WHERE assigned_to_name IS NOT NULL AND assigned_to_name != '') as task_assignees
+        FROM tasks
+        GROUP BY project_id
+      `);
+
+      // 2. Fetch project group members from group_members and project_groups in HRMS
+      const groupStats = await hrmsPool.query(`
+        SELECT g.project_id,
+               COUNT(DISTINCT gm.employee_id) as member_count,
+               json_agg(DISTINCT gm.employee_name) FILTER (WHERE gm.employee_name IS NOT NULL AND gm.employee_name != '') as group_members
+        FROM project_groups g
+        JOIN group_members gm ON gm.group_id = g.id
+        GROUP BY g.project_id
+      `);
+
+      const taskMap = new Map();
+      taskStats.rows.forEach(r => {
+        if (r.project_id) taskMap.set(String(r.project_id).toLowerCase(), r);
+      });
+
+      const groupMap = new Map();
+      groupStats.rows.forEach(r => {
+        if (r.project_id) groupMap.set(String(r.project_id).toLowerCase(), r);
+      });
+
+      projects.forEach(p => {
+        const idKey = p.id ? String(p.id).toLowerCase() : '';
+        const codeKey = p.code ? String(p.code).toLowerCase() : '';
+        const nameKey = p.name ? String(p.name).toLowerCase() : '';
+
+        const t = taskMap.get(idKey) || taskMap.get(codeKey) || taskMap.get(nameKey);
+        const g = groupMap.get(idKey) || groupMap.get(codeKey) || groupMap.get(nameKey);
+
+        const activeTasks = parseInt(t?.active_tasks || 0, 10);
+        const totalTasks = parseInt(t?.total_tasks || 0, 10);
+        const memberCount = parseInt(g?.member_count || 0, 10);
+
+        const empsSet = new Set();
+        (t?.task_assignees || []).forEach(name => empsSet.add(name));
+        (g?.group_members || []).forEach(name => empsSet.add(name));
+        const assignedEmployees = Array.from(empsSet);
+
+        const isAssigned = assignedEmployees.length > 0 || totalTasks > 0 || memberCount > 0;
+        const isOngoing = isAssigned || p.status === 'In Progress';
+
+        p.active_tasks_count = activeTasks;
+        p.total_tasks_count = totalTasks;
+        p.assigned_members_count = assignedEmployees.length || memberCount;
+        p.assigned_employees = assignedEmployees;
+        p.is_assigned = isAssigned;
+        p.is_ongoing = isOngoing;
+      });
+    } catch (hrmsErr) {
+      console.warn('Failed to attach HRMS assignment metadata to projects:', hrmsErr.message);
+    }
+
+    res.json({ success: true, count: projects.length, data: projects });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

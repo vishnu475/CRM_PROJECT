@@ -248,11 +248,18 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
     applyProjectDataToForm(proj);
     setProjectSearchQuery('');
     setIsProjectDropdownOpen(false);
-    setStatusMessage({
-      type: 'success',
-      text: `Gathered details from ${proj.name}: Description, deadline, priority, module & attached spec auto-populated!`
-    });
-    setTimeout(() => setStatusMessage(null), 3500);
+    if (proj.is_assigned || proj.is_ongoing || (proj.assigned_employees && proj.assigned_employees.length > 0)) {
+      setStatusMessage({
+        type: 'success',
+        text: `ℹ️ Selected "${proj.name}" (Ongoing • ${proj.assigned_members_count || proj.assigned_employees?.length || 1} team members assigned). Form auto-populated with project requirements.`
+      });
+    } else {
+      setStatusMessage({
+        type: 'success',
+        text: `Gathered details from ${proj.name}: Description, deadline, priority, module & attached spec auto-populated!`
+      });
+    }
+    setTimeout(() => setStatusMessage(null), 4000);
   };
 
   // Close dropdown on click outside
@@ -323,7 +330,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
     return () => { isMounted = false; };
   }, []);
 
-  // Filtered projects for the searchable dropdown
+  // Filtered projects for the searchable dropdown (supports searching by name, code, client, manager, status, and assigned employee name)
   const filteredProjects = useMemo(() => {
     if (!projectSearchQuery.trim()) return masterProjects;
     const q = projectSearchQuery.toLowerCase();
@@ -332,7 +339,9 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
       (p.code && p.code.toLowerCase().includes(q)) ||
       (p.client && p.client.toLowerCase().includes(q)) ||
       (p.project_manager && p.project_manager.toLowerCase().includes(q)) ||
-      (p.id && p.id.toLowerCase().includes(q))
+      (p.id && p.id.toLowerCase().includes(q)) ||
+      (p.status && p.status.toLowerCase().includes(q)) ||
+      (Array.isArray(p.assigned_employees) && p.assigned_employees.some((emp: string) => emp && emp.toLowerCase().includes(q)))
     );
   }, [masterProjects, projectSearchQuery]);
 
@@ -349,7 +358,12 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
         end_date: '2026-09-30',
         weightage: 100.0,
         repository_url: 'https://github.com/company/cms',
-        project_requirement: 'Enterprise Headless Content Management System with multi-tenant API, markdown rendering, media management, and role-based publishing workflows.'
+        project_requirement: 'Enterprise Headless Content Management System with multi-tenant API, markdown rendering, media management, and role-based publishing workflows.',
+        is_assigned: true,
+        is_ongoing: true,
+        active_tasks_count: 4,
+        assigned_members_count: 4,
+        assigned_employees: ['Priya Sharma', 'Rahul Verma', 'Ramesh', 'Vishnu Vardhan']
       };
     }
     const found = masterProjects.find(
@@ -1321,7 +1335,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
           </div>
 
           {currentProject && (
-            <div className="flex items-center gap-2 self-start md:self-auto">
+            <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
               <span className="text-xs font-bold text-slate-800 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-2 shadow-2xs">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 <span className="font-semibold">{currentProject.name}</span>
@@ -1329,6 +1343,12 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                   {currentProject.code || currentProject.id}
                 </span>
               </span>
+              {(currentProject.is_assigned || currentProject.is_ongoing || (currentProject.assigned_employees && currentProject.assigned_employees.length > 0)) && (
+                <span className="text-xs font-bold text-amber-900 bg-amber-100/90 px-2.5 py-1.5 rounded-xl border border-amber-300 flex items-center gap-1.5 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <span>Ongoing ({currentProject.assigned_members_count || currentProject.assigned_employees?.length || 1} Assigned)</span>
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -1351,7 +1371,11 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
               }}
               onFocus={() => setIsProjectDropdownOpen(true)}
               onClick={e => e.stopPropagation()}
-              placeholder={currentProject ? `Active: ${currentProject.name} (${currentProject.code || currentProject.id}) — Type to search project list...` : "Search project by name, code, client, or manager..."}
+              placeholder={
+                currentProject 
+                  ? `Active: ${currentProject.name} (${currentProject.code || currentProject.id})${currentProject.is_ongoing ? ' [ONGOING - ' + (currentProject.assigned_members_count || currentProject.assigned_employees?.length || 1) + ' ASSIGNED]' : ''} — Search project or assigned employee...` 
+                  : "Search project by name, code, client, manager, or assigned employee..."
+              }
               className="w-full bg-transparent border-none outline-none text-xs text-slate-800 placeholder-slate-400 font-medium"
             />
             {projectSearchQuery && (
@@ -1390,28 +1414,64 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                 <div className="divide-y divide-slate-100">
                   {filteredProjects.map(proj => {
                     const isSelected = (currentProject?.id === proj.id || currentProject?.code === proj.code);
+                    const isOngoing = Boolean(proj.is_assigned || proj.is_ongoing || (proj.assigned_employees && proj.assigned_employees.length > 0) || proj.active_tasks_count > 0);
+                    const assignedCount = proj.assigned_members_count || proj.assigned_employees?.length || 0;
+
                     return (
                       <div
                         key={proj.id}
                         onClick={() => handleSelectProject(proj)}
                         className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition ${
-                          isSelected ? 'bg-blue-50/80 hover:bg-blue-100/70 border-l-4 border-blue-600' : 'hover:bg-slate-50'
+                          isSelected 
+                            ? 'bg-blue-50/90 hover:bg-blue-100/70 border-l-4 border-blue-600' 
+                            : isOngoing 
+                              ? 'hover:bg-amber-50/60 bg-white' 
+                              : 'hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span className={`px-2.5 py-1 rounded-md font-mono text-[11px] font-bold shrink-0 ${
-                            isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            isSelected 
+                              ? 'bg-blue-600 text-white' 
+                              : isOngoing 
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300' 
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
                           }`}>
                             {proj.code || proj.id}
                           </span>
                           <div className="min-w-0">
-                            <p className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
-                              <span>{proj.name || proj.title}</span>
-                              {isSelected && <Check size={13} className="text-blue-600 shrink-0" />}
-                            </p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-xs font-bold text-slate-900 truncate flex items-center gap-1.5">
+                                <span>{proj.name || proj.title}</span>
+                                {isSelected && <Check size={13} className="text-blue-600 shrink-0" />}
+                              </p>
+                              {isOngoing ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shrink-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                  Ongoing ({assignedCount} Assigned)
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                  Available
+                                </span>
+                              )}
+                            </div>
+
                             <p className="text-[10px] text-slate-500 truncate mt-0.5">
                               Client: <span className="font-medium text-slate-700">{proj.client || 'Enterprise'}</span> • Manager: <span className="font-medium text-slate-700">{proj.project_manager || 'Sarah Jenkins'}</span>
                             </p>
+
+                            {proj.assigned_employees && proj.assigned_employees.length > 0 ? (
+                              <p className="text-[10px] text-amber-800 font-medium truncate mt-1 flex items-center gap-1.5">
+                                <Users size={11} className="text-amber-600 shrink-0" />
+                                <span>
+                                  Already Assigned to: <strong className="font-bold text-amber-950">{proj.assigned_employees.join(', ')}</strong>
+                                  {proj.active_tasks_count > 0 && (
+                                    <span className="ml-1 text-slate-500 font-normal">({proj.active_tasks_count} active task{proj.active_tasks_count > 1 ? 's' : ''})</span>
+                                  )}
+                                </span>
+                              </p>
+                            ) : null}
                           </div>
                         </div>
 
@@ -1423,9 +1483,13 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                             </span>
                           </div>
                           <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition shadow-2xs ${
-                            isSelected ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-blue-600 hover:text-white'
+                            isSelected 
+                              ? 'bg-blue-600 text-white' 
+                              : isOngoing
+                                ? 'bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-600 hover:text-white'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-blue-600 hover:text-white'
                           }`}>
-                            {isSelected ? 'Active' : 'Select'}
+                            {isSelected ? 'Active' : isOngoing ? 'Select (Ongoing)' : 'Select'}
                           </span>
                         </div>
                       </div>
@@ -1436,6 +1500,37 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
             </div>
           )}
         </div>
+
+        {/* Ongoing Project Alert & Prevention Notice */}
+        {currentProject && (currentProject.is_assigned || currentProject.is_ongoing || (currentProject.assigned_employees && currentProject.assigned_employees.length > 0)) && (
+          <div className="mt-3 p-3.5 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 shadow-2xs animate-in fade-in duration-200">
+            <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-amber-950">
+                  Ongoing Project Notice: &quot;{currentProject.name}&quot; is already in progress and assigned to employees
+                </span>
+                {currentProject.active_tasks_count > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 text-amber-950 border border-amber-300">
+                    {currentProject.active_tasks_count} Active Tasks
+                  </span>
+                )}
+                {(currentProject.assigned_members_count > 0 || currentProject.assigned_employees?.length > 0) && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                    {currentProject.assigned_members_count || currentProject.assigned_employees?.length} Team Members
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
+                This project is already assigned to{' '}
+                <strong className="font-bold text-amber-950">
+                  {currentProject.assigned_employees?.join(', ') || 'an active team'}
+                </strong>.
+                If you selected this project by mistake, use the search dropdown above to pick another project. You can still select and use this project to assign additional tasks, attach new modules, or collaborate with the existing team.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Compact Metadata & Auto-filled Status Summary */}
         {currentProject && (
