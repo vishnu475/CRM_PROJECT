@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS group_members (
     employee_id VARCHAR(50) NOT NULL,
     employee_name VARCHAR(100),
     role VARCHAR(50) DEFAULT 'Member',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_group_employee UNIQUE (group_id, employee_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members (group_id);
@@ -42,7 +43,8 @@ CREATE TABLE IF NOT EXISTS task_member_assignments (
     employee_status VARCHAR(50) DEFAULT 'IN_PROGRESS',
     employee_progress INT DEFAULT 0,
     assigned_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_task_employee UNIQUE (task_id, employee_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_member_task ON task_member_assignments (task_id);
@@ -63,7 +65,22 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS video_url TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reference_link TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to_employee_id VARCHAR(50);
 
--- 5. Extend projects table with delivery details
+-- 5. Ensure projects table exists in HRMS DB and extend with delivery details
+CREATE TABLE IF NOT EXISTS projects (
+    id VARCHAR(50) PRIMARY KEY,
+    project_id VARCHAR(50) UNIQUE,
+    code VARCHAR(50),
+    name VARCHAR(255) NOT NULL,
+    client VARCHAR(255),
+    project_requirement TEXT,
+    project_manager TEXT,
+    start_date DATE,
+    end_date DATE,
+    status VARCHAR(50) DEFAULT 'In Progress',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS weightage NUMERIC DEFAULT 100.0;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS repository_url TEXT;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS requirement_documents JSONB DEFAULT '[]'::jsonb;
@@ -87,13 +104,13 @@ ON CONFLICT (id) DO UPDATE SET
 -- 7. Ensure default CMS Project Group exists
 INSERT INTO project_groups (id, name, project_id, team_head_id, team_head_name, description, repository_url)
 VALUES (
-    'grp_crm_core_01',
+    'GRP-CMS-01',
     'CMS Project Development Team',
     'PRJ-CMS',
     'EMP-005',
     'Vishnu Vardhan',
     'Core cross-functional delivery group for CMS Project',
-    'https://github.com/company/cms'
+    'https://github.com/vishnu475'
 )
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -105,8 +122,10 @@ ON CONFLICT (id) DO UPDATE SET
 -- 7. Ensure group members exist for the CMS Project Group
 INSERT INTO group_members (id, group_id, employee_id, employee_name, role)
 VALUES 
-    ('gm_seed_005', 'grp_crm_core_01', 'EMP-005', 'Vishnu Vardhan', 'Team Head'),
-    ('gm_seed_003', 'grp_crm_core_01', 'EMP-003', 'Priya Sharma', 'Member'),
-    ('gm_seed_004', 'grp_crm_core_01', 'EMP-004', 'Rahul Verma', 'Member'),
-    ('gm_seed_008', 'grp_crm_core_01', 'EMP-008', 'Ramesh', 'Member')
-ON CONFLICT (id) DO NOTHING;
+    ('gm_seed_005', 'GRP-CMS-01', 'EMP-005', 'Vishnu Vardhan', 'Team Head'),
+    ('gm_seed_003', 'GRP-CMS-01', 'EMP-003', 'Priya Sharma', 'Member'),
+    ('gm_seed_004', 'GRP-CMS-01', 'EMP-004', 'Rahul Verma', 'Member'),
+    ('gm_seed_008', 'GRP-CMS-01', 'EMP-008', 'Ramesh', 'Member')
+ON CONFLICT (group_id, employee_id) DO UPDATE SET
+    role = EXCLUDED.role,
+    employee_name = EXCLUDED.employee_name;

@@ -1,6 +1,56 @@
 -- Migration 012: Comprehensive Intern Management Module
 -- Dual-DB Architecture: HRMS PostgreSQL Database
 
+-- 0. Ensure interns table exists
+CREATE TABLE IF NOT EXISTS interns (
+    id VARCHAR(50) PRIMARY KEY,
+    intern_id VARCHAR(50),
+    intern_code VARCHAR(50),
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(30),
+    dob DATE,
+    gender VARCHAR(20) DEFAULT 'Male',
+    address TEXT,
+    emergency_contact VARCHAR(50),
+    avatar TEXT,
+    profile_photo TEXT,
+    college VARCHAR(150),
+    degree VARCHAR(100),
+    branch VARCHAR(100),
+    branch_specialization VARCHAR(100),
+    graduation_year VARCHAR(10),
+    roll_number VARCHAR(50),
+    cgpa_percentage VARCHAR(20),
+    resume_url TEXT,
+    internship_type VARCHAR(50) DEFAULT 'Technical',
+    department VARCHAR(100) NOT NULL,
+    designation VARCHAR(100) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    duration VARCHAR(50) DEFAULT '3 Months',
+    work_mode VARCHAR(50) DEFAULT 'Onsite',
+    location VARCHAR(100) DEFAULT 'Mumbai HQ',
+    stipend NUMERIC(12,2) DEFAULT 15000.00,
+    reporting_manager_id VARCHAR(50) DEFAULT 'EMP-001',
+    reporting_manager_name VARCHAR(100) DEFAULT 'Sarah Jenkins',
+    mentor_id VARCHAR(50),
+    mentor_name VARCHAR(100),
+    status VARCHAR(50) DEFAULT 'Onboarding',
+    company_email VARCHAR(100),
+    system_access BOOLEAN DEFAULT true,
+    attendance_access BOOLEAN DEFAULT true,
+    assigned_device VARCHAR(100) DEFAULT 'MacBook Pro M2',
+    id_card_issued BOOLEAN DEFAULT false,
+    joining_checklist JSONB DEFAULT '[]'::jsonb,
+    documents JSONB DEFAULT '[]'::jsonb,
+    converted_employee_id VARCHAR(50),
+    converted_at TIMESTAMP WITH TIME ZONE,
+    conversion_date TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 1. Ensure all columns exist on interns table
 DO $$
 BEGIN
@@ -31,6 +81,75 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'documents') THEN
         ALTER TABLE interns ADD COLUMN documents JSONB DEFAULT '[]'::jsonb;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'dob') THEN
+        ALTER TABLE interns ADD COLUMN dob DATE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'gender') THEN
+        ALTER TABLE interns ADD COLUMN gender VARCHAR(20) DEFAULT 'Male';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'address') THEN
+        ALTER TABLE interns ADD COLUMN address TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'college') THEN
+        ALTER TABLE interns ADD COLUMN college VARCHAR(150);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'degree') THEN
+        ALTER TABLE interns ADD COLUMN degree VARCHAR(100);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'graduation_year') THEN
+        ALTER TABLE interns ADD COLUMN graduation_year VARCHAR(10);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'roll_number') THEN
+        ALTER TABLE interns ADD COLUMN roll_number VARCHAR(50);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'cgpa_percentage') THEN
+        ALTER TABLE interns ADD COLUMN cgpa_percentage VARCHAR(20);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'internship_type') THEN
+        ALTER TABLE interns ADD COLUMN internship_type VARCHAR(50) DEFAULT 'Technical';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'duration') THEN
+        ALTER TABLE interns ADD COLUMN duration VARCHAR(50) DEFAULT '3 Months';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'work_mode') THEN
+        ALTER TABLE interns ADD COLUMN work_mode VARCHAR(50) DEFAULT 'Onsite';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'location') THEN
+        ALTER TABLE interns ADD COLUMN location VARCHAR(100) DEFAULT 'Mumbai HQ';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'reporting_manager_id') THEN
+        ALTER TABLE interns ADD COLUMN reporting_manager_id VARCHAR(50) DEFAULT 'EMP-001';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'reporting_manager_name') THEN
+        ALTER TABLE interns ADD COLUMN reporting_manager_name VARCHAR(100) DEFAULT 'Sarah Jenkins';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'mentor_id') THEN
+        ALTER TABLE interns ADD COLUMN mentor_id VARCHAR(50);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'mentor_name') THEN
+        ALTER TABLE interns ADD COLUMN mentor_name VARCHAR(100);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'company_email') THEN
+        ALTER TABLE interns ADD COLUMN company_email VARCHAR(100);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'system_access') THEN
+        ALTER TABLE interns ADD COLUMN system_access BOOLEAN DEFAULT true;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'attendance_access') THEN
+        ALTER TABLE interns ADD COLUMN attendance_access BOOLEAN DEFAULT true;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'assigned_device') THEN
+        ALTER TABLE interns ADD COLUMN assigned_device VARCHAR(100) DEFAULT 'MacBook Pro M2';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'id_card_issued') THEN
+        ALTER TABLE interns ADD COLUMN id_card_issued BOOLEAN DEFAULT false;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'joining_checklist') THEN
+        ALTER TABLE interns ADD COLUMN joining_checklist JSONB DEFAULT '[]'::jsonb;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'interns' AND column_name = 'converted_employee_id') THEN
+        ALTER TABLE interns ADD COLUMN converted_employee_id VARCHAR(50);
+    END IF;
 END $$;
 
 UPDATE interns SET 
@@ -49,7 +168,24 @@ BEGIN
     END IF;
 END $$;
 
--- 3. Ensure columns on intern_tasks
+-- 3. Ensure intern_tasks table exists with full schema
+CREATE TABLE IF NOT EXISTS intern_tasks (
+    id VARCHAR(50) PRIMARY KEY,
+    intern_id VARCHAR(50) REFERENCES interns(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    assigned_by VARCHAR(100),
+    mentor_name VARCHAR(100),
+    deadline DATE,
+    status VARCHAR(50) DEFAULT 'IN_PROGRESS',
+    progress_percent INTEGER DEFAULT 0,
+    progress INTEGER DEFAULT 0,
+    comments JSONB DEFAULT '[]'::jsonb,
+    feedback TEXT,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'intern_tasks' AND column_name = 'progress_percent') THEN
@@ -63,7 +199,25 @@ BEGIN
     END IF;
 END $$;
 
--- 4. Ensure columns on intern_attendance_records
+-- 4. Ensure intern_attendance_records table exists with full schema
+CREATE TABLE IF NOT EXISTS intern_attendance_records (
+    id VARCHAR(50) PRIMARY KEY,
+    intern_id VARCHAR(50) REFERENCES interns(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    check_in VARCHAR(50),
+    check_out VARCHAR(50),
+    work_hours NUMERIC(5,2) DEFAULT 0.0,
+    worked_hours NUMERIC(5,2) DEFAULT 0.0,
+    overtime_hours NUMERIC(5,2) DEFAULT 0.0,
+    late_minutes INTEGER DEFAULT 0,
+    status VARCHAR(50) NOT NULL DEFAULT 'Present',
+    regularization_status VARCHAR(20) DEFAULT 'NONE',
+    notes TEXT,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_intern_attendance_date UNIQUE (intern_id, date)
+);
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'intern_attendance_records' AND column_name = 'work_hours') THEN
@@ -111,7 +265,29 @@ BEGIN
     END IF;
 END $$;
 
--- 6. Intern Evaluations Table
+-- 6. Ensure intern_evaluations table exists with full schema
+CREATE TABLE IF NOT EXISTS intern_evaluations (
+    id VARCHAR(50) PRIMARY KEY,
+    intern_id VARCHAR(50) REFERENCES interns(id) ON DELETE CASCADE,
+    technical_skills INTEGER DEFAULT 4,
+    communication INTEGER DEFAULT 4,
+    problem_solving INTEGER DEFAULT 4,
+    teamwork INTEGER DEFAULT 4,
+    discipline INTEGER DEFAULT 5,
+    attendance INTEGER DEFAULT 5,
+    attendance_rating INTEGER DEFAULT 5,
+    task_completion INTEGER DEFAULT 4,
+    learning_ability INTEGER DEFAULT 5,
+    overall_performance NUMERIC(3,1) DEFAULT 4.4,
+    mentor_comments TEXT,
+    manager_comments TEXT,
+    hr_comments TEXT,
+    recommendation VARCHAR(50) DEFAULT 'Convert to Employee',
+    evaluated_by VARCHAR(100) DEFAULT 'HR Admin',
+    evaluation_date DATE DEFAULT CURRENT_DATE,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'intern_evaluations' AND column_name = 'attendance_rating') THEN

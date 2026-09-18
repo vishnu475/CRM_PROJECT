@@ -131,13 +131,19 @@ router.post('/regularizations', async (req, res) => {
 router.patch('/regularizations/:id/approve', async (req, res) => {
   const { id } = req.params;
   const approvedBy = req.user ? req.user.name : 'HR Admin';
+  const client = await pool.connect();
   try {
-    const regRes = await pool.query('SELECT * FROM attendance_regularizations WHERE id = $1', [id]);
-    if (regRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Request not found' });
+    await client.query('BEGIN');
+
+    const regRes = await client.query('SELECT * FROM attendance_regularizations WHERE id = $1 FOR UPDATE', [id]);
+    if (regRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Request not found' });
+    }
     const reg = regRes.rows[0];
 
     // Approve regularization
-    await pool.query(
+    await client.query(
       `UPDATE attendance_regularizations SET status = 'APPROVED', approved_by = $1, approved_at = CURRENT_TIMESTAMP WHERE id = $2`,
       [approvedBy, id]
     );
@@ -146,7 +152,7 @@ router.patch('/regularizations/:id/approve', async (req, res) => {
     const workedHours = AttendanceEngineService.calculateHoursDifference(reg.requested_check_in, reg.requested_check_out);
     const otHours = workedHours > 8 ? workedHours - 8 : 0;
 
-    await pool.query(
+    await client.query(
       `INSERT INTO attendance_records (id, employee_id, date, check_in, check_out, worked_hours, overtime_hours, status, regularization_status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'Present', 'APPROVED')
        ON CONFLICT (employee_id, date) DO UPDATE 
@@ -154,9 +160,13 @@ router.patch('/regularizations/:id/approve', async (req, res) => {
       [`ATT-${reg.employee_id}-${reg.date}`, reg.employee_id, reg.date, reg.requested_check_in, reg.requested_check_out, workedHours, otHours]
     );
 
+    await client.query('COMMIT');
     res.json({ success: true, message: 'Regularization approved and attendance updated.' });
   } catch (err) {
+    await client.query('ROLLBACK');
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    client.release();
   }
 });
 

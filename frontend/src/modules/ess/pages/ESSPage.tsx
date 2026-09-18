@@ -430,7 +430,7 @@ export const ESSPage: React.FC = () => {
     let ws: WebSocket | null = null;
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${protocol}//${window.location.host}`);
+      ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);

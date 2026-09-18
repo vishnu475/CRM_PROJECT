@@ -10,7 +10,10 @@
     "setup": "node setup_hrms.js && node setup_crm.js",
     "setup:hrms": "node setup_hrms.js",
     "setup:crm": "node setup_crm.js",
-    "migrate": "node setup_hrms.js && node setup_crm.js"
+    "migrate": "node setup_hrms.js && node setup_crm.js",
+    "db:migrate": "node setup_hrms.js && node setup_crm.js",
+    "db:setup": "node setup_hrms.js && node setup_crm.js",
+    "db:seed": "node setup_hrms.js && node setup_crm.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

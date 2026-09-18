@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { runMigrations } from './db/migrator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,25 +57,10 @@ export async function ensureCRMDatabaseAndMigrate() {
     console.log(`✅ [CRM] Connected to "${res.rows[0].current_database}" as "${res.rows[0].current_user}"`);
 
     const migrationsDir = path.join(__dirname, 'db', 'migrations', 'crm');
-    const migrationFiles = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.sql'))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-
-    for (const file of migrationFiles) {
-      const filePath = path.join(migrationsDir, file);
-      if (fs.existsSync(filePath)) {
-        const sql = fs.readFileSync(filePath, 'utf8');
-        try {
-          await crmClient.query(sql);
-          console.log(`  ✅ [CRM] Migration executed: ${file}`);
-        } catch (err) {
-          console.warn(`  ⚠️  [CRM] Migration notice [${file}]: ${err.message}`);
-        }
-      }
-    }
+    await runMigrations({ pool: crmClient, migrationsDir, label: 'CRM' });
 
     const productCount = await crmClient.query('SELECT COUNT(*) FROM products');
-    console.log(`🎉 [CRM] CRM Database Ready! Products seeded: ${productCount.rows[0].count}`);
+    console.log(`🎉 [CRM] CRM Database Ready! Products count: ${productCount.rows[0].count}`);
 
   } catch (err) {
     console.error('[CRM] ❌ Error running CRM migrations:', err.message);

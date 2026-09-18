@@ -255,7 +255,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
   // Poll unread message counts for current logged in employee (both direct and group)
   const fetchUnreadCounts = async () => {
     try {
-      const gId = selectedGroupId || (assignedGroups[0]?.id || 'grp_crm_core_01');
+      const gId = selectedGroupId || (assignedGroups[0]?.id || 'GRP-CMS-01');
       const res = await fetch(`/api/groups/messages?employeeId=${selectedEmpId}&groupId=${gId}`);
       if (res.ok) {
         const json = await res.json();
@@ -292,7 +292,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
 
   // Fetch group messages from backend
   const fetchGroupChatMessages = async () => {
-    const gId = selectedGroupId || (assignedGroups[0]?.id || 'grp_crm_core_01');
+    const gId = selectedGroupId || (assignedGroups[0]?.id || 'GRP-CMS-01');
     try {
       const res = await fetch(`/api/groups/messages?groupId=${gId}&targetId=GROUP`);
       if (res.ok) {
@@ -638,7 +638,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
   const handleOpenGroupChat = () => {
     setIsGroupChatOpen(true);
     fetchGroupChatMessages();
-    const gId = selectedGroupId || (assignedGroups[0]?.id || 'grp_crm_core_01');
+    const gId = selectedGroupId || (assignedGroups[0]?.id || 'GRP-CMS-01');
     fetch('/api/groups/messages/read', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -651,7 +651,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
     const text = (textToSend || groupChatInputText).trim();
     if (!text) return;
 
-    const gId = selectedGroupId || (assignedGroups[0]?.id || 'grp_crm_core_01');
+    const gId = selectedGroupId || (assignedGroups[0]?.id || 'GRP-CMS-01');
     const tempId = `msg_grp_${Date.now()}`;
     const newMsg = {
       id: tempId,
@@ -890,13 +890,32 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
     setIsLoadingGroups(true);
     try {
       const data = await taskApiService.getGroups(undefined, selectedEmpId);
-      setAssignedGroups(data);
+      // Deduplicate by normalized name or project code so duplicates never show
+      const seen = new Set<string>();
+      const uniqueList = (data || []).filter((g: any) => {
+        const key = (g.name || g.project_name || g.project_id || g.id || '').trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setAssignedGroups(uniqueList);
     } catch (err: any) {
       console.error('Error fetching employee groups:', err);
     } finally {
       setIsLoadingGroups(false);
     }
   };
+
+  // Safe unique groups memo guarantee
+  const uniqueAssignedGroups = useMemo(() => {
+    const seen = new Set<string>();
+    return (assignedGroups || []).filter((grp: any) => {
+      const key = (grp.name || grp.project_name || grp.project_id || grp.id || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [assignedGroups]);
 
   useEffect(() => {
     fetchEmployeeGroups();
@@ -1699,7 +1718,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4.5 max-w-6xl">
-          {assignedGroups.map((grp: any) => {
+          {uniqueAssignedGroups.map((grp: any) => {
             const overallP = Number(grp.overall_progress || 0);
             const myP = Number(grp.my_progress || 0);
 
@@ -1914,7 +1933,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
             );
           })}
 
-          {assignedGroups.length === 0 && (
+          {uniqueAssignedGroups.length === 0 && (
             <div className="col-span-2 py-16 text-center text-slate-400 text-xs bg-white rounded-3xl border border-dashed border-slate-300 space-y-2">
               <FolderKanban size={36} className="mx-auto text-slate-300" />
               <p className="font-bold text-slate-600 text-sm">No project teams found for {currentEmployee.name}</p>

@@ -722,34 +722,46 @@ export class DocumentService {
       throw new Error('Only HR or Administrator can approve documents.');
     }
 
-    const docRes = await pool.query('SELECT * FROM documents WHERE id = $1', [id]);
-    if (docRes.rows.length === 0) throw new Error('Document not found.');
-    const doc = docRes.rows[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // Rule: Employee cannot approve their own document
-    const userEmpCode = user.empCode || user.id;
-    if (doc.owner_id === userEmpCode && roleCat !== 'ADMIN') {
-      throw new Error('You cannot approve your own document.');
+      const docRes = await client.query('SELECT * FROM documents WHERE id = $1 FOR UPDATE', [id]);
+      if (docRes.rows.length === 0) throw new Error('Document not found.');
+      const doc = docRes.rows[0];
+
+      // Rule: Employee cannot approve their own document
+      const userEmpCode = user.empCode || user.id;
+      if (doc.owner_id === userEmpCode && roleCat !== 'ADMIN') {
+        throw new Error('You cannot approve your own document.');
+      }
+
+      await client.query(`
+        UPDATE documents 
+        SET status = 'APPROVED', updated_at = NOW() 
+        WHERE id = $1
+      `, [id]);
+
+      await client.query(`
+        UPDATE document_approvals 
+        SET status = 'APPROVED', reviewer_id = $1, reviewer_name = $2, comments = $3, reviewed_at = NOW()
+        WHERE document_id = $4 AND status = 'PENDING'
+      `, [userEmpCode, user.name || 'HR Reviewer', comments, id]);
+
+      await client.query('COMMIT');
+
+      await this.logAudit(id, userEmpCode, user.name || 'Reviewer', 'APPROVED', `Approved document: ${comments}`, ipAddress);
+
+      // Notify Employee Owner
+      await this.notifyOwner(doc, 'approved', `Your document "${doc.document_name}" has been verified and approved.`);
+
+      return { success: true, message: 'Document approved successfully.' };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-
-    await pool.query(`
-      UPDATE documents 
-      SET status = 'APPROVED', updated_at = NOW() 
-      WHERE id = $1
-    `, [id]);
-
-    await pool.query(`
-      UPDATE document_approvals 
-      SET status = 'APPROVED', reviewer_id = $1, reviewer_name = $2, comments = $3, reviewed_at = NOW()
-      WHERE document_id = $4 AND status = 'PENDING'
-    `, [userEmpCode, user.name || 'HR Reviewer', comments, id]);
-
-    await this.logAudit(id, userEmpCode, user.name || 'Reviewer', 'APPROVED', `Approved document: ${comments}`, ipAddress);
-
-    // Notify Employee Owner
-    await this.notifyOwner(doc, 'approved', `Your document "${doc.document_name}" has been verified and approved.`);
-
-    return { success: true, message: 'Document approved successfully.' };
   }
 
   /**
@@ -765,30 +777,42 @@ export class DocumentService {
       throw new Error('Only HR or Administrator can reject documents.');
     }
 
-    const docRes = await pool.query('SELECT * FROM documents WHERE id = $1', [id]);
-    if (docRes.rows.length === 0) throw new Error('Document not found.');
-    const doc = docRes.rows[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const userEmpCode = user.empCode || user.id;
+      const docRes = await client.query('SELECT * FROM documents WHERE id = $1 FOR UPDATE', [id]);
+      if (docRes.rows.length === 0) throw new Error('Document not found.');
+      const doc = docRes.rows[0];
 
-    await pool.query(`
-      UPDATE documents 
-      SET status = 'REJECTED', updated_at = NOW() 
-      WHERE id = $1
-    `, [id]);
+      const userEmpCode = user.empCode || user.id;
 
-    await pool.query(`
-      UPDATE document_approvals 
-      SET status = 'REJECTED', reviewer_id = $1, reviewer_name = $2, comments = $3, reviewed_at = NOW()
-      WHERE document_id = $4
-    `, [userEmpCode, user.name || 'HR Reviewer', comments, id]);
+      await client.query(`
+        UPDATE documents 
+        SET status = 'REJECTED', updated_at = NOW() 
+        WHERE id = $1
+      `, [id]);
 
-    await this.logAudit(id, userEmpCode, user.name || 'Reviewer', 'REJECTED', `Rejected document: ${comments}`, ipAddress);
+      await client.query(`
+        UPDATE document_approvals 
+        SET status = 'REJECTED', reviewer_id = $1, reviewer_name = $2, comments = $3, reviewed_at = NOW()
+        WHERE document_id = $4
+      `, [userEmpCode, user.name || 'HR Reviewer', comments, id]);
 
-    // Notify Employee Owner
-    await this.notifyOwner(doc, 'rejected', `Your document "${doc.document_name}" was rejected. Reason: ${comments}`);
+      await client.query('COMMIT');
 
-    return { success: true, message: 'Document rejected.' };
+      await this.logAudit(id, userEmpCode, user.name || 'Reviewer', 'REJECTED', `Rejected document: ${comments}`, ipAddress);
+
+      // Notify Employee Owner
+      await this.notifyOwner(doc, 'rejected', `Your document "${doc.document_name}" was rejected. Reason: ${comments}`);
+
+      return { success: true, message: 'Document rejected.' };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
