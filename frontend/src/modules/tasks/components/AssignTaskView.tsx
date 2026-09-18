@@ -251,7 +251,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
     if (proj.is_assigned || proj.is_ongoing || (proj.assigned_employees && proj.assigned_employees.length > 0)) {
       setStatusMessage({
         type: 'success',
-        text: `ℹ️ Selected "${proj.name}" (Ongoing • ${proj.assigned_members_count || proj.assigned_employees?.length || 1} team members assigned). Form auto-populated with project requirements.`
+        text: `Selected "${proj.name}". Form auto-populated with project requirements.`
       });
     } else {
       setStatusMessage({
@@ -1343,12 +1343,6 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                   {currentProject.code || currentProject.id}
                 </span>
               </span>
-              {(currentProject.is_assigned || currentProject.is_ongoing || (currentProject.assigned_employees && currentProject.assigned_employees.length > 0)) && (
-                <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5 shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span>Ongoing ({currentProject.assigned_members_count || currentProject.assigned_employees?.length || 1} Assigned)</span>
-                </span>
-              )}
             </div>
           )}
         </div>
@@ -1373,7 +1367,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
               onClick={e => e.stopPropagation()}
               placeholder={
                 currentProject 
-                  ? `Active: ${currentProject.name} (${currentProject.code || currentProject.id})${currentProject.is_ongoing ? ' [ONGOING - ' + (currentProject.assigned_members_count || currentProject.assigned_employees?.length || 1) + ' ASSIGNED]' : ''} — Search project or assigned employee...` 
+                  ? `Active: ${currentProject.name} (${currentProject.code || currentProject.id}) — Search project or assigned employee...` 
                   : "Search project by name, code, client, manager, or assigned employee..."
               }
               className="w-full bg-transparent border-none outline-none text-xs text-slate-800 placeholder-slate-400 font-medium"
@@ -1441,12 +1435,7 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                                 <span>{proj.name || proj.title}</span>
                                 {isSelected && <Check size={13} className="text-blue-600 shrink-0" />}
                               </p>
-                              {isOngoing ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1 shrink-0">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                                  Ongoing ({assignedCount} Assigned)
-                                </span>
-                              ) : (
+                              {!isOngoing && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
                                   Available
                                 </span>
