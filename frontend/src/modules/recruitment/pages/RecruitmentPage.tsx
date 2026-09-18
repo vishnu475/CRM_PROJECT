@@ -24,6 +24,7 @@ export const RecruitmentPage: React.FC = () => {
     updateCandidateStage,
     addCandidate,
     addJobOpening,
+    deleteJobOpening,
     scheduleInterview,
     submitInterviewEvaluation,
     saveOffer,
@@ -171,6 +172,7 @@ export const RecruitmentPage: React.FC = () => {
         <JobOpeningManager
           jobs={jobs}
           onAddJob={addJobOpening}
+          onDeleteJob={deleteJobOpening}
         />
       )}
 

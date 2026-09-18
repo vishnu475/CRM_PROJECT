@@ -50,4 +50,32 @@ export class RecruitmentController {
       res.status(400).json({ success: false, message: err.message });
     }
   }
+
+  static async getJobOpenings(req, res) {
+    try {
+      const jobs = await RecruitmentService.getJobOpenings();
+      res.json({ success: true, data: jobs });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  static async addJobOpening(req, res) {
+    try {
+      const job = await RecruitmentService.addJobOpening(req.body);
+      res.status(201).json({ success: true, data: job });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  static async deleteJobOpening(req, res) {
+    try {
+      const result = await RecruitmentService.deleteJobOpening(req.params.id);
+      res.json({ success: true, ...result });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  }
 }
+

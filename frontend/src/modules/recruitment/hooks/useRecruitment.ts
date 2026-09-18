@@ -142,9 +142,18 @@ export function useRecruitment() {
     }
   }, []);
 
+  // Load jobs from PostgreSQL API on mount
+  const reloadJobsFromDB = useCallback(async () => {
+    const data = await RecruitmentService.fetchJobs();
+    if (data && data.length > 0) {
+      setJobs(data);
+    }
+  }, []);
+
   useEffect(() => {
     reloadCandidatesFromDB();
-  }, [reloadCandidatesFromDB]);
+    reloadJobsFromDB();
+  }, [reloadCandidatesFromDB, reloadJobsFromDB]);
 
   // Update candidate stage in PostgreSQL & React state
   const updateCandidateStage = useCallback(async (candidateId: string, newStage: CandidateStage, notes?: string) => {
@@ -295,6 +304,12 @@ export function useRecruitment() {
     );
   }, []);
 
+  // Delete Job Opening
+  const deleteJobOpening = useCallback(async (jobId: string) => {
+    setJobs(prev => prev.filter(j => j.id !== jobId));
+    await RecruitmentService.deleteJob(jobId);
+  }, []);
+
   return {
     jobs,
     candidates,
@@ -303,6 +318,7 @@ export function useRecruitment() {
     updateCandidateStage,
     addCandidate,
     addJobOpening,
+    deleteJobOpening,
     scheduleInterview,
     submitInterviewEvaluation,
     saveOffer,

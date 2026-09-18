@@ -513,4 +513,104 @@ export class RecruitmentService {
       client.release();
     }
   }
+
+  /**
+   * Fetch all job openings from PostgreSQL
+   */
+  static async getJobOpenings() {
+    const query = `
+      SELECT 
+        id,
+        title,
+        department,
+        location,
+        headcount,
+        hiring_manager AS "hiringManager",
+        status,
+        created_date AS "createdDate",
+        salary,
+        type,
+        description,
+        requirements,
+        experience_years AS "experienceYears"
+      FROM job_openings 
+      ORDER BY created_date DESC, id DESC
+    `;
+    const res = await pool.query(query);
+    return res.rows.map(row => ({
+      ...row,
+      requirements: typeof row.requirements === 'string' ? (() => {
+        try {
+          const parsed = JSON.parse(row.requirements);
+          return Array.isArray(parsed) ? parsed : [row.requirements];
+        } catch (e) {
+          return row.requirements ? [row.requirements] : [];
+        }
+      })() : (row.requirements || [])
+    }));
+  }
+
+  /**
+   * Add a new job opening to PostgreSQL
+   */
+  static async addJobOpening(jobData) {
+    const id = jobData.id || `JOB-${Date.now().toString().slice(-4)}`;
+    const title = jobData.title || 'Untitled Role';
+    const department = jobData.department || 'Engineering';
+    const location = jobData.location || 'Remote (Worldwide)';
+    const headcount = Number(jobData.headcount) || 1;
+    const hiringManager = jobData.hiringManager || jobData.hiring_manager || 'HR Recruitment Desk';
+    const status = jobData.status || 'Active';
+    const salary = jobData.salary || jobData.salaryRange || '$120,000 - $160,000 + Equity';
+    const type = jobData.type || jobData.employmentType || 'Full-Time';
+    const description = jobData.description || '';
+    const requirements = Array.isArray(jobData.requirements) ? JSON.stringify(jobData.requirements) : JSON.stringify([]);
+    const experienceYears = jobData.experienceYears || jobData.experience_years || '3+ Years';
+
+    const insertQuery = `
+      INSERT INTO job_openings (id, title, department, location, headcount, hiring_manager, status, salary, type, description, requirements, experience_years, created_date)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_DATE)
+      RETURNING 
+        id,
+        title,
+        department,
+        location,
+        headcount,
+        hiring_manager AS "hiringManager",
+        status,
+        created_date AS "createdDate",
+        salary,
+        type,
+        description,
+        requirements,
+        experience_years AS "experienceYears"
+    `;
+
+    const res = await pool.query(insertQuery, [
+      id, title, department, location, headcount, hiringManager, status, salary, type, description, requirements, experienceYears
+    ]);
+
+    const created = res.rows[0];
+    return {
+      ...created,
+      requirements: typeof created.requirements === 'string' ? (() => {
+        try {
+          const parsed = JSON.parse(created.requirements);
+          return Array.isArray(parsed) ? parsed : [created.requirements];
+        } catch (e) {
+          return [created.requirements];
+        }
+      })() : (created.requirements || [])
+    };
+  }
+
+  /**
+   * Delete a job opening from PostgreSQL
+   */
+  static async deleteJobOpening(id) {
+    await pool.query('DELETE FROM job_candidates WHERE job_opening_id = $1', [id]);
+    const res = await pool.query('DELETE FROM job_openings WHERE id = $1 RETURNING id', [id]);
+    return { success: true, deletedId: id };
+  }
 }
+

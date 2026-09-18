@@ -15,7 +15,7 @@ export class RecruitmentService {
     return [];
   }
 
-  static async saveJob(job: JobOpening): Promise<JobOpening> {
+  static async saveJob(job: Partial<JobOpening>): Promise<JobOpening | null> {
     try {
       const res = await fetch('/api/recruitment/jobs', {
         method: 'POST',
@@ -29,8 +29,24 @@ export class RecruitmentService {
     } catch (e) {
       console.warn('API saveJob fallback:', e);
     }
-    return job;
+    return (job as JobOpening) || null;
   }
+
+  static async deleteJob(jobId: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/recruitment/jobs/${jobId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json.success;
+      }
+    } catch (e) {
+      console.warn('API deleteJob fallback:', e);
+    }
+    return true;
+  }
+
 
   static async fetchCandidates(): Promise<Candidate[]> {
     try {

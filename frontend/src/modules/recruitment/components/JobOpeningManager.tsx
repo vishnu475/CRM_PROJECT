@@ -10,9 +10,10 @@ import { Select } from '../../../components/common/Select';
 interface JobOpeningManagerProps {
   jobs: JobOpening[];
   onAddJob: (job: Partial<JobOpening>) => void;
+  onDeleteJob?: (jobId: string) => void;
 }
 
-export const JobOpeningManager: React.FC<JobOpeningManagerProps> = ({ jobs, onAddJob }) => {
+export const JobOpeningManager: React.FC<JobOpeningManagerProps> = ({ jobs, onAddJob, onDeleteJob }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({
     title: '',
@@ -72,9 +73,24 @@ export const JobOpeningManager: React.FC<JobOpeningManagerProps> = ({ jobs, onAd
                 <h4 className="text-sm font-bold text-slate-900">{job.title}</h4>
                 <p className="text-xs text-slate-500 font-medium">{job.department} • {job.branch}</p>
               </div>
-              <Badge variant={job.status === 'Open' ? 'success' : 'neutral'}>
-                {job.status}
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <Badge variant={job.status === 'Open' ? 'success' : 'neutral'}>
+                  {job.status}
+                </Badge>
+                {onDeleteJob && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Permanently delete job requisition "${job.title}" from database?`)) {
+                        onDeleteJob(job.id);
+                      }
+                    }}
+                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                    title="Delete job requisition"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100 text-xs">

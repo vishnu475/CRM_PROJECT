@@ -17,7 +17,17 @@ router.post('/candidates/:id/stage', RecruitmentController.updateCandidateStage)
 router.patch('/candidates/:id', RecruitmentController.updateCandidateStage);
 router.put('/candidates/:id', RecruitmentController.updateCandidateStage);
 
+// GET /api/recruitment/jobs - Fetch all job openings from PostgreSQL
+router.get('/jobs', RecruitmentController.getJobOpenings);
+
+// POST /api/recruitment/jobs - Add / Post new job opening to PostgreSQL
+router.post('/jobs', RecruitmentController.addJobOpening);
+
+// DELETE /api/recruitment/jobs/:id - Delete job opening from PostgreSQL
+router.delete('/jobs/:id', RecruitmentController.deleteJobOpening);
+
 // POST /api/recruitment/convert - Convert Hired Candidate to HRMS Employee using SQL Transaction
 router.post('/convert', RecruitmentController.convertCandidateToEmployee);
 
 export default router;
+
