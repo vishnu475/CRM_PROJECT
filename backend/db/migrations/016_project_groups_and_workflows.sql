@@ -134,6 +134,8 @@ BEGIN
     END IF;
 END $$;
 
+DELETE FROM group_members WHERE group_id = 'GRP-CMS-01' AND employee_id IN ('EMP-005', 'EMP-003', 'EMP-004', 'EMP-008');
+
 INSERT INTO group_members (id, group_id, employee_id, employee_name, role)
 VALUES 
     ('gm_seed_005', 'GRP-CMS-01', 'EMP-005', 'Vishnu Vardhan', 'Team Head'),
