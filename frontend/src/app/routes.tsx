@@ -42,7 +42,21 @@ export const MODULE_ROUTES: RouteConfig[] = [
   { id: 'purchases', path: '/purchases', label: 'Purchase Orders & Bills' },
   { id: 'inventory', path: '/inventory', label: 'Stock & Inventory Management' },
   { id: 'projects', path: '/projects', label: 'Project Management' },
-  { id: 'tasks', path: '/tasks', label: 'Tasks & Deliverables' },
+  {
+    id: 'tasks',
+    path: '/tasks',
+    label: 'Tasks & Deliverables',
+    defaultSubSection: 'all-tasks',
+    subSections: [
+      { id: 'all-tasks', path: '/tasks/all-tasks', label: 'All Tasks' },
+      { id: 'my-tasks', path: '/tasks/my-tasks', label: 'My Tasks' },
+      { id: 'assign-task', path: '/tasks/assign-task', label: 'Assign Task' },
+      { id: 'teams-groups', path: '/tasks/teams-groups', label: 'Teams & Groups' },
+      { id: 'review', path: '/tasks/review', label: 'Ready for Review' },
+      { id: 'completed', path: '/tasks/completed', label: 'Completed' },
+      { id: 'reports', path: '/tasks/reports', label: 'Task Reports' },
+    ]
+  },
   { id: 'helpdesk', path: '/helpdesk', label: 'Support Helpdesk & Tickets' },
   {
     id: 'administration',
@@ -245,6 +259,11 @@ export function parseRouteFromPath(pathname: string): { module: ModuleId; subSec
       return { module: 'hrms', subSection: `employees/${candidateId}` };
     }
     // Otherwise it's a standard ESS subsection like /employee/dashboard, /employee/attendance, etc.
+  }
+
+  // Tasks direct mapping for root /tasks and /tasks/all
+  if (moduleSlug === 'tasks' && (!subSlug || subSlug === 'all')) {
+    return { module: 'tasks', subSection: 'all-tasks' };
   }
 
   const routeConfig = MODULE_ROUTES.find(r => r.id === moduleSlug || r.path === `/${moduleSlug}`);
