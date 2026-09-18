@@ -211,6 +211,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
 
   // Updating progress tracking
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [isUpdatingModuleProgress, setIsUpdatingModuleProgress] = useState<boolean>(false);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -1013,6 +1014,34 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
     }
   };
 
+  // 3b. Employee updates or assigns module progress directly to DB (even when no individual subtask exists yet)
+  const handleUpdateModuleProgress = async (newProgress: number, targetModuleName?: string) => {
+    if (!selectedGroupId) return;
+    setIsUpdatingModuleProgress(true);
+    setErrorMessage(null);
+    try {
+      const targetMod = targetModuleName || 'General';
+      await taskApiService.updateMemberGroupProgress(selectedGroupId, {
+        employeeId: selectedEmpId,
+        progressPercent: newProgress,
+        moduleName: targetMod
+      });
+
+      setActionSuccessMsg(`Assigned progress updated to ${newProgress}%. Saved directly to DB!`);
+      setTimeout(() => setActionSuccessMsg(null), 4000);
+
+      // Refresh group details to reflect recalculated progress immediately
+      await fetchGroupDetails(selectedGroupId);
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      console.error('Failed to update module progress:', err);
+      setErrorMessage(err.message || 'Failed to update progress');
+      setTimeout(() => setErrorMessage(null), 5000);
+    } finally {
+      setIsUpdatingModuleProgress(false);
+    }
+  };
+
   // Helper date formatter
   const formatDate = (dateStr?: string | null) => {
     if (!dateStr) return '30 Sep 2026';
@@ -1047,13 +1076,16 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
 
     // Filter tasks belonging specifically to logged-in employee + their module
     const myTasks = allTasks.filter(
-      (t: any) => t.assigned_to === selectedEmpId || t.assigned_to_employee_id === selectedEmpId
+      (t: any) =>
+        t.assigned_to === selectedEmpId ||
+        t.assigned_to_employee_id === selectedEmpId ||
+        (currentEmployee.name && (t.assigned_to === currentEmployee.name || t.assigned_to_name === currentEmployee.name))
     );
 
     // Find logged in employee's assigned module and progress in this project dynamically
-    const myMemberInfo = members.find((m: any) => m.employee_id === selectedEmpId);
-    const myModuleResp = moduleResponsibilities.find((mod: any) => mod.assigned_to_id === selectedEmpId);
-    const myModuleName = myTasks[0]?.module_name || myModuleResp?.module_name || myMemberInfo?.assigned_modules || 'Core Deliverables';
+    const myMemberInfo = members.find((m: any) => m.employee_id === selectedEmpId || (currentEmployee.name && m.name === currentEmployee.name));
+    const myModuleResp = moduleResponsibilities.find((mod: any) => mod.assigned_to_id === selectedEmpId || (currentEmployee.name && mod.assigned_to_name === currentEmployee.name));
+    const myModuleName = myTasks[0]?.module_name || myModuleResp?.module_name || myMemberInfo?.assigned_modules || 'General';
     const myModuleProgress = myTasks.length > 0
       ? Math.round(myTasks.reduce((acc: number, t: any) => acc + Number(t.progress_percent || 0), 0) / myTasks.length)
       : (myModuleResp?.progress ?? myMemberInfo?.progress ?? 0);
@@ -1516,9 +1548,31 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="bg-white/15 backdrop-blur-xs px-4 py-2.5 rounded-2xl border border-white/20 text-right">
-                <span className="text-[11px] text-blue-100 block">Your Module Progress</span>
-                <span className="text-2xl font-black text-white">{myModuleProgress}%</span>
+              <div className="bg-white/15 backdrop-blur-xs px-4 py-2 rounded-2xl border border-white/20 text-right flex items-center gap-3">
+                <div>
+                  <span className="text-[10px] text-blue-100 block font-medium">Module Progress</span>
+                  <span className="text-2xl font-black text-white leading-none">{myModuleProgress}%</span>
+                </div>
+                <div className="flex items-center gap-1 bg-black/20 p-1 rounded-xl border border-white/15">
+                  <button
+                    type="button"
+                    disabled={isUpdatingModuleProgress || myModuleProgress <= 0}
+                    onClick={() => handleUpdateModuleProgress(Math.max(0, myModuleProgress - 5), myModuleName)}
+                    title="Decrease by 5%"
+                    className="w-7 h-7 rounded-lg bg-white/15 hover:bg-white/30 text-white disabled:opacity-30 flex items-center justify-center font-bold cursor-pointer transition active:scale-90"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUpdatingModuleProgress || myModuleProgress >= 100}
+                    onClick={() => handleUpdateModuleProgress(Math.min(100, myModuleProgress + 5), myModuleName)}
+                    title="Increase by 5%"
+                    className="w-7 h-7 rounded-lg bg-white/15 hover:bg-white/30 text-white disabled:opacity-30 flex items-center justify-center font-bold cursor-pointer transition active:scale-90"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1645,8 +1699,110 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
             })}
 
             {myTasks.length === 0 && (
-              <div className="col-span-3 py-8 text-center text-slate-400 text-xs italic bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                No specific individual tasks found under {myModuleName} for {selectedEmpId}.
+              <div className="col-span-1 md:col-span-2 lg:col-span-3 bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 rounded-3xl border-2 border-blue-300 p-6 lg:p-7 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-blue-100 pb-5">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-600 text-white uppercase tracking-wider shadow-2xs">
+                        Assigned Deliverable
+                      </span>
+                      <span className="font-mono text-xs font-bold text-slate-600 bg-white px-2.5 py-0.5 rounded-md border border-slate-200">
+                        {selectedEmpId} • {currentEmployee.name}
+                      </span>
+                    </div>
+                    <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                      <span>Module Deliverables & Progress:</span>
+                      <span className="text-blue-600 font-mono font-black">{myModuleName}</span>
+                    </h3>
+                    <p className="text-xs text-slate-600 max-w-2xl">
+                      Individual itemized tasks have not been broken down yet. Use the interactive controls below to assign and adjust your progress for this project module—it saves directly to the database and recalculates project progress in real time.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                    <div className="px-4 py-2.5 bg-white rounded-2xl border border-blue-200 shadow-2xs text-right min-w-[120px]">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">Your Progress</span>
+                      <span className="text-2xl font-black text-blue-700">{myModuleProgress}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Mouse Control for Module Deliverables */}
+                <div className="bg-white rounded-2xl border border-blue-200/90 p-5 shadow-2xs max-w-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800">Direct Progress Assignment</h4>
+                      <p className="text-[11px] text-slate-500">Step with mouse buttons (-5% / +5%), drag slider, or click preset chips</p>
+                    </div>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      Live DB Sync
+                    </span>
+                  </div>
+
+                  <TaskProgressMouseControl
+                    task={{ id: `MOD-${myModuleName}`, title: `${myModuleName} Deliverables` }}
+                    currentProgress={myModuleProgress}
+                    isUpdating={isUpdatingModuleProgress}
+                    onUpdate={(_t, newProgress) => handleUpdateModuleProgress(newProgress, myModuleName)}
+                  />
+
+                  {/* Quick Preset Buttons */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-400 mr-1">Quick Presets:</span>
+                    {[
+                      { label: '0% Not Started', val: 0 },
+                      { label: '25% Kickoff', val: 25 },
+                      { label: '50% In Progress', val: 50 },
+                      { label: '75% Review Ready', val: 75 },
+                      { label: '100% Completed', val: 100 }
+                    ].map(preset => (
+                      <button
+                        key={preset.val}
+                        type="button"
+                        disabled={isUpdatingModuleProgress}
+                        onClick={() => handleUpdateModuleProgress(preset.val, myModuleName)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-50 ${
+                          myModuleProgress === preset.val
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-blue-100 text-slate-700 hover:text-blue-700'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Git Repository Link Box */}
+                {(details.repository_url || project.repository_url) && (
+                  <div className="px-4 py-3 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center shrink-0">
+                        <FolderGit2 size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300 block leading-tight">Project GitHub Repository</span>
+                        <a
+                          href={details.repository_url || project.repository_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-mono text-xs font-bold text-white hover:text-blue-300 underline truncate block leading-tight"
+                        >
+                          {(details.repository_url || project.repository_url).replace('https://', '')}
+                        </a>
+                      </div>
+                    </div>
+                    <a
+                      href={details.repository_url || project.repository_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition shrink-0"
+                    >
+                      <span>View Code</span>
+                      <ExternalLink size={13} />
+                    </a>
+                  </div>
+                )}
               </div>
             )}
           </div>
