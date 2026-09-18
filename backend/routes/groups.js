@@ -1,5 +1,130 @@
 import express from 'express';
-import { hrmsPool as pool } from '../db/pool.js';
+import { hrmsPool as pool, crmPool } from '../db/pool.js';
+
+// Auto-provision a default project group if one doesn't exist yet for a project
+export async function autoProvisionProjectGroup(projectId, customProjectName = null) {
+  try {
+    if (!projectId) return null;
+
+    // 1. Check if group already exists for this project
+    const existing = await pool.query(
+      `SELECT id FROM project_groups WHERE project_id = $1 OR project_id = (SELECT code FROM projects WHERE id = $1 LIMIT 1)`,
+      [projectId]
+    );
+    if (existing.rows.length > 0) {
+      return existing.rows[0].id;
+    }
+
+    // 2. Fetch project details from HRMS or CRM
+    let project = null;
+    const hrmsProj = await pool.query(`SELECT id, code, name, repository_url, project_manager FROM projects WHERE id = $1 OR code = $1 LIMIT 1`, [projectId]);
+    if (hrmsProj.rows.length > 0) {
+      project = hrmsProj.rows[0];
+    } else {
+      const crmProj = await crmPool.query(`SELECT id, code, name, repository_url, project_manager FROM projects WHERE id = $1 OR code = $1 LIMIT 1`, [projectId]);
+      if (crmProj.rows.length > 0) {
+        project = crmProj.rows[0];
+      }
+    }
+
+    const projId = project?.id || projectId;
+    const projCode = project?.code || projId;
+    const projName = project?.name || customProjectName || projId;
+    const repoUrl = project?.repository_url || `https://github.com/company/${projCode.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+
+    const cleanCode = (projCode || projId).replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'CORE';
+    const groupId = `GRP-${cleanCode}-01`;
+    const groupName = `${projName} Development Team`;
+
+    // 3. Fetch active HRMS employees
+    const empRes = await pool.query(`
+      SELECT emp_code, id, name, designation, department 
+      FROM employees 
+      WHERE (status IS NULL OR status NOT IN ('Exited', 'Terminated', 'Inactive'))
+        AND emp_code NOT IN ('ADMIN-001', 'EMP-000')
+        AND id NOT IN ('ADMIN-001', 'EMP-000')
+        AND LOWER(COALESCE(department, '')) NOT IN ('administration', 'management')
+      ORDER BY 
+        CASE 
+          WHEN LOWER(COALESCE(department, '')) LIKE '%eng%' OR LOWER(COALESCE(designation, '')) LIKE '%lead%' THEN 0 
+          ELSE 1 
+        END,
+        id ASC
+    `);
+
+    const employees = empRes.rows;
+    if (employees.length === 0) return null;
+
+    // Pick team head
+    let teamHead = null;
+    if (project?.project_manager) {
+      teamHead = employees.find(e => 
+        e.name.toLowerCase() === project.project_manager.toLowerCase() || 
+        e.emp_code === project.project_manager || 
+        e.id === project.project_manager
+      );
+    }
+    if (!teamHead) {
+      teamHead = employees[0];
+    }
+
+    // Insert project group
+    await pool.query(`
+      INSERT INTO project_groups (id, name, project_id, team_head_id, team_head_name, description, repository_url, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        project_id = EXCLUDED.project_id,
+        team_head_id = EXCLUDED.team_head_id,
+        team_head_name = EXCLUDED.team_head_name,
+        description = EXCLUDED.description,
+        repository_url = COALESCE(EXCLUDED.repository_url, project_groups.repository_url)
+    `, [
+      groupId,
+      groupName,
+      projId,
+      teamHead.emp_code || teamHead.id,
+      teamHead.name,
+      `Core cross-functional delivery team for ${projName}`,
+      repoUrl
+    ]);
+
+    // Insert group members (up to 5 active employees)
+    const teamMembers = [{ ...teamHead, role: 'Team Head' }];
+    const roles = ['Frontend Lead', 'Backend Engineer', 'Database Architect', 'QA Specialist', 'Full-Stack Developer'];
+    
+    let rIdx = 0;
+    for (const emp of employees) {
+      if ((emp.emp_code || emp.id) !== (teamHead.emp_code || teamHead.id)) {
+        teamMembers.push({ ...emp, role: roles[rIdx % roles.length] });
+        rIdx++;
+        if (teamMembers.length >= 5) break;
+      }
+    }
+
+    for (const member of teamMembers) {
+      const gmId = `GM-${groupId}-${member.emp_code || member.id}`;
+      await pool.query(`
+        INSERT INTO group_members (id, group_id, employee_id, employee_name, role)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (id) DO UPDATE SET
+          role = EXCLUDED.role,
+          employee_name = EXCLUDED.employee_name
+      `, [
+        gmId,
+        groupId,
+        member.emp_code || member.id,
+        member.name,
+        member.role
+      ]);
+    }
+
+    return groupId;
+  } catch (err) {
+    console.warn('Auto-provisioning project group notice:', err.message);
+    return null;
+  }
+}
 
 const router = express.Router();
 
@@ -209,7 +334,14 @@ router.get('/', async (req, res) => {
 
     query += ` GROUP BY g.id, g.name, g.project_id, g.team_head_id, g.team_head_name, th.name, g.description, g.created_at, g.repository_url, p.repository_url, p.name, p.code, p.start_date, p.end_date, p.status, tsk.task_count, tsk.completed_count, tsk.overall_progress ORDER BY g.created_at ASC`;
 
-    const result = await pool.query(query, params);
+    let result = await pool.query(query, params);
+
+    // If query was for a specific projectId and returned 0 groups, auto-provision and re-query
+    if (projectId && result.rows.length === 0) {
+      await autoProvisionProjectGroup(projectId);
+      result = await pool.query(query, params);
+    }
+
     res.json({ success: true, count: result.rows.length, data: result.rows });
   } catch (err) {
     console.error('Error fetching groups:', err);

@@ -15,7 +15,6 @@ export const CRMNavigation: React.FC<CRMNavigationProps> = ({ activeView, onView
     { id: 'opportunities', label: 'Opportunities' },
     { id: 'activities', label: 'Activities' },
     { id: 'follow-ups', label: 'Follow-ups' },
-    { id: 'pipeline', label: 'Pipeline' },
     { id: 'notes', label: 'Notes' },
   ];
 

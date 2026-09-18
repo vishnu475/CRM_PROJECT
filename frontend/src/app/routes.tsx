@@ -33,7 +33,6 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'opportunities', path: '/crm/opportunities', label: 'Opportunities' },
       { id: 'activities', path: '/crm/activities', label: 'Activities' },
       { id: 'follow-ups', path: '/crm/follow-ups', label: 'Follow-ups' },
-      { id: 'pipeline', path: '/crm/pipeline', label: 'Deal Pipeline' },
       { id: 'notes', path: '/crm/notes', label: 'Notes' },
     ]
   },

@@ -16,6 +16,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
   const [error, setError] = useState<string | null>(null);
 
+  // Auto-dismiss restarting error when backend server comes back online
+  React.useEffect(() => {
+    if (error && (error.includes('restarting') || error.includes('Unable to connect'))) {
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch('/api/health');
+          if (res.ok) {
+            setError(null);
+            clearInterval(interval);
+          }
+        } catch (_) {}
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [error]);
+
   const handleRoleChange = (selectedRole: string) => {
     setRole(selectedRole);
     setError(null);
@@ -198,7 +214,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     type="text"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder={role === 'Employee' ? 'Enter Employee ID (e.g. EMP-008 or 8)' : 'you@company.com or EMP-001'}
                     className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm"
                   />
@@ -218,7 +237,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
                     placeholder={role === 'Employee' ? 'Enter your PIN' : 'Enter your password'}
                     className="w-full pl-12 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm"
                   />

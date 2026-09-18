@@ -1979,8 +1979,31 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                   </label>
 
                   {projectGroups.length === 0 ? (
-                    <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                      No project groups found for {currentProject.name}. Please select another project or switch to Individual assignment.
+                    <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-amber-900">No project group loaded for {currentProject.name}</p>
+                        <p className="text-[11px] text-amber-700 mt-0.5">Click Initialize Team to auto-provision and assign the delivery team roster.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setIsLoadingGroups(true);
+                          try {
+                            const pId = currentProject.id || currentProject.code;
+                            const groups = await taskApiService.getGroups(pId);
+                            setProjectGroups(groups);
+                            if (groups.length > 0) setSelectedGroupId(groups[0].id);
+                          } catch (err) {
+                            console.error('Failed to initialize group:', err);
+                          } finally {
+                            setIsLoadingGroups(false);
+                          }
+                        }}
+                        disabled={isLoadingGroups}
+                        className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                      >
+                        {isLoadingGroups ? 'Initializing...' : '+ Initialize Team'}
+                      </button>
                     </div>
                   ) : (
                     <select

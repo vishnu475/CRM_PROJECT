@@ -797,7 +797,7 @@ export interface NotificationItem {
   type: 'info' | 'warning' | 'success' | 'alert';
 }
 
-export type CrmView = 'overview' | 'leads' | 'add-lead' | 'lead-details' | 'customers' | 'add-customer' | 'customer-details' | 'contacts' | 'opportunities' | 'opportunity-details' | 'activities' | 'follow-ups' | 'pipeline' | 'notes';
+export type CrmView = 'overview' | 'leads' | 'add-lead' | 'lead-details' | 'customers' | 'add-customer' | 'customer-details' | 'contacts' | 'opportunities' | 'opportunity-details' | 'activities' | 'follow-ups' | 'notes';
 
 export interface Contact {
   id: string;

@@ -11,7 +11,6 @@ import { CrmAddCustomer } from '../components/CrmAddCustomer';
 import { CrmCustomerDetails } from '../components/CrmCustomerDetails';
 
 import { CrmOpportunities } from '../components/CrmOpportunities';
-import { CrmPipeline } from '../components/CrmPipeline';
 import { CrmOpportunityDetails } from '../components/CrmOpportunityDetails';
 import { CrmContactsList } from '../components/CrmContactsList';
 import { CrmActivitiesList } from '../components/CrmActivitiesList';
@@ -26,7 +25,7 @@ const PlaceholderContent: React.FC<{ title: string }> = ({ title }) => (
 
 export const CrmPage: React.FC = () => {
   const { activeSubSection, setActiveSubSection } = useApp();
-  const validCrmViews: CrmView[] = ['overview', 'add-lead', 'leads', 'lead-details', 'customers', 'add-customer', 'customer-details', 'contacts', 'opportunities', 'opportunity-details', 'activities', 'follow-ups', 'pipeline', 'notes'];
+  const validCrmViews: CrmView[] = ['overview', 'add-lead', 'leads', 'lead-details', 'customers', 'add-customer', 'customer-details', 'contacts', 'opportunities', 'opportunity-details', 'activities', 'follow-ups', 'notes'];
   const activeCrmView: CrmView = (validCrmViews.includes(activeSubSection as CrmView) ? activeSubSection : 'overview') as CrmView;
   const setActiveCrmView = (view: CrmView) => setActiveSubSection(view);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
@@ -55,13 +54,6 @@ export const CrmPage: React.FC = () => {
           onCustomerSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('customer-details'); }}
         />
       ) : <PlaceholderContent title="Opportunity Not Found" />;
-      case 'pipeline': return (
-        <CrmPipeline 
-          onViewChange={setActiveCrmView} 
-          onOpportunitySelect={(id) => { setSelectedEntityId(id); setActiveCrmView('opportunity-details'); }} 
-          onCustomerSelect={(id) => { setSelectedEntityId(id); setActiveCrmView('customer-details'); }}
-        />
-      );
       case 'activities': return (
         <CrmActivitiesList
           onViewChange={setActiveCrmView}

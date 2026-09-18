@@ -250,12 +250,6 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
 
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => onViewChange && onViewChange('pipeline')}
-            className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 font-semibold text-xs rounded-lg shadow-xs hover:bg-slate-50 transition-colors flex items-center gap-1.5"
-          >
-            <Kanban size={14} /> Open Pipeline View
-          </button>
-          <button 
             onClick={handleOpenAddModal} 
             className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 transition-colors flex items-center gap-2 whitespace-nowrap"
           >

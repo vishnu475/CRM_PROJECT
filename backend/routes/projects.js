@@ -1,5 +1,6 @@
 import express from 'express';
 import { crmPool, hrmsPool } from '../db/pool.js';
+import { autoProvisionProjectGroup } from './groups.js';
 
 const router = express.Router();
 
@@ -544,6 +545,11 @@ async function createProjectHandler(req, res) {
       await dbClient.query('COMMIT');
       dbClient.release();
 
+      // Auto-provision a default project group and team roster in HRMS
+      await autoProvisionProjectGroup(projectId, finalProjectName).catch(e => 
+        console.warn('Auto provision group notice:', e.message)
+      );
+
       return res.status(201).json({
         success: true,
         data: projectRes.rows[0],
@@ -602,6 +608,11 @@ async function createProjectHandler(req, res) {
     const result = await crmPool.query(query, values);
     // Mirror to HRMS pool
     await hrmsPool.query(query, values).catch(e => console.warn('HRMS project sync notice:', e.message));
+
+    // Auto-provision a default project group and team roster in HRMS
+    await autoProvisionProjectGroup(projectId, name).catch(e => 
+      console.warn('Auto provision group notice:', e.message)
+    );
 
     dbClient.release();
     res.status(201).json({ success: true, data: result.rows[0] });
