@@ -120,12 +120,28 @@ ON CONFLICT (id) DO UPDATE SET
     repository_url = COALESCE(project_groups.repository_url, EXCLUDED.repository_url);
 
 -- 7. Ensure group members exist for the CMS Project Group
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        WHERE t.relname = 'group_members' AND c.conname = 'unique_group_employee'
+    ) THEN
+        DELETE FROM group_members a USING group_members b
+        WHERE a.ctid < b.ctid AND a.group_id = b.group_id AND a.employee_id = b.employee_id;
+
+        ALTER TABLE group_members ADD CONSTRAINT unique_group_employee UNIQUE (group_id, employee_id);
+    END IF;
+END $$;
+
 INSERT INTO group_members (id, group_id, employee_id, employee_name, role)
 VALUES 
     ('gm_seed_005', 'GRP-CMS-01', 'EMP-005', 'Vishnu Vardhan', 'Team Head'),
     ('gm_seed_003', 'GRP-CMS-01', 'EMP-003', 'Priya Sharma', 'Member'),
     ('gm_seed_004', 'GRP-CMS-01', 'EMP-004', 'Rahul Verma', 'Member'),
     ('gm_seed_008', 'GRP-CMS-01', 'EMP-008', 'Ramesh', 'Member')
-ON CONFLICT (group_id, employee_id) DO UPDATE SET
+ON CONFLICT (id) DO UPDATE SET
+    group_id = EXCLUDED.group_id,
+    employee_id = EXCLUDED.employee_id,
     role = EXCLUDED.role,
     employee_name = EXCLUDED.employee_name;
