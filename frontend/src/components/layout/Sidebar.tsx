@@ -279,7 +279,9 @@ export const Sidebar: React.FC = () => {
               <button
                 onClick={() => {
                   if (isTasks) {
-                    setActiveModule('tasks', activeSubSection || 'all-tasks');
+                    // If already on tasks, keep current subsection; otherwise default to all-tasks
+                    const sub = (isActive && activeSubSection) ? activeSubSection : 'all-tasks';
+                    setActiveModule('tasks', sub);
                     setExpandedModules(prev => ({ ...prev, tasks: true }));
                   } else {
                     setActiveModule(item.id);

@@ -117,25 +117,25 @@ export const TasksPage: React.FC = () => {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [analytics, setAnalytics] = useState<TaskAnalytics | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'workload' | 'employee_report' | 'assign_task'>(() => {
-    if (activeSubSection === 'assign-task') return 'assign_task';
-    if (activeSubSection === 'reports') return 'employee_report';
-    return 'kanban';
-  });
+  const [viewMode, setViewMode] = useState<'kanban' | 'list' | 'workload' | 'employee_report' | 'assign_task'>('kanban');
 
-  // Sync with activeSubSection
+  // activeSubSection is the SINGLE SOURCE OF TRUTH for navigation.
+  // viewMode is only used for display variants within AllTasksView (kanban/list/workload).
+  // Keep viewMode in sync whenever activeSubSection changes.
   useEffect(() => {
     if (activeSubSection === 'assign-task') {
       setViewMode('assign_task');
     } else if (activeSubSection === 'reports') {
       setViewMode('employee_report');
     } else if (activeSubSection === 'my-tasks') {
+      setViewMode('kanban');
       const myEmp = employees.find(e => e.name === userProfile?.name || e.empCode === (userProfile as any)?.empCode);
       if (myEmp) setSelectedEmp(myEmp.empCode || myEmp.id);
-    } else if (activeSubSection === 'all-tasks') {
-      if (viewMode === 'assign_task') setViewMode('kanban');
+    } else {
+      // all-tasks, review, completed, teams-groups — reset viewMode to kanban
+      setViewMode('kanban');
     }
-  }, [activeSubSection, employees, userProfile]);
+  }, [activeSubSection]);
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -665,20 +665,16 @@ export const TasksPage: React.FC = () => {
       });
   }, [employees, tasks, selectedDept, reportSelectedEmpId, searchQuery]);
 
-  // Sub-module Views routing matching Admin HRMS screenshot
-  // Sub-section Views
+  // Sub-module Views — activeSubSection is the SINGLE source of truth.
+  // Never use viewMode to decide which top-level view to render.
   const renderSubSectionContent = () => {
-    if (activeSubSection === 'assign-task' || viewMode === 'assign_task') {
+    if (activeSubSection === 'assign-task') {
       return (
         <AssignTaskView
-          onBack={() => {
-            setActiveSubSection('all-tasks');
-            setViewMode('list');
-          }}
+          onBack={() => setActiveSubSection('all-tasks')}
           onSuccess={() => {
             fetchTasksData();
             setActiveSubSection('all-tasks');
-            setViewMode('list');
           }}
         />
       );
@@ -720,10 +716,7 @@ export const TasksPage: React.FC = () => {
     if (activeSubSection === 'teams-groups') {
       return (
         <TeamsGroupsView
-          onAssignTask={(grp) => {
-            setActiveSubSection('assign-task');
-            setViewMode('assign_task');
-          }}
+          onAssignTask={() => setActiveSubSection('assign-task')}
           onSelectTask={handleSelectTaskDetail}
         />
       );
@@ -735,10 +728,7 @@ export const TasksPage: React.FC = () => {
           tasks={tasks}
           analytics={analytics}
           onSelectTask={handleSelectTaskDetail}
-          onAssignTask={() => {
-            setActiveSubSection('assign-task');
-            setViewMode('assign_task');
-          }}
+          onAssignTask={() => setActiveSubSection('assign-task')}
           onViewAllOverdue={() => {
             setActiveSubSection('all-tasks');
             setSelectedStatus('OVERDUE');
@@ -747,15 +737,13 @@ export const TasksPage: React.FC = () => {
       );
     }
 
+    // Default — All Tasks
     return (
       <AllTasksView
         tasks={tasks}
         isLoading={isLoading}
         onRefresh={fetchTasksData}
-        onAddTask={() => {
-          setActiveSubSection('assign-task');
-          setViewMode('assign_task');
-        }}
+        onAddTask={() => setActiveSubSection('assign-task')}
         onSelectTask={handleSelectTaskDetail}
         onReassignTask={setReassignModalTask}
         onReviewTask={setReviewTaskModal}
