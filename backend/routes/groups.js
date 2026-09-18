@@ -427,7 +427,8 @@ router.get('/:id', async (req, res) => {
       [id]
     );
 
-    // Fetch tasks assigned to this group
+    // Fetch tasks assigned to this group — STRICTLY by group_id or group_name only.
+    // Never by project_id alone; that would pull tasks from unrelated projects that happen to share the same project_id.
     const tasksRes = await pool.query(
       `SELECT 
         t.id, t.title, t.description, t.status, t.priority, t.progress_percent,
@@ -439,7 +440,7 @@ router.get('/:id', async (req, res) => {
         t.assigned_by, t.assigned_by_id, t.review_target_date, t.completion_note
        FROM tasks t
        LEFT JOIN employees ea ON (t.assigned_to = ea.emp_code OR t.assigned_to = ea.id OR t.assigned_to_employee_id = ea.emp_code OR t.assigned_to_employee_id = ea.id)
-       WHERE t.group_id = $1 OR t.group_name = $2 OR t.project_id = $3
+       WHERE t.group_id = $1 OR (t.group_name = $2 AND (t.project_id = $3 OR t.project_id IS NULL))
        ORDER BY t.created_at ASC`,
       [id, group.name, group.project_id]
     );
@@ -749,11 +750,11 @@ router.patch('/:id/member-progress', async (req, res) => {
       console.warn('employee_assigned_modules sync warning:', eamErr.message);
     }
 
-    // 6. Recalculate group overall progress across all tasks
+    // 6. Recalculate group overall progress across all tasks — STRICT group match only
     const overallRes = await pool.query(
       `SELECT ROUND(AVG(COALESCE(progress_percent, 0))) as overall_progress
        FROM tasks
-       WHERE group_id = $1 OR group_name = $2 OR project_id = $3`,
+       WHERE group_id = $1 OR (group_name = $2 AND (project_id = $3 OR project_id IS NULL))`,
       [id, group.name, group.project_id]
     );
     const overallProgress = Number(overallRes.rows[0]?.overall_progress || progress);
