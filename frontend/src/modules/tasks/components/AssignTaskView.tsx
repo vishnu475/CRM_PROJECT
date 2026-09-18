@@ -1344,8 +1344,8 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                 </span>
               </span>
               {(currentProject.is_assigned || currentProject.is_ongoing || (currentProject.assigned_employees && currentProject.assigned_employees.length > 0)) && (
-                <span className="text-xs font-bold text-amber-900 bg-amber-100/90 px-2.5 py-1.5 rounded-xl border border-amber-300 flex items-center gap-1.5 shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span className="text-xs font-semibold text-slate-700 bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
                   <span>Ongoing ({currentProject.assigned_members_count || currentProject.assigned_employees?.length || 1} Assigned)</span>
                 </span>
               )}
@@ -1424,18 +1424,14 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                         className={`p-3.5 flex items-center justify-between gap-3 cursor-pointer transition ${
                           isSelected 
                             ? 'bg-blue-50/90 hover:bg-blue-100/70 border-l-4 border-blue-600' 
-                            : isOngoing 
-                              ? 'hover:bg-amber-50/60 bg-white' 
-                              : 'hover:bg-slate-50'
+                            : 'hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <span className={`px-2.5 py-1 rounded-md font-mono text-[11px] font-bold shrink-0 ${
                             isSelected 
                               ? 'bg-blue-600 text-white' 
-                              : isOngoing 
-                                ? 'bg-amber-100 text-amber-900 border border-amber-300' 
-                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              : 'bg-slate-100 text-slate-700 border border-slate-200'
                           }`}>
                             {proj.code || proj.id}
                           </span>
@@ -1446,12 +1442,12 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                                 {isSelected && <Check size={13} className="text-blue-600 shrink-0" />}
                               </p>
                               {isOngoing ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shrink-0">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1 shrink-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                                   Ongoing ({assignedCount} Assigned)
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
                                   Available
                                 </span>
                               )}
@@ -1462,12 +1458,12 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                             </p>
 
                             {proj.assigned_employees && proj.assigned_employees.length > 0 ? (
-                              <p className="text-[10px] text-amber-800 font-medium truncate mt-1 flex items-center gap-1.5">
-                                <Users size={11} className="text-amber-600 shrink-0" />
+                              <p className="text-[10px] text-slate-500 font-medium truncate mt-1 flex items-center gap-1.5">
+                                <Users size={11} className="text-slate-400 shrink-0" />
                                 <span>
-                                  Already Assigned to: <strong className="font-bold text-amber-950">{proj.assigned_employees.join(', ')}</strong>
+                                  Already Assigned to: <strong className="font-semibold text-slate-700">{proj.assigned_employees.join(', ')}</strong>
                                   {proj.active_tasks_count > 0 && (
-                                    <span className="ml-1 text-slate-500 font-normal">({proj.active_tasks_count} active task{proj.active_tasks_count > 1 ? 's' : ''})</span>
+                                    <span className="ml-1 text-slate-400 font-normal">({proj.active_tasks_count} active task{proj.active_tasks_count > 1 ? 's' : ''})</span>
                                   )}
                                 </span>
                               </p>
@@ -1482,14 +1478,12 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
                               {proj.end_date ? new Date(proj.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Flexible'}
                             </span>
                           </div>
-                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition shadow-2xs ${
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition shadow-2xs ${
                             isSelected 
                               ? 'bg-blue-600 text-white' 
-                              : isOngoing
-                                ? 'bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-600 hover:text-white'
-                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-blue-600 hover:text-white'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-blue-600 hover:text-white'
                           }`}>
-                            {isSelected ? 'Active' : isOngoing ? 'Select (Ongoing)' : 'Select'}
+                            {isSelected ? 'Selected' : 'Select Project'}
                           </span>
                         </div>
                       </div>
@@ -1501,32 +1495,32 @@ export const AssignTaskView: React.FC<AssignTaskViewProps> = ({ onBack, onSucces
           )}
         </div>
 
-        {/* Ongoing Project Alert & Prevention Notice */}
+        {/* Ongoing Project Notice */}
         {currentProject && (currentProject.is_assigned || currentProject.is_ongoing || (currentProject.assigned_employees && currentProject.assigned_employees.length > 0)) && (
-          <div className="mt-3 p-3.5 bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 shadow-2xs animate-in fade-in duration-200">
-            <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="mt-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5 text-xs text-slate-700 shadow-2xs animate-in fade-in duration-200">
+            <Info size={18} className="text-blue-600 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-amber-950">
-                  Ongoing Project Notice: &quot;{currentProject.name}&quot; is already in progress and assigned to employees
+                <span className="font-bold text-slate-900">
+                  Project In Progress: &quot;{currentProject.name}&quot;
                 </span>
                 {currentProject.active_tasks_count > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 text-amber-950 border border-amber-300">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-200 text-slate-700">
                     {currentProject.active_tasks_count} Active Tasks
                   </span>
                 )}
                 {(currentProject.assigned_members_count > 0 || currentProject.assigned_employees?.length > 0) && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
                     {currentProject.assigned_members_count || currentProject.assigned_employees?.length} Team Members
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">
-                This project is already assigned to{' '}
-                <strong className="font-bold text-amber-950">
+              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                This project is currently assigned to{' '}
+                <strong className="font-semibold text-slate-800">
                   {currentProject.assigned_employees?.join(', ') || 'an active team'}
                 </strong>.
-                If you selected this project by mistake, use the search dropdown above to pick another project. You can still select and use this project to assign additional tasks, attach new modules, or collaborate with the existing team.
+                You can select and assign additional tasks, attach new modules, or collaborate with the existing team.
               </p>
             </div>
           </div>
