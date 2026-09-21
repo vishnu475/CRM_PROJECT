@@ -237,7 +237,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
       await addQuotation({
         quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: lead.id,
+        customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
         leadId: lead.id,
         customerName: lead.name,
         date: proposalForm.date || new Date().toISOString().split('T')[0],
@@ -291,7 +291,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       
       await addQuotation({
         quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: lead.id,
+        customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
         leadId: lead.id,
         customerName: lead.name,
         date: proposalForm.date || new Date().toISOString().split('T')[0],
@@ -361,7 +361,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     } else {
       await addQuotation({
         quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: lead.id,
+        customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
         leadId: lead.id,
         customerName: lead.name,
         date: date,
