@@ -6,9 +6,126 @@ export interface StageTransitionResult {
   reason?: string;
 }
 
-/**
- * Helper to determine if an activity represents a genuine customer negotiation or deal-terms response.
- */
+export const MEANINGLESS_PLACEHOLDERS = new Set([
+  'yes', 'ok', 'test', 'abc', '123', 'none', 'n/a', 'na', 'no', 'null', 'undefined', 'xyz'
+]);
+
+export function validateQualificationRequirement(val: string | undefined | null): { isValid: boolean; message?: string } {
+  if (!val) return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  const trimmed = val.trim();
+  if (!trimmed) return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  if (trimmed.length < 10) return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  if (trimmed.length > 5000) return { isValid: false, message: 'Requirement text cannot exceed 5000 characters.' };
+
+  const lower = trimmed.toLowerCase();
+  if (MEANINGLESS_PLACEHOLDERS.has(lower)) {
+    return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  }
+
+  return { isValid: true };
+}
+
+export function validateQualificationBudget(val: string | number | undefined | null): { isValid: boolean; message?: string } {
+  if (val === undefined || val === null || val === '') {
+    return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  }
+  const str = String(val).trim();
+  if (!str) return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(str)) {
+    return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  }
+  
+  const num = Number(str);
+  if (isNaN(num) || num <= 0) {
+    return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  }
+  return { isValid: true };
+}
+
+export function validateQualificationDecisionMaker(val: string | undefined | null): { isValid: boolean; message?: string } {
+  if (!val) return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  const trimmed = val.trim();
+  if (!trimmed) return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  if (trimmed.length < 2) return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  if (trimmed.length > 100) return { isValid: false, message: 'Decision Maker name cannot exceed 100 characters.' };
+
+  if (/^[0-9]+$/.test(trimmed)) {
+    return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  }
+
+  if (!/^[a-zA-Z\s'\-\.]+$/.test(trimmed)) {
+    return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  }
+
+  return { isValid: true };
+}
+
+export function validateQualificationExpectedCloseDate(val: string | undefined | null): { isValid: boolean; message?: string } {
+  if (!val) return { isValid: false, message: 'Select today or a future expected close date.' };
+  const trimmed = val.trim();
+  if (!trimmed) return { isValid: false, message: 'Select today or a future expected close date.' };
+
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) {
+    return { isValid: false, message: 'Select today or a future expected close date.' };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const parts = trimmed.split('-');
+  let inputDate: Date;
+  if (parts.length === 3) {
+    inputDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  } else {
+    inputDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+
+  if (inputDate.getTime() < today.getTime()) {
+    return { isValid: false, message: 'Select today or a future expected close date.' };
+  }
+
+  return { isValid: true };
+}
+
+export function validateAllQualificationFields(form: {
+  requirement?: string;
+  budget?: string | number;
+  decisionMaker?: string;
+  expectedCloseDate?: string;
+}): {
+  isValid: boolean;
+  errors: {
+    requirement?: string;
+    budget?: string;
+    decisionMaker?: string;
+    expectedCloseDate?: string;
+  };
+} {
+  const reqRes = validateQualificationRequirement(form.requirement);
+  const budgetRes = validateQualificationBudget(form.budget);
+  const dmRes = validateQualificationDecisionMaker(form.decisionMaker);
+  const dateRes = validateQualificationExpectedCloseDate(form.expectedCloseDate);
+
+  const errors: {
+    requirement?: string;
+    budget?: string;
+    decisionMaker?: string;
+    expectedCloseDate?: string;
+  } = {};
+
+  if (!reqRes.isValid) errors.requirement = reqRes.message;
+  if (!budgetRes.isValid) errors.budget = budgetRes.message;
+  if (!dmRes.isValid) errors.decisionMaker = dmRes.message;
+  if (!dateRes.isValid) errors.expectedCloseDate = dateRes.message;
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors,
+  };
+}
+
 export const isNegotiationInteraction = (act: Activity, lead: Lead): boolean => {
   if (act.status !== 'Completed') return false;
 
@@ -316,48 +433,18 @@ export const validateLeadStageTransition = (
 
   // STEP 2: Validation for Contacted -> Qualified
   if (currentStage === 'Contacted' && targetStage === 'Qualified') {
-    const missingFields: string[] = [];
+    const valResult = validateAllQualificationFields({
+      requirement: lead.requirement,
+      budget: lead.budget !== undefined ? lead.budget : lead.value,
+      decisionMaker: lead.decisionMaker || lead.contactPerson,
+      expectedCloseDate: lead.expectedCloseDate,
+    });
 
-    // 1. Requirement (meaningful text, not empty or whitespace-only)
-    const requirement = (lead.requirement || '').trim();
-    if (!requirement) {
-      missingFields.push('Requirement');
-    }
-
-    // 2. Budget (valid positive monetary value > 0)
-    const budgetVal =
-      lead.budget !== undefined && Number(lead.budget) > 0
-        ? Number(lead.budget)
-        : lead.value !== undefined && Number(lead.value) > 0
-        ? Number(lead.value)
-        : 0;
-
-    if (!budgetVal || budgetVal <= 0 || isNaN(budgetVal)) {
-      missingFields.push('Budget');
-    }
-
-    // 3. Decision Maker (identified purchasing authority)
-    const decisionMaker = (lead.decisionMaker || lead.contactPerson || '').trim();
-    if (!decisionMaker) {
-      missingFields.push('Decision Maker');
-    }
-
-    // 4. Expected Closing Date (valid date)
-    const expectedCloseDate = (lead.expectedCloseDate || '').trim();
-    if (!expectedCloseDate) {
-      missingFields.push('Expected Closing Date');
-    }
-
-    if (missingFields.length > 0) {
-      if (missingFields.length === 1) {
-        return {
-          allowed: false,
-          message: `Please provide the ${missingFields[0]} before qualifying this lead.`,
-        };
-      }
+    if (!valResult.isValid) {
+      const errorMsgs = Object.values(valResult.errors).filter(Boolean);
       return {
         allowed: false,
-        message: `Complete the following qualification details before moving this lead to Qualified:\n• ${missingFields.join('\n• ')}`,
+        message: 'Complete all 4 qualification details before moving this lead to Qualified:\n• ' + errorMsgs.join('\n• '),
       };
     }
   }

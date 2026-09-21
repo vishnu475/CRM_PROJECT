@@ -1,3 +1,19 @@
+export interface ProjectDocument {
+  id?: string;
+  name: string;
+  url?: string;
+  path?: string;
+  type?: string;
+  size?: number | string;
+  uploadedAt?: string;
+}
+
+export interface ProjectLink {
+  id?: string;
+  title: string;
+  url: string;
+}
+
 export * from './common';
 export * from './api';
 
@@ -111,7 +127,7 @@ export interface Lead {
   budget?: number;
   proposalAmount?: number;
   proposalDate?: string;
-  proposalStatus?: 'Draft' | 'Sent';
+  proposalStatus?: 'Draft' | 'Sent' | 'Accepted' | 'Revised';
   proposalSentDate?: string;
   finalAgreedAmount?: number;
   wonDate?: string;
@@ -319,6 +335,7 @@ export interface Quotation {
   opportunityId?: string;
   contactId?: string;
   revisionNumber?: number;
+  revisionGroupId?: string;
   terms?: string;
   notes?: string;
   owner?: string;
@@ -736,6 +753,14 @@ export interface Vendor {
 }
 
 export interface Project {
+  weightage?: number;
+  repositoryUrl?: string;
+  requirementDocuments?: ProjectDocument[] | string[];
+  projectLinks?: ProjectLink[];
+  activeTasksCount?: number;
+  totalTasksCount?: number;
+  assignedMembersCount?: number;
+  assignedEmployees?: string[];
   id: string;
   code: string;
   name: string;

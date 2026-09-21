@@ -4,8 +4,7 @@ import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor, getLeadStageColor } from '../utils/crmUtils';
 import { 
   Plus, Search, Filter, MoreVertical, ChevronLeft, ChevronRight, 
-  Building2, User, Mail,
-  Rocket, CheckCheck, FolderKanban
+  Building2, User, Mail
 } from 'lucide-react';
 import { ConvertLeadModal } from './ConvertLeadModal';
 
@@ -201,31 +200,11 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
                   </div>
                 </td>
                 <td className="p-4">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getLeadStageColor(lead.stage)}`}
-                    >
-                      {lead.stage}
-                    </span>
-
-                    {lead.isConverted && (
-                      <span 
-                        className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1 whitespace-nowrap shadow-xs"
-                        title="Lead successfully converted to Customer Account"
-                      >
-                        <CheckCheck size={13} className="text-emerald-600" /> Converted
-                      </span>
-                    )}
-
-                    {(lead.isProjectCreated || lead.projectId) && (
-                      <span
-                        className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1 whitespace-nowrap shadow-xs"
-                        title="Project created in Projects delivery module"
-                      >
-                        <FolderKanban size={13} className="text-emerald-600" /> Project Created
-                      </span>
-                    )}
-                  </div>
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getLeadStageColor(lead.stage)}`}
+                  >
+                    {lead.stage || 'New'}
+                  </span>
                 </td>
                 <td className="p-4">
                   <div className={`inline-flex items-center justify-center w-8 h-8 rounded-full border text-xs font-bold ${getLeadScoreColor(lead.score)}`}>
@@ -293,23 +272,11 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
             </div>
             
             <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getLeadStageColor(lead.stage)}`}
-                >
-                  {lead.stage}
-                </span>
-                {lead.isConverted && (
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1">
-                    <CheckCheck size={12} className="text-emerald-600" /> Converted
-                  </span>
-                )}
-                {(lead.isProjectCreated || lead.projectId) && (
-                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-full flex items-center gap-1">
-                    <FolderKanban size={12} className="text-emerald-600" /> Project Created
-                  </span>
-                )}
-              </div>
+              <span
+                className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getLeadStageColor(lead.stage)}`}
+              >
+                {lead.stage || 'New'}
+              </span>
               <span className="text-sm font-bold text-slate-700">{formatINR(lead.value)}</span>
             </div>
             

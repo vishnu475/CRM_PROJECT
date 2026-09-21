@@ -586,11 +586,94 @@ router.post('/', async (req, res) => {
   }
 });
 
+
+const MEANINGLESS_PLACEHOLDERS = new Set([
+  'yes', 'ok', 'test', 'abc', '123', 'none', 'n/a', 'na', 'no', 'null', 'undefined', 'xyz'
+]);
+
+function validateQualificationBackend(lead) {
+  const errors = [];
+
+  // 1. Requirement
+  const req = (lead.requirement || '').trim();
+  if (!req || req.length < 10 || req.length > 5000 || MEANINGLESS_PLACEHOLDERS.has(req.toLowerCase())) {
+    errors.push('Enter meaningful customer requirements.');
+  }
+
+  // 2. Budget
+  const budgetStr = String(lead.budget !== undefined && lead.budget !== null && lead.budget !== '' ? lead.budget : (lead.value || '')).trim();
+  const budgetNum = Number(budgetStr);
+  if (!budgetStr || !/^[0-9]+(\.[0-9]+)?$/.test(budgetStr) || isNaN(budgetNum) || budgetNum <= 0) {
+    errors.push('Enter a valid budget greater than ₹0.');
+  }
+
+  // 3. Decision Maker
+  const dm = (lead.decisionMaker || lead.contactPerson || '').trim();
+  if (!dm || dm.length < 2 || dm.length > 100 || /^[0-9]+$/.test(dm) || !/^[a-zA-Z\s'\-\.]+$/.test(dm)) {
+    errors.push('Enter the name of the customer decision maker.');
+  }
+
+  // 4. Expected Close Date
+  const dateStr = (lead.expectedCloseDate || lead.expected_close_date || '').trim();
+  if (!dateStr) {
+    errors.push('Select today or a future expected close date.');
+  } else {
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime())) {
+      errors.push('Select today or a future expected close date.');
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const parts = dateStr.split('-');
+      let inputDate;
+      if (parts.length === 3) {
+        inputDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      } else {
+        inputDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+      }
+      if (inputDate.getTime() < today.getTime()) {
+        errors.push('Select today or a future expected close date.');
+      }
+    }
+  }
+
+  return errors;
+}
+
 // PUT & PATCH /api/leads/:id — Update lead stage or details
 const updateHandler = async (req, res) => {
   const { id } = req.params;
   const fields = { ...req.body };
   try {
+    if (fields.stage === 'Qualified') {
+      const existingRes = await pool.query('SELECT * FROM leads WHERE id = $1', [id]);
+      if (existingRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
+      const existing = existingRes.rows[0];
+
+      // Stage skipping protection: only allow transition from Contacted -> Qualified (or remaining in Qualified)
+      if (existing.stage !== 'Contacted' && existing.stage !== 'Qualified') {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot transition lead stage from "${existing.stage}" to "Qualified". Leads can only move to Qualified from "Contacted" stage.`
+        });
+      }
+
+      const merged = {
+        requirement: fields.requirement !== undefined ? fields.requirement : existing.requirement,
+        budget: fields.budget !== undefined ? fields.budget : (fields.value !== undefined ? fields.value : existing.budget || existing.value),
+        value: fields.value !== undefined ? fields.value : (fields.budget !== undefined ? fields.budget : existing.value || existing.budget),
+        decisionMaker: fields.decisionMaker !== undefined ? fields.decisionMaker : (fields.contactPerson !== undefined ? fields.contactPerson : existing.decision_maker || existing.contact_person),
+        expectedCloseDate: fields.expectedCloseDate !== undefined ? fields.expectedCloseDate : existing.expected_close_date,
+      };
+
+      const valErrors = validateQualificationBackend(merged);
+      if (valErrors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Qualification validation failed: ' + valErrors.join(' ')
+        });
+      }
+    }
     // If assignedTo or assignedToEmployeeId is being updated
     if ('assignedTo' in fields || 'assignedToEmployeeId' in fields) {
       const targetEmpId = fields.assignedToEmployeeId || fields.assignedTo;

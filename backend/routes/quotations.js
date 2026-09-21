@@ -3,10 +3,20 @@ import { crmPool as pool } from '../db/pool.js'; // CRM DB — Friend 1
 
 const router = express.Router();
 
+// Ensure revision_group_id column exists on quotations table
+const ensureRevisionGroupColumn = async () => {
+  try {
+    await pool.query(`ALTER TABLE quotations ADD COLUMN IF NOT EXISTS revision_group_id VARCHAR(255)`);
+  } catch (err) {
+    console.warn('⚠️ [CRM] Failed to add revision_group_id column:', err.message);
+  }
+};
+ensureRevisionGroupColumn();
+
 // GET /api/quotations — Fetch all quotations with item count and sales order linkage
 router.get('/', async (req, res) => {
   try {
-    const { status, customerId, opportunityId } = req.query;
+    const { status, customerId, opportunityId, leadId, revisionGroupId } = req.query;
     let query = `
       SELECT 
         q.*, 
@@ -31,6 +41,14 @@ router.get('/', async (req, res) => {
     if (opportunityId) {
       params.push(opportunityId);
       query += ` AND q.opportunity_id = $${params.length}`;
+    }
+    if (leadId) {
+      params.push(leadId);
+      query += ` AND (q.lead_id = $${params.length} OR q.customer_id = $${params.length})`;
+    }
+    if (revisionGroupId) {
+      params.push(revisionGroupId);
+      query += ` AND q.revision_group_id = $${params.length}`;
     }
 
     query += ` GROUP BY q.id, so.id, so.so_number ORDER BY q.created_at DESC`;
@@ -93,6 +111,7 @@ router.post('/', async (req, res) => {
     opportunityId,
     contactId,
     revisionNumber,
+    revisionGroupId,
     terms,
     notes,
     owner,
@@ -108,15 +127,30 @@ router.post('/', async (req, res) => {
     const effectiveStatus = status || 'Draft';
     const computedSentDate = sentDate || (effectiveStatus === 'Sent' ? new Date().toISOString().split('T')[0] : null);
     const computedAcceptedDate = acceptedDate || (effectiveStatus === 'Accepted' ? new Date().toISOString().split('T')[0] : null);
+    const groupNo = revisionGroupId || (leadId ? `GRP-${leadId}` : `GRP-${quoteId}`);
 
+    // Automatically calculate revision number if not provided or to ensure no duplicate version numbers
+    let calcRev = revisionNumber ? Number(revisionNumber) : 1;
+    if (leadId || groupNo) {
+      const revCheck = await client.query(
+        `SELECT COALESCE(MAX(revision_number), 0) + 1 AS next_rev FROM quotations WHERE revision_group_id = $1 OR lead_id = $2`,
+        [groupNo, leadId || null]
+      );
+      const maxNext = Number(revCheck.rows[0]?.next_rev || 1);
+      if (!revisionNumber || calcRev < maxNext) {
+        calcRev = maxNext;
+      }
+    }
+
+    // Insert new quotation version row into PostgreSQL database
     const quoteRes = await client.query(
       `INSERT INTO quotations (
         id, quote_number, customer_id, customer_name, date, valid_until, 
         amount, subtotal, tax_amount, discount_amount, status, sent_date, 
         accepted_date, lead_id, opportunity_id, contact_id, revision_number, 
-        terms, notes, owner
+        revision_group_id, terms, notes, owner
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
       [
         quoteId,
         quoteNo,
@@ -134,12 +168,25 @@ router.post('/', async (req, res) => {
         leadId || null,
         opportunityId || null,
         contactId || null,
-        revisionNumber || 1,
+        calcRev,
+        groupNo,
         terms || 'Standard 30 days payment terms upon invoice delivery.',
         notes || '',
         owner || 'Sales Executive'
       ]
     );
+
+    // If new quotation is Sent, automatically mark previous active quotations in same group as 'Revised'
+    if (effectiveStatus === 'Sent' && (leadId || groupNo)) {
+      await client.query(
+        `UPDATE quotations 
+         SET status = 'Revised', updated_at = CURRENT_TIMESTAMP 
+         WHERE (lead_id = $1 OR revision_group_id = $2) 
+           AND id != $3 
+           AND status IN ('Sent', 'Draft')`,
+        [leadId || null, groupNo, quoteId]
+      );
+    }
 
     if (items && Array.isArray(items)) {
       for (const item of items) {
@@ -183,6 +230,7 @@ const updateQuotationHandler = async (req, res) => {
     acceptedDate,
     date,
     revisionNumber,
+    revisionGroupId,
     terms,
     notes,
     items
@@ -222,8 +270,9 @@ const updateQuotationHandler = async (req, res) => {
          accepted_date = COALESCE($9, accepted_date),
          date = COALESCE($10, date),
          revision_number = COALESCE($11, revision_number),
-         terms = COALESCE($12, terms),
-         notes = COALESCE($13, notes),
+         revision_group_id = COALESCE($12, revision_group_id),
+         terms = COALESCE($13, terms),
+         notes = COALESCE($14, notes),
          updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 RETURNING *`,
       [
@@ -238,6 +287,7 @@ const updateQuotationHandler = async (req, res) => {
         computedAcceptedDate,
         date,
         revisionNumber,
+        revisionGroupId,
         terms,
         notes
       ]

@@ -204,7 +204,8 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   addProject: (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => Promise<Project | null>;
-  deleteProject: (id: string) => Promise<boolean>;
+  updateProject: (projectId: string, updatedFields: Partial<Project>) => Promise<{ success: boolean; data?: any }>;
+  deleteProject: (projectId: string) => Promise<{ success: boolean }>;
   createProjectFromLead: (
     leadId: string,
     customData?: {
@@ -1036,6 +1037,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
             acceptedDate: r.accepted_date ? (typeof r.accepted_date === 'string' ? r.accepted_date.split('T')[0] : new Date(r.accepted_date).toISOString().split('T')[0]) : '',
             revisionNumber: parseInt(r.revision_number) || 1,
+            revisionGroupId: r.revision_group_id || r.id,
             terms: r.terms || '',
             notes: r.notes || '',
             owner: r.owner || '',
@@ -1133,6 +1135,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             spent: parseFloat(r.spent) || 0,
             progress: parseInt(r.progress) || 0,
             status: r.status || 'Not Started',
+            priority: r.priority || 'Medium',
+            weightage: r.weightage !== undefined ? parseFloat(r.weightage) : 100,
+            repositoryUrl: r.repository_url || '',
+            requirementDocuments: Array.isArray(r.requirement_documents) ? r.requirement_documents : [],
+            projectLinks: Array.isArray(r.project_links) ? r.project_links : [],
+            activeTasksCount: parseInt(r.active_tasks_count) || 0,
+            totalTasksCount: parseInt(r.total_tasks_count) || 0,
+            assignedMembersCount: parseInt(r.assigned_members_count) || 0,
+            assignedEmployees: Array.isArray(r.assigned_employees) ? r.assigned_employees : [],
             createdAt: r.created_at || '',
             updatedAt: r.updated_at || '',
           })));
@@ -1902,17 +1913,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newProject;
   }, []);
 
-  const deleteProject = useCallback(async (id: string): Promise<boolean> => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+  const updateProject = useCallback(async (projectId: string, updatedFields: Partial<Project>) => {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, ...updatedFields, updatedAt: new Date().toISOString() } : p))
+    );
     try {
-      const res = await ProjectsAPI.delete(id);
-      return Boolean(res.success);
-    } catch (err) {
-      console.warn('⚠️ [Projects] deleteProject failed:', err);
-      return false;
+      const res = await ProjectsAPI.update(projectId, {
+        name: updatedFields.name,
+        client: updatedFields.client,
+        customerId: updatedFields.customerId,
+        projectRequirement: updatedFields.projectRequirement,
+        projectNotes: updatedFields.projectNotes,
+        projectManager: updatedFields.projectManager,
+        startDate: updatedFields.startDate,
+        endDate: updatedFields.endDate,
+        budget: updatedFields.budget,
+        spent: updatedFields.spent,
+        progress: updatedFields.progress,
+        status: updatedFields.status,
+        priority: updatedFields.priority,
+        weightage: updatedFields.weightage,
+        repositoryUrl: updatedFields.repositoryUrl,
+        requirementDocuments: updatedFields.requirementDocuments,
+        projectLinks: updatedFields.projectLinks,
+      });
+      if (res.success && res.data) {
+        return { success: true, data: res.data };
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Failed to update project on backend:', err.message);
     }
+    return { success: true };
   }, []);
 
+  const deleteProject = useCallback(async (projectId: string) => {
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    try {
+      const res = await ProjectsAPI.delete(projectId);
+      if (res.success) {
+        return { success: true };
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Failed to delete project on backend:', err.message);
+    }
+    return { success: true };
+  }, []);
 
   const createProjectFromLead = useCallback(async (
     leadId: string,
@@ -2460,7 +2505,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addQuotation = useCallback(async (quotation: Omit<Quotation, 'id'>): Promise<Quotation | null> => {
-    const tempId = `QT-${Date.now()}`;
+    const tempId = "QT-" + Date.now();
     const newQuote: Quotation = { id: tempId, ...quotation };
     setQuotations((prev) => [newQuote, ...prev]);
     try {
@@ -2470,8 +2515,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...newQuote,
           id: res.data.id,
           quoteNumber: res.data.quote_number || newQuote.quoteNumber,
+          revisionNumber: res.data.revision_number ? Number(res.data.revision_number) : newQuote.revisionNumber,
+          revisionGroupId: res.data.revision_group_id || newQuote.revisionGroupId,
+          status: res.data.status || newQuote.status,
         };
-        setQuotations((prev) => prev.map((q) => (q.id === tempId ? savedQuote : q)));
+
+        const reFetch = await QuotationsAPI.getAll();
+        if (reFetch.success && Array.isArray(reFetch.data)) {
+          setQuotations(reFetch.data.map((r: any) => ({
+            id: r.id,
+            quoteNumber: r.quote_number || r.id,
+            customerId: r.customer_id || '',
+            leadId: r.lead_id || '',
+            opportunityId: r.opportunity_id || '',
+            contactId: r.contact_id || '',
+            customerName: r.customer_name || '',
+            date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+            validUntil: r.valid_until ? (typeof r.valid_until === 'string' ? r.valid_until.split('T')[0] : new Date(r.valid_until).toISOString().split('T')[0]) : '',
+            amount: parseFloat(r.amount) || 0,
+            subtotal: parseFloat(r.subtotal) || 0,
+            taxAmount: parseFloat(r.tax_amount) || 0,
+            discountAmount: parseFloat(r.discount_amount) || 0,
+            status: r.status || 'Draft',
+            sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
+            acceptedDate: r.accepted_date ? (typeof r.accepted_date === 'string' ? r.accepted_date.split('T')[0] : new Date(r.accepted_date).toISOString().split('T')[0]) : '',
+            revisionNumber: parseInt(r.revision_number) || 1,
+            revisionGroupId: r.revision_group_id || r.id,
+            terms: r.terms || '',
+            notes: r.notes || '',
+            owner: r.owner || '',
+            salesOrderId: r.sales_order_id || '',
+            salesOrderNumber: r.sales_order_number || '',
+            itemsCount: parseInt(r.items_count) || 1,
+          })));
+        } else {
+          setQuotations((prev) => prev.map((q) => (q.id === tempId ? savedQuote : q)));
+        }
         return savedQuote;
       }
     } catch (err) { console.warn('⚠️ [CRM] addQuotation failed:', err); }
@@ -3135,6 +3214,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         projects,
         setProjects,
         addProject,
+        updateProject,
         deleteProject,
         createProjectFromLead,
         tasks,
