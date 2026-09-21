@@ -46,6 +46,7 @@ import vendorsRouter from './routes/vendors.js';
 import purchaseOrdersRouter from './routes/purchase_orders.js';
 import projectsRouter from './routes/projects.js';
 import groupsRouter from './routes/groups.js';
+import emailRouter from './routes/email.js';
 
 import { authenticateUser } from './middleware/auth.js';
 import { protectModuleRoute } from './middleware/moduleAuth.js';
@@ -131,6 +132,7 @@ app.use('/api/vendors',         vendorsRouter);
 app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/projects',        projectsRouter);
 app.use('/api/groups',          groupsRouter);
+app.use('/api/email',           emailRouter);
 
 // ─── Health Check (shows both DB connections & migration status) ──────────────
 app.get('/api/health', async (req, res) => {
