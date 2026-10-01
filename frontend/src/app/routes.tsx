@@ -266,6 +266,21 @@ export function parseRouteFromPath(pathname: string): { module: ModuleId; subSec
     return { module: 'tasks', subSection: 'all-tasks' };
   }
 
+  // 4. CRM direct routes for /crm/opportunities/:id, /crm/leads/:id, /crm/customers/:id
+  if (moduleSlug === 'crm' && parts.length >= 3) {
+    const sec = parts[1].toLowerCase();
+    const entityId = parts[2];
+    if (sec === 'opportunities' || sec === 'opportunity') {
+      return { module: 'crm', subSection: `opportunities/${entityId}` };
+    }
+    if (sec === 'leads' || sec === 'lead' || sec === 'lead-details') {
+      return { module: 'crm', subSection: `lead-details/${entityId}` };
+    }
+    if (sec === 'customers' || sec === 'customer' || sec === 'customer-details') {
+      return { module: 'crm', subSection: `customer-details/${entityId}` };
+    }
+  }
+
   const routeConfig = MODULE_ROUTES.find(r => r.id === moduleSlug || r.path === `/${moduleSlug}`);
   if (!routeConfig) {
     return { module: 'dashboard', subSection: '' };

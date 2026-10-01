@@ -6,7 +6,6 @@ export interface CrmOverviewData {
     qualifiedLeads: number;
     openOpportunities: number;
     pipelineValue: number;
-    activeCustomers: number;
     followUpsDue: number;
   };
   leadConversion: {
@@ -14,6 +13,10 @@ export interface CrmOverviewData {
     count: number;
     percentage: number;
   }[];
+  leadConversionSummary: {
+    overallConversionRate: number;
+    qualifiedToOppRate: number;
+  };
   opportunityPipeline: {
     stage: string;
     count: number;
@@ -47,42 +50,52 @@ export interface CrmOverviewData {
 }
 
 export const useCrmOverviewData = (): CrmOverviewData => {
-  const { leads, customers, opportunities, activities, followUps } = useApp();
+  const { leads, opportunities, activities, followUps } = useApp();
 
   const activeLeads = leads.filter(l => l.status !== 'archived');
 
-  // --- STATS ---
+  // 1. TOP KPI STATS (Sales activity metrics only: Total Leads, Qualified Leads, Open Opps, Pipeline Value, Follow-ups)
   const totalLeads = activeLeads.length;
   const qualifiedLeads = activeLeads.filter(l => l.stage === 'Qualified').length;
   const openOpportunities = opportunities.filter(o => o.stage !== 'Won' && o.stage !== 'Lost').length;
   const pipelineValue = opportunities
     .filter(o => o.stage !== 'Won' && o.stage !== 'Lost')
-    .reduce((sum, o) => sum + (o.value || 0), 0);
-  const activeCustomers = customers.filter(c => c.status === 'Active').length;
-  
-  // Basic categorization for follow-ups (overdue, today, upcoming) based on their status text in mock data
-  const followUpsDue = followUps.filter(f => f.status === 'Overdue' || f.status === 'Today').length;
+    .reduce((sum, o) => sum + (Number(o.value) || 0), 0);
 
-  // --- LEAD CONVERSION ---
-  const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Won', 'Lost'];
+  const todayStr = new Date().toISOString().split('T')[0];
+  const pendingFollowUps = followUps.filter(f => f.status !== 'completed' && f.status !== 'Completed' && f.status !== 'Cancelled');
+  const followUpsDue = pendingFollowUps.length;
+
+  // 2. LEAD CONVERSION (Including all 7 stages: New, Contacted, Qualified, Proposal, Negotiation, Won, Lost)
+  const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
   const leadConversion = leadStages.map(stage => {
     const count = activeLeads.filter(l => l.stage === stage).length;
-    const percentage = totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0;
+    const percentage = totalLeads > 0 ? Number(((count / totalLeads) * 100).toFixed(1)) : 0;
     return { stage, count, percentage };
   });
 
-  // --- OPPORTUNITY PIPELINE ---
+  // 3. LEAD CONVERSION SUMMARY (Overall Conv % and Qual -> Opp %)
+  const wonLeadsCount = activeLeads.filter(l => l.stage === 'Won').length;
+  const overallConversionRate = totalLeads > 0 ? Number(((wonLeadsCount / totalLeads) * 100).toFixed(1)) : 0;
+
+  const qualifiedPlusLeads = activeLeads.filter(l => ['Qualified', 'Proposal', 'Negotiation', 'Won'].includes(l.stage)).length;
+  const convertedToOppLeads = activeLeads.filter(l => ['Proposal', 'Negotiation', 'Won'].includes(l.stage)).length;
+  const qualifiedToOppRate = qualifiedPlusLeads > 0 
+    ? Number(((convertedToOppLeads / qualifiedPlusLeads) * 100).toFixed(1)) 
+    : (qualifiedLeads > 0 ? Number(((opportunities.length / qualifiedLeads) * 100).toFixed(1)) : 0);
+
+  // 4. OPPORTUNITY PIPELINE (New, Qualified, Proposal, Negotiation, Won, Lost)
   const oppStages = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
   const opportunityPipeline = oppStages.map(stage => {
     const stageOpps = opportunities.filter(o => o.stage === stage);
     const count = stageOpps.length;
-    const value = stageOpps.reduce((sum, o) => sum + (o.value || 0), 0);
+    const value = stageOpps.reduce((sum, o) => sum + (Number(o.value) || 0), 0);
     return { stage, count, value };
   });
 
-  // --- LEAD SOURCES ---
+  // 5. LEAD SOURCES
   const sourceMap = activeLeads.reduce((acc, lead) => {
-    const src = lead.source || 'Other';
+    const src = lead.source || 'Direct / Other';
     acc[src] = (acc[src] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -95,29 +108,57 @@ export const useCrmOverviewData = (): CrmOverviewData => {
     }))
     .sort((a, b) => b.count - a.count);
 
-  // --- RECENT ACTIVITIES ---
-  const recentActivities = [...activities].reverse().map(act => ({
-    id: act.id,
-    type: act.type,
-    relatedRecord: act.relatedTo,
-    dateTime: act.dueDate,
-    owner: act.assignedTo,
-    description: act.title,
-    status: act.status
-  }));
+  // 6. RECENT ACTIVITIES (Top 5 most recent)
+  const recentActivities = [...activities]
+    .sort((a, b) => {
+      const timeA = new Date(a.dueDate || 0).getTime();
+      const timeB = new Date(b.dueDate || 0).getTime();
+      return timeB - timeA;
+    })
+    .slice(0, 5)
+    .map(act => ({
+      id: act.id,
+      type: act.type || 'Task',
+      relatedRecord: act.relatedTo || 'General Record',
+      dateTime: act.dueDate || 'N/A',
+      owner: act.assignedTo || 'Unassigned',
+      description: act.title || 'Activity recorded',
+      status: act.status || 'Completed'
+    }));
 
-  // --- FOLLOW UPS ---
-  const mappedFollowUps = followUps.map(fu => ({
-    id: fu.id,
-    category: (fu.status === 'Overdue' ? 'Overdue' : fu.status === 'Today' ? 'Today' : 'Upcoming') as 'Overdue' | 'Today' | 'Upcoming',
-    relatedRecord: fu.relatedEntity || '',
-    relatedOpportunity: fu.opportunityId,
-    activityType: fu.activityType || 'Follow-up',
-    dueDateTime: fu.dueDate,
-    owner: fu.owner || fu.assignedTo || 'Unassigned',
-    priority: 'Medium',
-    status: fu.status
-  }));
+  // 7. FOLLOW-UPS CATEGORIZATION (Overdue, Today, Upcoming)
+  const mappedFollowUps = followUps.map(fu => {
+    let category: 'Overdue' | 'Today' | 'Upcoming' = 'Upcoming';
+    
+    if (fu.status === 'Overdue') {
+      category = 'Overdue';
+    } else if (fu.status === 'Today') {
+      category = 'Today';
+    } else if (fu.status === 'Upcoming') {
+      category = 'Upcoming';
+    } else if (fu.dueDate) {
+      const fuDateStr = fu.dueDate.split('T')[0].split(' ')[0];
+      if (fuDateStr < todayStr) {
+        category = 'Overdue';
+      } else if (fuDateStr === todayStr) {
+        category = 'Today';
+      } else {
+        category = 'Upcoming';
+      }
+    }
+
+    return {
+      id: fu.id,
+      category,
+      relatedRecord: fu.relatedEntity || fu.related_entity || fu.title || 'CRM Record',
+      relatedOpportunity: fu.opportunityId || fu.opportunity_id,
+      activityType: fu.activityType || 'Follow-up',
+      dueDateTime: fu.dueDate || 'N/A',
+      owner: fu.assignedTo || 'Unassigned',
+      priority: fu.priority || 'Medium',
+      status: fu.status || 'Pending'
+    };
+  });
 
   return {
     stats: {
@@ -125,10 +166,13 @@ export const useCrmOverviewData = (): CrmOverviewData => {
       qualifiedLeads,
       openOpportunities,
       pipelineValue,
-      activeCustomers,
       followUpsDue
     },
     leadConversion,
+    leadConversionSummary: {
+      overallConversionRate,
+      qualifiedToOppRate
+    },
     opportunityPipeline,
     leadSources,
     recentActivities,

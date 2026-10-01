@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import {
   LeadsAPI,
   CustomersAPI,
+  CRMNotesAPI,
   ContactsAPI,
   OpportunitiesAPI,
   CRMActivitiesAPI,
@@ -140,7 +141,9 @@ interface AppContextType {
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
   deleteFollowUp: (id: string) => Promise<void> | void;
   notes: Note[];
-  addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  addNote: (note: Partial<Note>) => Promise<void> | void;
+  updateNote: (id: string, updates: Partial<Note>) => Promise<void> | void;
+  deleteNote: (id: string) => Promise<void> | void;
   products: Product[];
   addProduct: (product: any) => Promise<Product | null>;
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
@@ -985,6 +988,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })));
         }
 
+        // 15c. Load Notes from CRM PostgreSQL
+        try {
+          const notesRes = await CRMNotesAPI.getAll();
+          if (notesRes.success && Array.isArray(notesRes.data)) {
+            setNotes(notesRes.data.map((r: any) => ({
+              id: r.id,
+              title: r.title || 'Untitled Note',
+              type: r.type || 'General',
+              content: r.content || '',
+              relatedType: r.related_type || r.entity_type || '',
+              related_type: r.related_type || r.entity_type || '',
+              relatedId: r.related_id || r.entity_id || '',
+              related_id: r.related_id || r.entity_id || '',
+              relatedRecord: r.related_id || r.entity_id || '',
+              createdBy: r.created_by || r.author || 'Sarah Jenkins',
+              created_by: r.created_by || r.author || 'Sarah Jenkins',
+              author: r.author || r.created_by || 'Sarah Jenkins',
+              createdAt: r.created_at || undefined,
+              created_at: r.created_at || undefined,
+              updatedAt: r.updated_at || undefined,
+              updated_at: r.updated_at || undefined,
+            })));
+          }
+        } catch (err) {
+          console.warn('⚠️ [CRM] Failed to load notes:', err);
+        }
+
         // 15b. Load Follow-ups from CRM PostgreSQL
         const followUpsRes = await CRMFollowUpsAPI.getAll();
         if (followUpsRes.success && Array.isArray(followUpsRes.data)) {
@@ -1000,6 +1030,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             activityId: r.activity_id || undefined,
             activityType: r.activity_type || 'Call',
             dueDate: r.due_date || '',
+            due_date: r.due_date || '',
+            dueTime: r.due_time || '10:00',
+            due_time: r.due_time || '10:00',
             owner: r.owner || r.assigned_to || '',
             assignedTo: r.assigned_to || r.owner || '',
             priority: r.priority || 'Medium',
@@ -2402,10 +2435,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activityId: fu.activityId,
         activityType: fu.activityType,
         dueDate: fu.dueDate,
+        dueTime: fu.dueTime,
         owner: fu.owner || fu.assignedTo,
         assignedTo: fu.assignedTo || fu.owner,
         priority: fu.priority,
-        status: fu.status,
+        status: fu.status || 'Pending',
         reminder: fu.reminder,
       });
     } catch (err) {
@@ -2429,6 +2463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activityId: updates.activityId,
         activityType: updates.activityType,
         dueDate: updates.dueDate,
+        dueTime: updates.dueTime,
         owner: updates.owner || updates.assignedTo,
         assignedTo: updates.assignedTo || updates.owner,
         priority: updates.priority,
@@ -2561,12 +2596,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setQuotations((prev) =>
       prev.map((q) => (q.id === id ? { ...q, ...updates } : q))
     );
+
+    if (updates.status === 'Accepted') {
+      const targetQuote = quotations.find((q) => q.id === id);
+      if (targetQuote) {
+        const oppId = targetQuote.opportunityId;
+        const leadId = targetQuote.leadId;
+        const finalAmt = updates.amount || targetQuote.amount || 0;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        if (oppId) {
+          setOpportunities((prev) =>
+            prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Won', probability: 100 } : opp))
+          );
+        }
+
+        setLeads((prev) =>
+          prev.map((ld) => {
+            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId)) {
+              return {
+                ...ld,
+                stage: 'Won',
+                finalAgreedAmount: ld.finalAgreedAmount || finalAmt,
+                wonDate: ld.wonDate || todayStr,
+              };
+            }
+            return ld;
+          })
+        );
+      }
+    }
+
     try {
       await QuotationsAPI.update(id, updates);
     } catch (err) {
       console.warn('⚠️ [CRM] updateQuotation failed:', err);
     }
-  }, []);
+  }, [quotations]);
 
   const deleteQuotation = useCallback(async (id: string) => {
     setQuotations((prev) => prev.filter((q) => q.id !== id));
@@ -2853,15 +2919,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const addNote = (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const addNote = useCallback(async (note: Partial<Note>) => {
+    const tempId = note.id || `NOTE-${Date.now()}`;
     const newNote: Note = {
-      ...note,
-      id: `NOTE-${Date.now()}`,
-      createdAt: 'Just now',
-      updatedAt: 'Just now',
+      id: tempId,
+      title: note.title || 'Untitled Note',
+      type: note.type || 'General',
+      content: note.content || '',
+      relatedType: note.relatedType || note.related_type || note.entityType || note.entity_type || '',
+      related_type: note.relatedType || note.related_type || note.entityType || note.entity_type || '',
+      relatedId: note.relatedId || note.related_id || note.entityId || note.entity_id || note.relatedRecord || '',
+      related_id: note.relatedId || note.related_id || note.entityId || note.entity_id || note.relatedRecord || '',
+      relatedRecord: note.relatedRecord || note.relatedId || note.related_id || '',
+      createdBy: note.createdBy || note.created_by || note.author || userProfile?.name || 'Sarah Jenkins',
+      created_by: note.createdBy || note.created_by || note.author || userProfile?.name || 'Sarah Jenkins',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    setNotes((prev) => [newNote, ...prev]);
-  };
+
+    setNotes((prev) => [newNote, ...prev]); // Optimistic
+    try {
+      const res = await CRMNotesAPI.create({
+        id: tempId,
+        title: newNote.title,
+        type: newNote.type,
+        content: newNote.content,
+        relatedType: newNote.relatedType,
+        relatedId: newNote.relatedId,
+        createdBy: newNote.createdBy,
+      });
+      if (res && res.data) {
+        setNotes((prev) => prev.map(n => n.id === tempId ? {
+          ...n,
+          id: res.data.id || tempId,
+          createdAt: res.data.created_at || n.createdAt,
+          updatedAt: res.data.updated_at || n.updatedAt,
+        } : n));
+      }
+    } catch (err) {
+      console.warn('⚠️ [CRM] addNote failed:', err);
+      throw err;
+    }
+  }, [userProfile]);
+
+  const updateNote = useCallback(async (id: string, updates: Partial<Note>) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n))
+    );
+    try {
+      await CRMNotesAPI.update(id, {
+        title: updates.title,
+        type: updates.type,
+        content: updates.content,
+        relatedType: updates.relatedType || updates.related_type,
+        relatedId: updates.relatedId || updates.related_id,
+        createdBy: updates.createdBy || updates.created_by,
+      });
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateNote failed:', err);
+      throw err;
+    }
+  }, []);
+
+  const deleteNote = useCallback(async (id: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== id)); // Optimistic
+    try {
+      await CRMNotesAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteNote failed:', err);
+      throw err;
+    }
+  }, []);
 
   const addDocument = (doc: Omit<DocumentFile, 'id' | 'updatedAt'>) => {
     const now = new Date().toISOString().split('T')[0];
@@ -3152,6 +3280,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteFollowUp,
         notes,
         addNote,
+        updateNote,
+        deleteNote,
         products,
         addProduct,
         updateProduct,

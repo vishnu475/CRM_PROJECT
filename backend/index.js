@@ -38,6 +38,7 @@ import contactsRouter from './routes/contacts.js';
 import opportunitiesRouter from './routes/opportunities.js';
 import crmActivitiesRouter from './routes/crm_activities.js';
 import crmFollowUpsRouter from './routes/crm_followups.js';
+import crmNotesRouter from './routes/crm_notes.js';
 import quotationsRouter from './routes/quotations.js';
 import salesOrdersRouter from './routes/sales_orders.js';
 import crmInvoicesRouter from './routes/crm_invoices.js';
@@ -124,6 +125,9 @@ app.use('/api/opportunities',   opportunitiesRouter);
 app.use('/api/crm/activities',  crmActivitiesRouter);
 app.use('/api/crm/followups',   crmFollowUpsRouter);
 app.use('/api/crm/follow-ups',  crmFollowUpsRouter);
+app.use('/api/crm/notes',       crmNotesRouter);
+app.use('/api/notes font',           crmNotesRouter);
+app.use('/api/notes',           crmNotesRouter);
 app.use('/api/quotations',      quotationsRouter);
 app.use('/api/sales-orders',    salesOrdersRouter);
 app.use('/api/crm/invoices',    crmInvoicesRouter);
@@ -224,3 +228,4 @@ server.listen(PORT, async () => {
     console.error('[CRM] Database startup check failed:', e.message);
   }
 });
+  

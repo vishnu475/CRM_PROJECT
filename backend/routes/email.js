@@ -16,6 +16,32 @@ function isValidEmail(email) {
  * GET /api/email/verify
  * Optional endpoint to verify SMTP credentials and connection status
  */
+/**
+ * GET /api/email/config-status
+ * Safe development diagnostic endpoint returning SMTP configuration availability status
+ */
+router.get('/config-status', (req, res) => {
+  const host = process.env.SMTP_HOST;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const secure = process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465';
+  const mailFrom = process.env.MAIL_FROM;
+
+  const isConfigured = (val, placeholder) => {
+    return Boolean(val && val.trim() && val.trim() !== placeholder);
+  };
+
+  return res.json({
+    smtpHostConfigured: isConfigured(host, 'YOUR_SMTP_HOST'),
+    smtpUserConfigured: isConfigured(user, 'YOUR_GMAIL_ADDRESS'),
+    smtpPasswordConfigured: isConfigured(pass, 'YOUR_GMAIL_APP_PASSWORD'),
+    smtpPort: port,
+    smtpSecure: secure,
+    mailFromConfigured: isConfigured(mailFrom, 'YOUR_GMAIL_ADDRESS')
+  });
+});
+
 router.get('/verify', async (req, res) => {
   const result = await verifyEmailTransporter();
   if (result.success) {

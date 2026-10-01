@@ -5,7 +5,7 @@ import { formatINR, getLeadScoreColor, getLeadStageColor } from '../utils/crmUti
 import { validateLeadStageTransition, validateAllQualificationFields, validateQualificationRequirement, validateQualificationBudget, validateQualificationDecisionMaker, validateQualificationExpectedCloseDate, isNegotiationInteraction, isDealAcceptedInteraction, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
 import { findMatchingCustomer, DuplicateCustomerMatch } from '../utils/duplicateCustomerDetection';
 import { 
-  ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
+  Loader2, ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
   CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award,
   XCircle, AlertOctagon, Rocket, Sparkles, CheckCheck, ShieldCheck, FolderKanban, Users,
   Trash2, ExternalLink, Image as FileImage
@@ -94,6 +94,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   };
 
   const [showProposalModal, setShowProposalModal] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [showWonModal, setShowWonModal] = useState(false);
   const [showLostModal, setShowLostModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -229,103 +230,185 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     const computedSentDate = targetStatus === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '';
     const isNegotiation = lead.stage === 'Negotiation';
 
-    if (isNegotiation && leadQuotation) {
-      // In Negotiation stage: Mark previous active proposal as 'Revised' if it was Sent, and create NEW proposal version
-      if (leadQuotation.status === 'Sent') {
-        await updateQuotation(leadQuotation.id, { status: 'Revised' });
+    if (targetStatus === 'Sent') {
+      if (!lead.email || !lead.email.trim()) {
+        const msg = 'Lead does not have an email address to send the proposal to.';
+        setValidationError(msg);
+        showToast(msg);
+        return;
       }
 
-      await addQuotation({
-        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
-        leadId: lead.id,
-        customerName: lead.name,
-        date: proposalForm.date || new Date().toISOString().split('T')[0],
-        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        amount: numericAmount,
-        status: targetStatus,
-        sentDate: computedSentDate,
-        revisionNumber: nextRevisionNumber,
-        revisionGroupId: currentRevisionGroupId,
-        notes: proposalForm.notes,
-        terms: proposalForm.terms,
-        itemsCount: 1,
-      });
+      try {
+        setIsSendingEmail(true);
+        setValidationError(null);
+        const res = await fetch(`/api/leads/${lead.id}/proposal/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            proposalAmount: numericAmount,
+            proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+            paymentTerms: proposalForm.terms,
+            revisionNotes: proposalForm.notes,
+            projectRequirements: lead.requirement || '',
+            sentDate: computedSentDate,
+          }),
+        });
 
-      // Maintain lead.stage = 'Negotiation' (Do NOT move back to Proposal)
-      updateLead(lead.id, {
-        proposalAmount: numericAmount,
-        proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
-        proposalStatus: targetStatus,
-        proposalSentDate: computedSentDate,
-        stage: 'Negotiation',
-      });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          const errMsg = data.error ? `Proposal could not be sent: ${data.error}` : (data.message || 'Proposal could not be sent. Please check the email configuration and try again.');
+          setValidationError(errMsg);
+          showToast(errMsg);
+          setIsSendingEmail(false);
+          return;
+        }
 
-      if (targetStatus === 'Sent') {
-        showToast(`Revised proposal v${nextRevisionNumber} sent to customer successfully.`);
-      } else {
-        showToast(`Revised proposal v${nextRevisionNumber} saved as Draft.`);
+        // Email sent successfully!
+        if (isNegotiation && leadQuotation) {
+          if (leadQuotation.status === 'Sent') {
+            await updateQuotation(leadQuotation.id, { status: 'Revised' });
+          }
+          await addQuotation({
+            quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+            customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+            leadId: lead.id,
+            customerName: lead.name,
+            date: proposalForm.date || new Date().toISOString().split('T')[0],
+            validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+            amount: numericAmount,
+            status: 'Sent',
+            sentDate: computedSentDate,
+            revisionNumber: nextRevisionNumber,
+            revisionGroupId: currentRevisionGroupId,
+            notes: proposalForm.notes,
+            terms: proposalForm.terms,
+            itemsCount: 1,
+          });
+          updateLead(lead.id, {
+            proposalAmount: numericAmount,
+            proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+            proposalStatus: 'Sent',
+            proposalSentDate: computedSentDate,
+            stage: 'Negotiation',
+          });
+          showToast(`Proposal sent successfully to ${lead.email}`);
+        } else {
+          const targetRev = isNegotiation ? nextRevisionNumber : (leadQuotation ? (leadQuotation.revisionNumber || 1) + 1 : 1);
+          await addQuotation({
+            quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+            customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+            leadId: lead.id,
+            customerName: lead.name,
+            date: proposalForm.date || new Date().toISOString().split('T')[0],
+            validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+            amount: numericAmount,
+            status: 'Sent',
+            sentDate: computedSentDate,
+            revisionNumber: targetRev,
+            revisionGroupId: currentRevisionGroupId,
+            notes: proposalForm.notes,
+            terms: proposalForm.terms,
+            itemsCount: 1,
+          });
+
+          const shouldAdvanceToProposal = lead.stage === 'Qualified' && numericAmount > 0;
+          const newStage = shouldAdvanceToProposal ? 'Proposal' : lead.stage;
+          updateLead(lead.id, {
+            proposalAmount: numericAmount,
+            proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+            proposalStatus: 'Sent',
+            proposalSentDate: computedSentDate,
+            stage: newStage,
+          });
+
+          showToast(`Proposal sent successfully to ${lead.email}`);
+        }
+
+        setShowProposalModal(false);
+        setValidationError(null);
+      } catch (err: any) {
+        const errMsg = 'Proposal could not be sent. Please check the email configuration and try again.';
+        setValidationError(errMsg);
+        showToast(errMsg);
+      } finally {
+        setIsSendingEmail(false);
       }
-    } else if (leadQuotation && lead.stage === 'Proposal' && targetStatus === 'Draft') {
-      // Updating an existing draft proposal
-      await updateQuotation(leadQuotation.id, {
-        amount: numericAmount,
-        date: proposalForm.date || new Date().toISOString().split('T')[0],
-        status: targetStatus,
-        sentDate: computedSentDate,
-        notes: proposalForm.notes,
-        terms: proposalForm.terms,
-      });
-
-      updateLead(lead.id, {
-        proposalAmount: numericAmount,
-        proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
-        proposalStatus: targetStatus,
-        proposalSentDate: computedSentDate,
-      });
-
-      showToast('Proposal draft updated successfully.');
     } else {
-      // Creating initial proposal or new version
-      const targetRev = isNegotiation ? nextRevisionNumber : (leadQuotation ? (leadQuotation.revisionNumber || 1) + 1 : 1);
-      
-      await addQuotation({
-        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
-        leadId: lead.id,
-        customerName: lead.name,
-        date: proposalForm.date || new Date().toISOString().split('T')[0],
-        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        amount: numericAmount,
-        status: targetStatus,
-        sentDate: computedSentDate,
-        revisionNumber: targetRev,
-        revisionGroupId: currentRevisionGroupId,
-        notes: proposalForm.notes,
-        terms: proposalForm.terms,
-        itemsCount: 1,
-      });
+      // Draft proposal handling
+      if (isNegotiation && leadQuotation) {
+        await addQuotation({
+          quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+          customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+          leadId: lead.id,
+          customerName: lead.name,
+          date: proposalForm.date || new Date().toISOString().split('T')[0],
+          validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          amount: numericAmount,
+          status: 'Draft',
+          sentDate: '',
+          revisionNumber: nextRevisionNumber,
+          revisionGroupId: currentRevisionGroupId,
+          notes: proposalForm.notes,
+          terms: proposalForm.terms,
+          itemsCount: 1,
+        });
 
-      const shouldAdvanceToProposal = lead.stage === 'Qualified' && targetStatus === 'Sent' && numericAmount > 0;
-      const newStage = shouldAdvanceToProposal ? 'Proposal' : lead.stage;
+        updateLead(lead.id, {
+          proposalAmount: numericAmount,
+          proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+          proposalStatus: 'Draft',
+          proposalSentDate: '',
+          stage: 'Negotiation',
+        });
+        showToast(`Revised proposal v${nextRevisionNumber} saved as Draft.`);
+      } else if (leadQuotation && lead.stage === 'Proposal') {
+        await updateQuotation(leadQuotation.id, {
+          amount: numericAmount,
+          date: proposalForm.date || new Date().toISOString().split('T')[0],
+          status: 'Draft',
+          sentDate: '',
+          notes: proposalForm.notes,
+          terms: proposalForm.terms,
+        });
 
-      updateLead(lead.id, {
-        proposalAmount: numericAmount,
-        proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
-        proposalStatus: targetStatus,
-        proposalSentDate: computedSentDate,
-        stage: newStage,
-      });
-
-      if (shouldAdvanceToProposal) {
-        showToast('Proposal created and sent successfully. Lead moved to Proposal.');
+        updateLead(lead.id, {
+          proposalAmount: numericAmount,
+          proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+          proposalStatus: 'Draft',
+          proposalSentDate: '',
+        });
+        showToast('Proposal draft updated successfully.');
       } else {
-        showToast('Proposal saved successfully.');
-      }
-    }
+        const targetRev = isNegotiation ? nextRevisionNumber : (leadQuotation ? (leadQuotation.revisionNumber || 1) + 1 : 1);
+        await addQuotation({
+          quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+          customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+          leadId: lead.id,
+          customerName: lead.name,
+          date: proposalForm.date || new Date().toISOString().split('T')[0],
+          validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          amount: numericAmount,
+          status: 'Draft',
+          sentDate: '',
+          revisionNumber: targetRev,
+          revisionGroupId: currentRevisionGroupId,
+          notes: proposalForm.notes,
+          terms: proposalForm.terms,
+          itemsCount: 1,
+        });
 
-    setShowProposalModal(false);
-    setValidationError(null);
+        updateLead(lead.id, {
+          proposalAmount: numericAmount,
+          proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+          proposalStatus: 'Draft',
+          proposalSentDate: '',
+        });
+        showToast('Proposal saved as Draft.');
+      }
+
+      setShowProposalModal(false);
+      setValidationError(null);
+    }
   };
 
   const handleAcceptProposal = async () => {
@@ -349,43 +432,89 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
   const handleSendProposal = async () => {
     if (!lead) return;
+    if (!lead.email || !lead.email.trim()) {
+      const msg = 'Lead does not have an email address to send the proposal to.';
+      setValidationError(msg);
+      showToast(msg);
+      return;
+    }
+
     const today = new Date().toISOString().split('T')[0];
     const amount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || 0;
     const date = leadQuotation?.date || lead.proposalDate || today;
 
-    if (leadQuotation) {
-      await updateQuotation(leadQuotation.id, {
-        status: 'Sent',
-        sentDate: today,
-      });
-    } else {
-      await addQuotation({
-        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
-        leadId: lead.id,
-        customerName: lead.name,
-        date: date,
-        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        amount: amount,
-        status: 'Sent',
-        sentDate: today,
-        itemsCount: 1,
-      });
+    if (amount <= 0) {
+      const msg = 'Please specify a valid positive proposal amount before sending.';
+      setValidationError(msg);
+      showToast(msg);
+      return;
     }
 
-    const shouldAdvance = lead.stage === 'Qualified' && amount > 0;
+    try {
+      setIsSendingEmail(true);
+      setValidationError(null);
+      const res = await fetch(`/api/leads/${lead.id}/proposal/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proposalAmount: amount,
+          proposalDate: date,
+          paymentTerms: leadQuotation?.terms || 'Standard payment terms',
+          revisionNotes: leadQuotation?.notes || '',
+          projectRequirements: lead.requirement || '',
+          sentDate: today,
+        }),
+      });
 
-    updateLead(lead.id, {
-      proposalStatus: 'Sent',
-      proposalSentDate: today,
-      proposalAmount: amount,
-      proposalDate: date,
-      ...(shouldAdvance ? { stage: 'Proposal' } : {}),
-    });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        const errMsg = data.error ? `Proposal could not be sent: ${data.error}` : (data.message || 'Proposal could not be sent. Please check the email configuration and try again.');
+        setValidationError(errMsg);
+        showToast(errMsg);
+        setIsSendingEmail(false);
+        return;
+      }
 
-    setValidationError(null);
+      // Email sent successfully!
+      if (leadQuotation) {
+        await updateQuotation(leadQuotation.id, {
+          status: 'Sent',
+          sentDate: today,
+        });
+      } else {
+        await addQuotation({
+          quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+          customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+          leadId: lead.id,
+          customerName: lead.name,
+          date: date,
+          validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          amount: amount,
+          status: 'Sent',
+          sentDate: today,
+          itemsCount: 1,
+        });
+      }
+
+      const shouldAdvance = lead.stage === 'Qualified' && amount > 0;
+      updateLead(lead.id, {
+        proposalStatus: 'Sent',
+        proposalSentDate: today,
+        proposalAmount: amount,
+        proposalDate: date,
+        ...(shouldAdvance ? { stage: 'Proposal' } : {}),
+      });
+
+      showToast(`Proposal sent successfully to ${lead.email}`);
+      setValidationError(null);
+    } catch (err: any) {
+      const errMsg = 'Proposal could not be sent. Please check the email configuration and try again.';
+      setValidationError(errMsg);
+      showToast(errMsg);
+    } finally {
+      setIsSendingEmail(false);
+    }
   };
-
   const openWonModal = () => {
     if (!lead) return;
     const defaultAmount = lead.finalAgreedAmount || leadQuotation?.amount || lead.proposalAmount || lead.value || lead.budget || '';
@@ -694,7 +823,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   };
 
   const leadActivities = useMemo(() => activities.filter(a => a.relatedTo === leadId || a.relatedTo === lead?.name).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()), [activities, leadId, lead?.name]);
-  const leadNotes = useMemo(() => notes.filter(n => n.relatedRecord === leadId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [notes, leadId]);
+  const leadNotes = useMemo(() => notes.filter(n => n.relatedId === leadId || n.related_id === leadId || n.relatedRecord === leadId || (n.relatedType === 'Lead' && n.relatedId === leadId)).sort((a, b) => new Date(b.createdAt || b.created_at || 0).getTime() - new Date(a.createdAt || a.created_at || 0).getTime()), [notes, leadId]);
   const leadDocs = useMemo(() => documents.filter(d => d.linkedEntity === leadId), [documents, leadId]);
   
   // Find next pending follow up
@@ -801,10 +930,15 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const handleAddNote = () => {
     if (!noteContent.trim()) return;
     addNote({
-      title: 'Lead Note',
-      content: noteContent,
+      title: `Note for ${lead?.name || 'Lead'}`,
+      type: 'General',
+      content: noteContent.trim(),
+      relatedType: 'Lead',
+      related_type: 'Lead',
+      relatedId: leadId,
+      related_id: leadId,
       relatedRecord: leadId,
-      createdBy: 'Current User', // Mocked user
+      createdBy: 'Sarah Jenkins',
       visibility: 'Public'
     });
     setNoteContent('');
@@ -1628,11 +1762,20 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               <div className="flex flex-wrap items-center gap-2">
                 {(leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') && (
                   <button
+                    disabled={isSendingEmail}
                     onClick={handleSendProposal}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Send proposal to customer"
                   >
-                    <CheckCircle2 size={13} /> Send Proposal
+                    {isSendingEmail ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" /> Sending Proposal...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={13} /> Send Proposal
+                      </>
+                    )}
                   </button>
                 )}
                 {lead.stage === 'Negotiation' && (
@@ -2789,24 +2932,35 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={isSendingEmail}
                   onClick={() => setShowProposalModal(false)}
-                  className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                  className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
+                  disabled={isSendingEmail}
                   onClick={(e) => handleSaveProposal(e, 'Draft')}
-                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold transition"
+                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold transition disabled:opacity-50"
                 >
                   📝 Save Draft
                 </button>
                 <button
                   type="button"
+                  disabled={isSendingEmail}
                   onClick={(e) => handleSaveProposal(e, 'Sent')}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1.5"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <CheckCircle2 size={14} /> Send Revised Proposal
+                  {isSendingEmail ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> Sending Proposal...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={14} /> {lead.stage === 'Negotiation' ? 'Send Revised Proposal' : 'Send Proposal'}
+                    </>
+                  )}
                 </button>
               </div>
             </form>

@@ -1,4 +1,13 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import nodemailer from 'nodemailer';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = path.resolve(__dirname, '../.env');
+
+dotenv.config({ path: envPath });
 
 let transporterInstance = null;
 
@@ -12,9 +21,9 @@ function validateSmtpConfig() {
   const pass = process.env.SMTP_PASS;
 
   const missing = [];
-  if (!host) missing.push('SMTP_HOST');
-  if (!user) missing.push('SMTP_USER');
-  if (!pass) missing.push('SMTP_PASS');
+  if (!host || !host.trim()) missing.push('SMTP_HOST');
+  if (!user || !user.trim()) missing.push('SMTP_USER');
+  if (!pass || !pass.trim()) missing.push('SMTP_PASS');
 
   if (missing.length > 0) {
     const errorMsg = `SMTP configuration incomplete. Missing environment variable(s): ${missing.join(', ')}`;
@@ -22,12 +31,12 @@ function validateSmtpConfig() {
   }
 
   return {
-    host,
+    host: host.trim(),
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
-    user,
-    pass,
-    from: process.env.MAIL_FROM || user,
+    user: user.trim(),
+    pass: pass.trim(),
+    from: (process.env.MAIL_FROM && process.env.MAIL_FROM.trim()) ? process.env.MAIL_FROM.trim() : user.trim(),
   };
 }
 
@@ -60,18 +69,30 @@ function getTransporter() {
 
 /**
  * Verifies the connection and authentication with the configured SMTP server.
+ * Logs safe diagnostic status to console without exposing passwords or tokens.
  * @returns {Promise<{ success: boolean, message: string }>}
  */
 export async function verifyEmailTransporter() {
+  const hostConfigured = !!(process.env.SMTP_HOST && process.env.SMTP_HOST.trim());
+  const userConfigured = !!(process.env.SMTP_USER && process.env.SMTP_USER.trim());
+  const passConfigured = !!(process.env.SMTP_PASS && process.env.SMTP_PASS.trim());
+
+  console.log(`[SMTP] Host configured: ${hostConfigured}`);
+  console.log(`[SMTP] User configured: ${userConfigured}`);
+  console.log(`[SMTP] Password configured: ${passConfigured}`);
+
   try {
     const config = validateSmtpConfig();
     const transporter = getTransporter();
     await transporter.verify();
+    console.log(`[SMTP] Transport verification: SUCCESS`);
     return {
       success: true,
       message: `SMTP Transporter verified successfully for ${config.host}:${config.port}`,
     };
   } catch (err) {
+    console.error(`[SMTP] Transport verification: FAILED`);
+    console.error(`[SMTP] Error: ${err.message || 'SMTP Transporter verification failed'}`);
     return {
       success: false,
       message: err.message || 'SMTP Transporter verification failed',
@@ -103,6 +124,14 @@ export async function sendEmail({ to, subject, text, html, attachments, from }) 
       throw new Error('Email body ("text" or "html") is required.');
     }
 
+    if (process.env.MOCK_EMAIL === 'true') {
+      return {
+        success: true,
+        messageId: `MOCK-MSG-${Date.now()}`,
+        response: '250 OK Mocked Email Sent',
+      };
+    }
+
     const config = validateSmtpConfig();
     const transporter = getTransporter();
 
@@ -123,6 +152,7 @@ export async function sendEmail({ to, subject, text, html, attachments, from }) 
       response: info.response,
     };
   } catch (err) {
+    console.error(`[SMTP] Email Delivery Error: ${err.message || 'Failed to send email via SMTP service'}`);
     return {
       success: false,
       message: err.message || 'Failed to send email via SMTP service',

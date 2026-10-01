@@ -912,10 +912,23 @@ export interface FollowUp {
 export interface Note {
   id: string;
   title: string;
+  type?: 'General' | 'Customer Requirements' | 'Internal' | 'Technical' | 'Commercial' | string;
   content: string;
-  relatedRecord: string; // e.g., 'Lead: John Doe'
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  visibility: 'Public' | 'Private';
+  relatedType?: 'Lead' | 'Customer' | 'Opportunity' | '' | string;
+  related_type?: string;
+  relatedId?: string;
+  related_id?: string;
+  entityType?: string;
+  entity_type?: string;
+  entityId?: string;
+  entity_id?: string;
+  relatedRecord?: string;
+  createdBy?: string;
+  created_by?: string;
+  author?: string;
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
+  visibility?: 'Public' | 'Private';
 }
