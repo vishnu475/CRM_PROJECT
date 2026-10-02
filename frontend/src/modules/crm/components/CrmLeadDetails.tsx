@@ -2,10 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor, getLeadStageColor } from '../utils/crmUtils';
-import { validateLeadStageTransition, isNegotiationInteraction, isDealAcceptedInteraction, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
+import { validateLeadStageTransition, validateAllQualificationFields, validateQualificationRequirement, validateQualificationBudget, validateQualificationDecisionMaker, validateQualificationExpectedCloseDate, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
 import { findMatchingCustomer, DuplicateCustomerMatch } from '../utils/duplicateCustomerDetection';
 import { 
-  ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
+  Loader2, ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
   CheckCircle2, Plus, Phone, Mail, Clock, MapPin, Building2, Download, AlertCircle, Award,
   XCircle, AlertOctagon, Rocket, Sparkles, CheckCheck, ShieldCheck, FolderKanban, Users,
   Trash2, ExternalLink, Image as FileImage
@@ -60,7 +60,41 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+
+  const [formErrors, setFormErrors] = useState<{ requirement?: string; budget?: string; decisionMaker?: string; expectedCloseDate?: string }>({});
+  const [touchedFields, setTouchedFields] = useState<{ requirement?: boolean; budget?: boolean; decisionMaker?: boolean; expectedCloseDate?: boolean }>({});
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setSuccessToast(msg);
+    setTimeout(() => setSuccessToast(null), 4000);
+  };
+
+  const validateField = (name: string, val: any) => {
+    let err: string | undefined;
+    if (name === 'requirement') {
+      const res = validateQualificationRequirement(val);
+      if (!res.isValid) err = res.message;
+    } else if (name === 'budget') {
+      const res = validateQualificationBudget(val);
+      if (!res.isValid) err = res.message;
+    } else if (name === 'decisionMaker') {
+      const res = validateQualificationDecisionMaker(val);
+      if (!res.isValid) err = res.message;
+    } else if (name === 'expectedCloseDate') {
+      const res = validateQualificationExpectedCloseDate(val);
+      if (!res.isValid) err = res.message;
+    }
+    setFormErrors(prev => ({ ...prev, [name]: err }));
+  };
+
+  const handleFieldBlur = (name: string, val: any) => {
+    setTouchedFields(prev => ({ ...prev, [name]: true }));
+    validateField(name, val);
+  };
+
   const [showProposalModal, setShowProposalModal] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [showWonModal, setShowWonModal] = useState(false);
   const [showLostModal, setShowLostModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -99,6 +133,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     date: '',
     status: 'Draft' as 'Draft' | 'Sent',
     sentDate: '',
+    notes: '',
+    terms: '',
   });
   const [wonForm, setWonForm] = useState({
     finalAgreedAmount: '',
@@ -140,115 +176,345 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
     assignedToEmployeeId: '',
   });
 
-  const leadQuotation = useMemo(() => {
-    if (!lead) return null;
-    return quotations.find(
-      (q) =>
-        q.customerId === lead.id ||
-        q.leadId === lead.id ||
-        q.customerName === lead.name ||
-        (q.customerId && q.customerId.includes(lead.id)) ||
-        (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
-    ) || null;
+  const leadQuotations = useMemo(() => {
+    if (!lead) return [];
+    return quotations
+      .filter(
+        (q) =>
+          q.customerId === lead.id ||
+          q.leadId === lead.id ||
+          q.customerName === lead.name ||
+          (q.customerId && q.customerId.includes(lead.id)) ||
+          (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
+      )
+      .sort((a, b) => {
+        const revA = a.revisionNumber || 1;
+        const revB = b.revisionNumber || 1;
+        if (revA !== revB) return revB - revA;
+        return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+      });
   }, [quotations, lead]);
+
+  const leadQuotation = leadQuotations.length > 0 ? leadQuotations[0] : null;
+  const nextRevisionNumber = leadQuotations.length > 0 ? Math.max(...leadQuotations.map(q => q.revisionNumber || 1)) + 1 : 1;
+  const currentRevisionGroupId = leadQuotations.length > 0 && leadQuotations[0].revisionGroupId ? leadQuotations[0].revisionGroupId : `GRP-${lead?.id || Date.now()}`;
 
   const openProposalModal = () => {
     if (!lead) return;
     const defaultAmount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || '';
-    const defaultDate = leadQuotation?.date || lead.proposalDate || new Date().toISOString().split('T')[0];
-    const defaultStatus: 'Draft' | 'Sent' = (leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') ? 'Draft' : 'Sent';
-    const defaultSentDate = leadQuotation?.sentDate || lead.proposalSentDate || (defaultStatus === 'Sent' ? new Date().toISOString().split('T')[0] : '');
+    const defaultDate = new Date().toISOString().split('T')[0];
+    const defaultStatus: 'Draft' | 'Sent' = 'Sent';
+    const defaultSentDate = defaultDate;
 
     setProposalForm({
       amount: defaultAmount ? defaultAmount.toString() : '',
       date: defaultDate,
       status: defaultStatus,
       sentDate: defaultSentDate,
+      notes: '',
+      terms: leadQuotation?.terms || 'Standard 30-day payment terms',
     });
     setShowProposalModal(true);
   };
 
-  const handleSaveProposal = async (e?: React.FormEvent) => {
+  const handleSaveProposal = async (e?: React.FormEvent, statusOverride?: 'Draft' | 'Sent') => {
     if (e) e.preventDefault();
     if (!lead) return;
     const numericAmount = parseFloat(proposalForm.amount) || 0;
-    const computedSentDate = proposalForm.status === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '';
-
-    if (leadQuotation) {
-      await updateQuotation(leadQuotation.id, {
-        amount: numericAmount,
-        date: proposalForm.date || new Date().toISOString().split('T')[0],
-        status: proposalForm.status,
-        sentDate: computedSentDate,
-      });
-    } else {
-      await addQuotation({
-        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: lead.id,
-        leadId: lead.id,
-        customerName: lead.name,
-        date: proposalForm.date || new Date().toISOString().split('T')[0],
-        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        amount: numericAmount,
-        status: proposalForm.status,
-        sentDate: computedSentDate,
-        itemsCount: 1,
-      });
+    if (numericAmount <= 0) {
+      setValidationError('Please enter a valid positive proposal amount.');
+      return;
     }
 
-    const shouldAdvance = lead.stage === 'Qualified' && proposalForm.status === 'Sent' && numericAmount > 0;
+    const targetStatus = statusOverride || proposalForm.status || 'Sent';
+    const computedSentDate = targetStatus === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '';
+    const isNegotiation = false;
 
-    updateLead(lead.id, {
-      proposalAmount: numericAmount,
-      proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
-      proposalStatus: proposalForm.status,
-      proposalSentDate: computedSentDate,
-      ...(shouldAdvance ? { stage: 'Proposal' } : {}),
+    if (targetStatus === 'Sent') {
+      if (!lead.email || !lead.email.trim()) {
+        const msg = 'Lead does not have an email address to send the proposal to.';
+        setValidationError(msg);
+        showToast(msg);
+        return;
+      }
+
+      try {
+        setIsSendingEmail(true);
+        setValidationError(null);
+        const res = await fetch(`/api/leads/${lead.id}/proposal/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            proposalAmount: numericAmount,
+            proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+            paymentTerms: proposalForm.terms,
+            revisionNotes: proposalForm.notes,
+            projectRequirements: lead.requirement || '',
+            sentDate: computedSentDate,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          const errMsg = data.error ? `Proposal could not be sent: ${data.error}` : (data.message || 'Proposal could not be sent. Please check the email configuration and try again.');
+          setValidationError(errMsg);
+          showToast(errMsg);
+          setIsSendingEmail(false);
+          return;
+        }
+
+        // Email sent successfully!
+        if (isNegotiation && leadQuotation) {
+          if (leadQuotation.status === 'Sent') {
+            await updateQuotation(leadQuotation.id, { status: 'Revised' });
+          }
+          await addQuotation({
+            quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+            customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+            leadId: lead.id,
+            customerName: lead.name,
+            date: proposalForm.date || new Date().toISOString().split('T')[0],
+            validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+            amount: numericAmount,
+            status: 'Sent',
+            sentDate: computedSentDate,
+            revisionNumber: nextRevisionNumber,
+            revisionGroupId: currentRevisionGroupId,
+            notes: proposalForm.notes,
+            terms: proposalForm.terms,
+            itemsCount: 1,
+          });
+          updateLead(lead.id, {
+            proposalAmount: numericAmount,
+            proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+            proposalStatus: 'Sent',
+            proposalSentDate: computedSentDate,
+            stage: 'Qualified',
+          });
+          showToast(`Proposal sent successfully to ${lead.email}`);
+        } else {
+          const targetRev = leadQuotation ? ((leadQuotation as any).revisionNumber || 1) + 1 : 1;
+          await addQuotation({
+            quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+            customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+            leadId: lead.id,
+            customerName: lead.name,
+            date: proposalForm.date || new Date().toISOString().split('T')[0],
+            validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+            amount: numericAmount,
+            status: 'Sent',
+            sentDate: computedSentDate,
+            revisionNumber: targetRev,
+            revisionGroupId: currentRevisionGroupId,
+            notes: proposalForm.notes,
+            terms: proposalForm.terms,
+            itemsCount: 1,
+          });
+
+          const shouldAdvanceToProposal = lead.stage === 'Qualified' && numericAmount > 0;
+          const newStage = lead.stage;
+          updateLead(lead.id, {
+            proposalAmount: numericAmount,
+            proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+            proposalStatus: 'Sent',
+            proposalSentDate: computedSentDate,
+            stage: newStage,
+          });
+
+          showToast(`Proposal sent successfully to ${lead.email}`);
+        }
+
+        setShowProposalModal(false);
+        setValidationError(null);
+      } catch (err: any) {
+        const errMsg = 'Proposal could not be sent. Please check the email configuration and try again.';
+        setValidationError(errMsg);
+        showToast(errMsg);
+      } finally {
+        setIsSendingEmail(false);
+      }
+    } else {
+      // Draft proposal handling
+      if (isNegotiation && leadQuotation) {
+        await addQuotation({
+          quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+          customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+          leadId: lead.id,
+          customerName: lead.name,
+          date: proposalForm.date || new Date().toISOString().split('T')[0],
+          validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          amount: numericAmount,
+          status: 'Draft',
+          sentDate: '',
+          revisionNumber: nextRevisionNumber,
+          revisionGroupId: currentRevisionGroupId,
+          notes: proposalForm.notes,
+          terms: proposalForm.terms,
+          itemsCount: 1,
+        });
+
+        updateLead(lead.id, {
+          proposalAmount: numericAmount,
+          proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+          proposalStatus: 'Draft',
+          proposalSentDate: '',
+          stage: 'Qualified',
+        });
+        showToast(`Revised proposal v${nextRevisionNumber} saved as Draft.`);
+      } else if (leadQuotation) {
+        await updateQuotation(leadQuotation.id, {
+          amount: numericAmount,
+          date: proposalForm.date || new Date().toISOString().split('T')[0],
+          status: 'Draft',
+          sentDate: '',
+          notes: proposalForm.notes,
+          terms: proposalForm.terms,
+        });
+
+        updateLead(lead.id, {
+          proposalAmount: numericAmount,
+          proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+          proposalStatus: 'Draft',
+          proposalSentDate: '',
+        });
+        showToast('Proposal draft updated successfully.');
+      } else {
+        const targetRev = leadQuotation ? ((leadQuotation as any).revisionNumber || 1) + 1 : 1;
+        await addQuotation({
+          quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+          customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+          leadId: lead.id,
+          customerName: lead.name,
+          date: proposalForm.date || new Date().toISOString().split('T')[0],
+          validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          amount: numericAmount,
+          status: 'Draft',
+          sentDate: '',
+          revisionNumber: targetRev,
+          revisionGroupId: currentRevisionGroupId,
+          notes: proposalForm.notes,
+          terms: proposalForm.terms,
+          itemsCount: 1,
+        });
+
+        updateLead(lead.id, {
+          proposalAmount: numericAmount,
+          proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
+          proposalStatus: 'Draft',
+          proposalSentDate: '',
+        });
+        showToast('Proposal saved as Draft.');
+      }
+
+      setShowProposalModal(false);
+      setValidationError(null);
+    }
+  };
+
+  const handleAcceptProposal = async () => {
+    if (!lead || !leadQuotation) return;
+    const today = new Date().toISOString().split('T')[0];
+
+    await updateQuotation(leadQuotation.id, {
+      status: 'Accepted',
+      acceptedDate: today,
     });
 
-    setShowProposalModal(false);
-    setValidationError(null);
+    updateLead(lead.id, {
+      stage: 'Won',
+      finalAgreedAmount: leadQuotation.amount,
+      value: leadQuotation.amount,
+      proposalStatus: 'Accepted',
+    });
+
+    showToast('Final proposal accepted! Lead successfully moved to Won.');
   };
 
   const handleSendProposal = async () => {
     if (!lead) return;
+    if (!lead.email || !lead.email.trim()) {
+      const msg = 'Lead does not have an email address to send the proposal to.';
+      setValidationError(msg);
+      showToast(msg);
+      return;
+    }
+
     const today = new Date().toISOString().split('T')[0];
     const amount = leadQuotation?.amount || lead.proposalAmount || lead.budget || lead.value || 0;
     const date = leadQuotation?.date || lead.proposalDate || today;
 
-    if (leadQuotation) {
-      await updateQuotation(leadQuotation.id, {
-        status: 'Sent',
-        sentDate: today,
-      });
-    } else {
-      await addQuotation({
-        quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
-        customerId: lead.id,
-        leadId: lead.id,
-        customerName: lead.name,
-        date: date,
-        validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-        amount: amount,
-        status: 'Sent',
-        sentDate: today,
-        itemsCount: 1,
-      });
+    if (amount <= 0) {
+      const msg = 'Please specify a valid positive proposal amount before sending.';
+      setValidationError(msg);
+      showToast(msg);
+      return;
     }
 
-    const shouldAdvance = lead.stage === 'Qualified' && amount > 0;
+    try {
+      setIsSendingEmail(true);
+      setValidationError(null);
+      const res = await fetch(`/api/leads/${lead.id}/proposal/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proposalAmount: amount,
+          proposalDate: date,
+          paymentTerms: leadQuotation?.terms || 'Standard payment terms',
+          revisionNotes: leadQuotation?.notes || '',
+          projectRequirements: lead.requirement || '',
+          sentDate: today,
+        }),
+      });
 
-    updateLead(lead.id, {
-      proposalStatus: 'Sent',
-      proposalSentDate: today,
-      proposalAmount: amount,
-      proposalDate: date,
-      ...(shouldAdvance ? { stage: 'Proposal' } : {}),
-    });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        const errMsg = data.error ? `Proposal could not be sent: ${data.error}` : (data.message || 'Proposal could not be sent. Please check the email configuration and try again.');
+        setValidationError(errMsg);
+        showToast(errMsg);
+        setIsSendingEmail(false);
+        return;
+      }
 
-    setValidationError(null);
+      // Email sent successfully!
+      if (leadQuotation) {
+        await updateQuotation(leadQuotation.id, {
+          status: 'Sent',
+          sentDate: today,
+        });
+      } else {
+        await addQuotation({
+          quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+          customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
+          leadId: lead.id,
+          customerName: lead.name,
+          date: date,
+          validUntil: lead.expectedCloseDate || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          amount: amount,
+          status: 'Sent',
+          sentDate: today,
+          itemsCount: 1,
+        });
+      }
+
+      
+      updateLead(lead.id, {
+        proposalStatus: 'Sent',
+        proposalSentDate: today,
+        proposalAmount: amount,
+        proposalDate: date,
+        
+      });
+
+      showToast(`Proposal sent successfully to ${lead.email}`);
+      setValidationError(null);
+    } catch (err: any) {
+      const errMsg = 'Proposal could not be sent. Please check the email configuration and try again.';
+      setValidationError(errMsg);
+      showToast(errMsg);
+    } finally {
+      setIsSendingEmail(false);
+    }
   };
-
   const openWonModal = () => {
     if (!lead) return;
     const defaultAmount = lead.finalAgreedAmount || leadQuotation?.amount || lead.proposalAmount || lead.value || lead.budget || '';
@@ -433,6 +699,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
   const openEditModal = () => {
     if (!lead) return;
+    setFormErrors({});
+    setTouchedFields({});
     setEditForm({
       name: lead.name || '',
       company: lead.company || '',
@@ -453,30 +721,109 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const handleSaveEdit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!lead) return;
-    const updatedBudget = parseFloat(editForm.budget) || 0;
-    const updates: Partial<Lead> = {
-      name: editForm.name,
-      company: editForm.company,
-      email: editForm.email,
-      phone: editForm.phone,
-      requirement: editForm.requirement.trim(),
-      budget: updatedBudget,
-      value: updatedBudget,
-      decisionMaker: editForm.decisionMaker.trim(),
-      contactPerson: editForm.decisionMaker.trim() || lead.contactPerson,
-      expectedCloseDate: editForm.expectedCloseDate,
-      industry: editForm.industry,
-      source: editForm.source,
-      assignedTo: editForm.assignedTo || lead.assignedTo,
-      assignedToEmployeeId: editForm.assignedToEmployeeId || lead.assignedToEmployeeId,
-    };
-    updateLead(lead.id, updates);
-    setShowEditModal(false);
-    setValidationError(null);
+
+    const isContactedStage = lead.stage === 'Contacted';
+
+    if (isContactedStage) {
+      // Validate qualification requirements strictly for Contacted lead
+      const valResult = validateAllQualificationFields({
+        requirement: editForm.requirement,
+        budget: editForm.budget,
+        decisionMaker: editForm.decisionMaker,
+        expectedCloseDate: editForm.expectedCloseDate,
+      });
+
+      setTouchedFields({
+        requirement: true,
+        budget: true,
+        decisionMaker: true,
+        expectedCloseDate: true,
+      });
+
+      setFormErrors(valResult.errors);
+
+      if (!valResult.isValid) {
+        // Focus and scroll first invalid field into view
+        const firstInvalidKey = Object.keys(valResult.errors)[0];
+        if (firstInvalidKey) {
+          const el = document.getElementById(`qual-${firstInvalidKey}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.focus();
+          }
+        }
+        return;
+      }
+
+      const updatedBudget = parseFloat(editForm.budget) || 0;
+      const tempUpdatedLead: Lead = {
+        ...lead,
+        requirement: editForm.requirement.trim(),
+        budget: updatedBudget,
+        value: updatedBudget,
+        decisionMaker: editForm.decisionMaker.trim(),
+        contactPerson: editForm.decisionMaker.trim() || lead.contactPerson,
+        expectedCloseDate: editForm.expectedCloseDate,
+      };
+
+      // Reuse existing workflow validation
+      const workflowCheck = validateLeadStageTransition(tempUpdatedLead, 'Qualified', activities, quotations);
+      if (!workflowCheck.allowed) {
+        setValidationError(workflowCheck.message || 'Stage transition to Qualified not allowed.');
+        return;
+      }
+
+      const updates: Partial<Lead> = {
+        name: editForm.name,
+        company: editForm.company,
+        email: editForm.email,
+        phone: editForm.phone,
+        requirement: editForm.requirement.trim(),
+        budget: updatedBudget,
+        value: updatedBudget,
+        decisionMaker: editForm.decisionMaker.trim(),
+        contactPerson: editForm.decisionMaker.trim() || lead.contactPerson,
+        expectedCloseDate: editForm.expectedCloseDate,
+        industry: editForm.industry,
+        source: editForm.source,
+        assignedTo: editForm.assignedTo || lead.assignedTo,
+        assignedToEmployeeId: editForm.assignedToEmployeeId || lead.assignedToEmployeeId,
+        stage: 'Qualified',
+      };
+
+      updateLead(lead.id, updates);
+      setShowEditModal(false);
+      setValidationError(null);
+      showToast('Qualification completed successfully. Lead moved to Qualified.');
+    } else {
+      // Normal edit for non-Contacted leads (does NOT change stage to Qualified)
+      const updatedBudget = parseFloat(editForm.budget) || 0;
+      const updates: Partial<Lead> = {
+        name: editForm.name,
+        company: editForm.company,
+        email: editForm.email,
+        phone: editForm.phone,
+        requirement: editForm.requirement.trim(),
+        budget: updatedBudget,
+        value: updatedBudget,
+        decisionMaker: editForm.decisionMaker.trim(),
+        contactPerson: editForm.decisionMaker.trim() || lead.contactPerson,
+        expectedCloseDate: editForm.expectedCloseDate,
+        industry: editForm.industry,
+        source: editForm.source,
+        assignedTo: editForm.assignedTo || lead.assignedTo,
+        assignedToEmployeeId: editForm.assignedToEmployeeId || lead.assignedToEmployeeId,
+      };
+
+      updateLead(lead.id, updates);
+      setShowEditModal(false);
+      setValidationError(null);
+      showToast('Lead details updated successfully.');
+    }
   };
 
   const leadActivities = useMemo(() => activities.filter(a => a.relatedTo === leadId || a.relatedTo === lead?.name).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()), [activities, leadId, lead?.name]);
-  const leadNotes = useMemo(() => notes.filter(n => n.relatedRecord === leadId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [notes, leadId]);
+  const leadNotes = useMemo(() => notes.filter(n => n.relatedId === leadId || n.related_id === leadId || n.relatedRecord === leadId || (n.relatedType === 'Lead' && n.relatedId === leadId)).sort((a, b) => new Date(b.createdAt || b.created_at || 0).getTime() - new Date(a.createdAt || a.created_at || 0).getTime()), [notes, leadId]);
   const leadDocs = useMemo(() => documents.filter(d => d.linkedEntity === leadId), [documents, leadId]);
   
   // Find next pending follow up
@@ -516,6 +863,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       openLostModal();
       return;
     }
+
+    // STEP 42: Intercept Contacted -> Qualified stage bubble click to open Qualification Modal
+    if (lead.stage === 'Contacted' && newStage === 'Qualified') {
+      openEditModal();
+      return;
+    }
+
     const validation = validateLeadStageTransition(lead, newStage, activities, quotations);
     if (!validation.allowed) {
       setValidationError(validation.message || 'Stage transition not allowed.');
@@ -550,23 +904,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       updateLead(lead.id, { stage: 'Contacted' });
     }
 
-    // Auto-advance lead stage to 'Negotiation' if in 'Proposal' and completed negotiation activity recorded
-    if (lead.stage === 'Proposal' && actStatus === 'Completed') {
-      const isNeg = isNegotiationInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
-      if (isNeg) {
-        updateLead(lead.id, { stage: 'Negotiation' });
-      }
-    }
 
-    // Auto-advance lead stage to 'Won' if in 'Negotiation' and completed customer acceptance activity recorded
-    if (lead.stage === 'Negotiation' && actStatus === 'Completed') {
-      const isAccepted = isDealAcceptedInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
-      const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
-      const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
-      if (isAccepted && hasAmount && hasDate) {
-        updateLead(lead.id, { stage: 'Won' });
-      }
-    }
 
     setActivityForm({ type: 'Call', purpose: 'General', title: '', date: '', outcome: '', status: 'Completed' });
     setShowActivityForm(false);
@@ -576,10 +914,15 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
   const handleAddNote = () => {
     if (!noteContent.trim()) return;
     addNote({
-      title: 'Lead Note',
-      content: noteContent,
+      title: `Note for ${lead?.name || 'Lead'}`,
+      type: 'General',
+      content: noteContent.trim(),
+      relatedType: 'Lead',
+      related_type: 'Lead',
+      relatedId: leadId,
+      related_id: leadId,
       relatedRecord: leadId,
-      createdBy: 'Current User', // Mocked user
+      createdBy: 'Sarah Jenkins',
       visibility: 'Public'
     });
     setNoteContent('');
@@ -677,7 +1020,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </button>
               )
             )}
-            {lead.stage === 'Negotiation' && (
+            {false && (
               <button
                 onClick={openWonModal}
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-lg shadow-sm transition flex items-center gap-1.5"
@@ -1316,33 +1659,31 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           </div>
 
           {/* PROPOSAL & QUOTATION DETAILS SECTION */}
-          <div className="bg-white rounded-xl border border-indigo-100 shadow-xs p-6 md:col-span-2">
-            <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
-              <h2 className="text-base font-bold text-[#0f172a] flex items-center">
-                <FileText size={18} className="mr-2 text-indigo-600" /> Proposal & Quotation Details
-              </h2>
+          <div className="bg-white rounded-xl border border-indigo-100 shadow-xs p-6 md:col-span-2 space-y-5">
+            <div className="flex flex-wrap justify-between items-center pb-3 border-b border-slate-100 gap-2">
               <div className="flex items-center gap-2">
-                {(leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') && (
-                  <button
-                    onClick={handleSendProposal}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-                    title="Send proposal to customer"
-                  >
-                    <CheckCircle2 size={13} /> Send Proposal
-                  </button>
+                <FileText size={18} className="text-indigo-600" />
+                <h2 className="text-base font-bold text-[#0f172a]">Current Proposal</h2>
+                {leadQuotation && (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                    Version v{leadQuotation?.revisionNumber || 1}
+                  </span>
                 )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={openProposalModal}
-                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                  onClick={() => setActiveModule('sales')}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
                 >
-                  <Edit2 size={12} /> {leadQuotation || lead.proposalAmount ? 'Edit Proposal' : '+ Create Proposal'}
+                  <FileText size={13} /> {leadQuotation ? 'View Quotation in Sales' : 'Create Quotation in Sales'}
                 </button>
               </div>
             </div>
 
+            {/* CURRENT PROPOSAL CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">1. Proposal Amount</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Version & Amount</span>
                 <p className="text-base font-bold text-[#0f172a]">
                   {(leadQuotation?.amount && leadQuotation.amount > 0) || (lead.proposalAmount && lead.proposalAmount > 0) ? (
                     formatINR(leadQuotation?.amount || lead.proposalAmount || 0)
@@ -1350,21 +1691,32 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     <span className="text-slate-400 font-normal italic text-sm">No amount set</span>
                   )}
                 </p>
+                <span className="text-xs text-indigo-600 font-semibold block mt-0.5">
+                  {leadQuotation ? 'v' + (leadQuotation.revisionNumber || 1) : 'v1'}
+                </span>
               </div>
 
               <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">2. Proposal Date</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Proposal Date</span>
                 <p className="text-sm font-bold text-[#0f172a]">
                   {leadQuotation?.date || lead.proposalDate || <span className="text-slate-400 font-normal italic text-sm">Not set</span>}
                 </p>
               </div>
 
               <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">3. Proposal Status</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Proposal Status</span>
                 <div className="mt-0.5">
-                  {(leadQuotation?.status === 'Sent' || lead.proposalStatus === 'Sent') ? (
+                  {leadQuotation?.status === 'Accepted' ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Accepted
+                    </span>
+                  ) : (leadQuotation?.status === 'Sent' || lead.proposalStatus === 'Sent') ? (
                     <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
                       <CheckCircle2 size={12} /> Sent
+                    </span>
+                  ) : leadQuotation?.status === 'Revised' ? (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200 inline-flex items-center gap-1">
+                      <Clock size={12} /> Revised
                     </span>
                   ) : (leadQuotation || lead.proposalStatus) ? (
                     <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 inline-flex items-center gap-1">
@@ -1377,12 +1729,71 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </div>
 
               <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200/80">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">4. Sent Date</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Sent Date</span>
                 <p className="text-sm font-bold text-[#0f172a]">
                   {leadQuotation?.sentDate || lead.proposalSentDate || <span className="text-slate-400 font-normal italic text-xs">Not sent yet</span>}
                 </p>
               </div>
             </div>
+
+            {/* PROPOSAL HISTORY LIST */}
+            {leadQuotations.length > 0 && (
+              <div className="pt-3 border-t border-slate-100">
+                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+                  <span>Proposal History</span>
+                  <span className="text-slate-500 text-[11px] font-semibold">{leadQuotations.length} Version{leadQuotations.length > 1 ? 's' : ''} Stored</span>
+                </h3>
+                <div className="space-y-2">
+                  {leadQuotations.map((quote) => (
+                    <div
+                      key={quote.id}
+                      className={`p-3 rounded-lg border transition flex flex-wrap items-center justify-between gap-2 ${
+                        quote.id === leadQuotation?.id
+                          ? 'bg-indigo-50/50 border-indigo-200 shadow-2xs'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="px-2 py-1 rounded text-xs font-extrabold bg-slate-800 text-white">
+                          v{quote.revisionNumber || 1}
+                        </span>
+                        <div>
+                          <span className="text-xs font-bold text-[#0f172a] block">
+                            {formatINR(quote.amount || 0)}
+                          </span>
+                          <span className="text-[11px] text-slate-500 block">
+                            Date: {quote.date || '—'} {quote.sentDate ? '• Sent: ' + quote.sentDate : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {quote.notes && (
+                          <span className="text-xs text-slate-600 italic bg-white px-2 py-0.5 rounded border border-slate-200 max-w-xs truncate">
+                            "{quote.notes}"
+                          </span>
+                        )}
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${
+                          quote.status === 'Accepted'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : quote.status === 'Sent'
+                            ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                            : quote.status === 'Revised'
+                            ? 'bg-purple-100 text-purple-700 border-purple-200'
+                            : 'bg-amber-100 text-amber-700 border-amber-200'
+                        }`}>
+                          {quote.status}
+                        </span>
+                        {quote.id === leadQuotation?.id && (
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-6">
@@ -1601,8 +2012,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 const isCall = activity.type === 'Call';
                 const isEmail = activity.type === 'Email';
                 const isCompleted = activity.status === 'Completed';
-                const isDealWon = activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead);
-                const isNeg = activity.purpose === 'Negotiation' || isNegotiationInteraction(activity, lead);
+                const isDealWon = activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed';
+                const isNeg = activity.purpose === 'Negotiation';
                 const Icon = isDealWon ? Award : (isCall ? Phone : (isEmail ? Mail : CheckCircle2));
                 const colorClass = isCompleted
                   ? (isDealWon ? 'bg-emerald-100 text-emerald-600' : isNeg ? 'bg-purple-100 text-purple-600' : isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
@@ -1627,7 +2038,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                               🤝 Negotiation
                             </span>
                           )}
-                          {(activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead)) && (
+                          {(activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed') && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
                               🎉 Customer Accepted
                             </span>
@@ -1641,16 +2052,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                                 if (lead.stage === 'New' && (activity.type === 'Call' || activity.type === 'Email' || activity.type === 'Meeting')) {
                                   updateLead(lead.id, { stage: 'Contacted' });
                                 }
-                                if (lead.stage === 'Proposal' && isNegotiationInteraction({ ...activity, status: 'Completed' }, lead)) {
-                                  updateLead(lead.id, { stage: 'Negotiation' });
-                                }
-                                if (lead.stage === 'Negotiation' && isDealAcceptedInteraction({ ...activity, status: 'Completed' }, lead)) {
-                                  const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
-                                  const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
-                                  if (hasAmount && hasDate) {
-                                    updateLead(lead.id, { stage: 'Won' });
-                                  }
-                                }
+
                               }}
                               className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded transition flex items-center gap-1"
                               title="Mark this interaction completed and advance stage"
@@ -1886,7 +2288,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <span className="text-base">🎉</span>
                   <div>
                     <span className="font-bold">Deal Won / Customer Acceptance:</span> Record customer agreement confirmation, signed proposal, or purchase order.
-                    {activityForm.status === 'Completed' && lead.stage === 'Negotiation' && (
+                    {activityForm.status === 'Completed' && false && (
                       <span className="block mt-0.5 text-emerald-700 font-semibold">Completing this with a valid final agreed amount & date qualifies the deal to advance to "Won".</span>
                     )}
                   </div>
@@ -1896,7 +2298,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <span className="text-base">🤝</span>
                   <div>
                     <span className="font-bold">Negotiation Activity:</span> Record discussion regarding pricing, discounts, custom features, payment terms, or delivery timeline.
-                    {activityForm.status === 'Completed' && lead.stage === 'Proposal' && (
+                    {activityForm.status === 'Completed' && false && (
                       <span className="block mt-0.5 text-purple-700 font-semibold">Saving will advance lead to "Negotiation".</span>
                     )}
                   </div>
@@ -1974,7 +2376,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     ? `Save Scheduled Activity (Keep in ${lead.stage})`
                     : (lead.stage === 'New'
                       ? 'Save & Move to Contacted'
-                      : (lead.stage === 'Proposal' && activityForm.purpose === 'Negotiation'
+                      : (false && activityForm.purpose === 'Negotiation'
                         ? 'Save & Move to Negotiation'
                         : 'Save Interaction'))}
                 </button>
@@ -2018,12 +2420,27 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     1. Customer Requirement <span className="text-indigo-600 font-normal">(Required for Qualification)</span>
                   </label>
                   <textarea
+                    id="qual-requirement"
                     rows={2}
                     placeholder="e.g. Enterprise CRM solution with 50 user licenses, automated lead scoring, and SAP integration"
                     value={editForm.requirement}
-                    onChange={(e) => setEditForm({ ...editForm, requirement: e.target.value })}
-                    className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditForm(prev => ({ ...prev, requirement: val }));
+                      if (touchedFields.requirement) validateField('requirement', val);
+                    }}
+                    onBlur={() => handleFieldBlur('requirement', editForm.requirement)}
+                    className={`w-full p-2.5 bg-white border rounded-lg text-xs focus:ring-2 focus:outline-none ${
+                      formErrors.requirement
+                        ? 'border-red-500 text-red-900 focus:ring-red-500'
+                        : 'border-slate-300 focus:ring-indigo-500'
+                    }`}
                   />
+                  {formErrors.requirement && (
+                    <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                      <AlertCircle size={12} /> {formErrors.requirement}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2032,14 +2449,34 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                       2. Budget (₹) <span className="text-indigo-600 font-normal">*</span>
                     </label>
                     <input
+                      id="qual-budget"
                       type="number"
                       min="1"
                       step="any"
                       placeholder="e.g. 250000"
                       value={editForm.budget}
-                      onChange={(e) => setEditForm({ ...editForm, budget: e.target.value })}
-                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      onKeyDown={(e) => {
+                        if (['e', 'E', '+', '-'].includes(e.key)) {
+                          e.preventDefault();
+                        }
+                      }}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditForm(prev => ({ ...prev, budget: val }));
+                        if (touchedFields.budget) validateField('budget', val);
+                      }}
+                      onBlur={() => handleFieldBlur('budget', editForm.budget)}
+                      className={`w-full p-2.5 bg-white border rounded-lg text-xs focus:ring-2 focus:outline-none ${
+                        formErrors.budget
+                          ? 'border-red-500 text-red-900 focus:ring-red-500'
+                          : 'border-slate-300 focus:ring-indigo-500'
+                      }`}
                     />
+                    {formErrors.budget && (
+                      <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                        <AlertCircle size={12} /> {formErrors.budget}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -2047,12 +2484,27 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                       3. Decision Maker <span className="text-indigo-600 font-normal">*</span>
                     </label>
                     <input
+                      id="qual-decisionMaker"
                       type="text"
                       placeholder="e.g. Rajesh Sharma (CTO)"
                       value={editForm.decisionMaker}
-                      onChange={(e) => setEditForm({ ...editForm, decisionMaker: e.target.value })}
-                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditForm(prev => ({ ...prev, decisionMaker: val }));
+                        if (touchedFields.decisionMaker) validateField('decisionMaker', val);
+                      }}
+                      onBlur={() => handleFieldBlur('decisionMaker', editForm.decisionMaker)}
+                      className={`w-full p-2.5 bg-white border rounded-lg text-xs focus:ring-2 focus:outline-none ${
+                        formErrors.decisionMaker
+                          ? 'border-red-500 text-red-900 focus:ring-red-500'
+                          : 'border-slate-300 focus:ring-indigo-500'
+                      }`}
                     />
+                    {formErrors.decisionMaker && (
+                      <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                        <AlertCircle size={12} /> {formErrors.decisionMaker}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -2060,11 +2512,27 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                       4. Expected Close Date <span className="text-indigo-600 font-normal">*</span>
                     </label>
                     <input
+                      id="qual-expectedCloseDate"
                       type="date"
+                      min={new Date().toISOString().split('T')[0]}
                       value={editForm.expectedCloseDate}
-                      onChange={(e) => setEditForm({ ...editForm, expectedCloseDate: e.target.value })}
-                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditForm(prev => ({ ...prev, expectedCloseDate: val }));
+                        if (touchedFields.expectedCloseDate) validateField('expectedCloseDate', val);
+                      }}
+                      onBlur={() => handleFieldBlur('expectedCloseDate', editForm.expectedCloseDate)}
+                      className={`w-full p-2.5 bg-white border rounded-lg text-xs focus:ring-2 focus:outline-none ${
+                        formErrors.expectedCloseDate
+                          ? 'border-red-500 text-red-900 focus:ring-red-500'
+                          : 'border-slate-300 focus:ring-indigo-500'
+                      }`}
                     />
+                    {formErrors.expectedCloseDate && (
+                      <p className="mt-1 text-xs text-red-600 font-medium flex items-center gap-1">
+                        <AlertCircle size={12} /> {formErrors.expectedCloseDate}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2183,7 +2651,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#0f172a]">
-                    {leadQuotation || lead.proposalAmount ? 'Edit Proposal / Quotation' : 'Create & Send Proposal'}
+                    {false ? `Refine & Resend Proposal (v${nextRevisionNumber})` : (leadQuotation || lead.proposalAmount ? 'Edit Proposal / Quotation' : 'Create & Send Proposal')}
                   </h3>
                   <p className="text-xs text-slate-500">Proposal requirements for {lead.name}</p>
                 </div>
@@ -2196,7 +2664,17 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </button>
             </div>
 
-            <form onSubmit={handleSaveProposal} className="space-y-4">
+            <form onSubmit={(e) => handleSaveProposal(e, proposalForm.status)} className="space-y-4">
+              {/* RECIPIENT SUMMARY */}
+              <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200/80 text-xs text-slate-600 flex justify-between items-center">
+                <div>
+                  <span className="font-bold text-slate-800">Recipient:</span> {associatedContact?.name || lead.name} ({lead.company})
+                </div>
+                <div className="font-semibold text-indigo-600">
+                  {false ? `Revision Version v${nextRevisionNumber}` : 'Version v1'}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -2207,7 +2685,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     required
                     min="1"
                     step="any"
-                    placeholder="e.g. 250000"
+                    placeholder="e.g. 850000"
                     value={proposalForm.amount}
                     onChange={(e) => setProposalForm({ ...proposalForm, amount: e.target.value })}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
@@ -2228,6 +2706,32 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Payment Terms & Commercial Conditions
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Net 60 Days, 50% Advance on PO execution"
+                  value={proposalForm.terms}
+                  onChange={(e) => setProposalForm({ ...proposalForm, terms: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Revision Notes / Explanation of Changes
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Reduced price from ₹10,00,000 to ₹8,50,000 and extended payment terms from Net 30 to Net 60."
+                  value={proposalForm.notes}
+                  onChange={(e) => setProposalForm({ ...proposalForm, notes: e.target.value })}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -2245,8 +2749,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     }}
                     className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
                   >
-                    <option value="Draft">📝 Draft (Lead Remains Qualified)</option>
-                    <option value="Sent">📤 Sent to Customer (Allows Proposal Stage)</option>
+                    <option value="Sent">📤 Sent to Customer (Active Proposal)</option>
+                    <option value="Draft">📝 Draft (Internal Review Only)</option>
                   </select>
                 </div>
 
@@ -2266,36 +2770,62 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </div>
               </div>
 
-              {/* STATUS HELPER BANNER */}
-              {proposalForm.status === 'Draft' ? (
+              {/* HELPER BANNER */}
+              {false ? (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex items-start gap-2 animate-in fade-in">
+                  <span className="text-sm">🤝</span>
+                  <div>
+                    <span className="font-bold">Negotiation Proposal Revision:</span> Creating version <strong>v{nextRevisionNumber}</strong> will preserve version history. The lead will <strong>remain in "Negotiation"</strong>.
+                  </div>
+                </div>
+              ) : proposalForm.status === 'Draft' ? (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2 animate-in fade-in">
                   <span className="text-sm">📝</span>
                   <div>
-                    <span className="font-bold">Draft Proposal:</span> This proposal draft will be saved. The lead will <strong>remain in "Qualified"</strong> until the proposal status is set to "Sent".
+                    <span className="font-bold">Draft Proposal:</span> Proposal draft will be saved. Lead remains in current stage until sent.
                   </div>
                 </div>
               ) : (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-start gap-2 animate-in fade-in">
                   <span className="text-sm">📤</span>
                   <div>
-                    <span className="font-bold">Sent Proposal:</span> The proposal has been sent to the customer, which <strong>allows the lead to advance to "Proposal"</strong>.
+                    <span className="font-bold">Sent Proposal:</span> Proposal sent to customer, allowing stage progression.
                   </div>
                 </div>
               )}
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
+                  disabled={isSendingEmail}
                   onClick={() => setShowProposalModal(false)}
-                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition"
+                  className="px-3.5 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+                  type="button"
+                  disabled={isSendingEmail}
+                  onClick={(e) => handleSaveProposal(e, 'Draft')}
+                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold transition disabled:opacity-50"
                 >
-                  <CheckCircle2 size={14} /> Save Proposal
+                  📝 Save Draft
+                </button>
+                <button
+                  type="button"
+                  disabled={isSendingEmail}
+                  onClick={(e) => handleSaveProposal(e, 'Sent')}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> Sending Proposal...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={14} /> {false ? 'Send Revised Proposal' : 'Send Proposal'}
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -2556,6 +3086,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {successToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2">
+          <CheckCircle2 size={18} />
+          <span className="text-sm font-semibold">{successToast}</span>
         </div>
       )}
 

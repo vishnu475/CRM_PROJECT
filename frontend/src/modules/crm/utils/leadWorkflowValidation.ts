@@ -6,9 +6,126 @@ export interface StageTransitionResult {
   reason?: string;
 }
 
-/**
- * Helper to determine if an activity represents a genuine customer negotiation or deal-terms response.
- */
+export const MEANINGLESS_PLACEHOLDERS = new Set([
+  'yes', 'ok', 'test', 'abc', '123', 'none', 'n/a', 'na', 'no', 'null', 'undefined', 'xyz'
+]);
+
+export function validateQualificationRequirement(val: string | undefined | null): { isValid: boolean; message?: string } {
+  if (!val) return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  const trimmed = val.trim();
+  if (!trimmed) return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  if (trimmed.length < 10) return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  if (trimmed.length > 5000) return { isValid: false, message: 'Requirement text cannot exceed 5000 characters.' };
+
+  const lower = trimmed.toLowerCase();
+  if (MEANINGLESS_PLACEHOLDERS.has(lower)) {
+    return { isValid: false, message: 'Enter meaningful customer requirements.' };
+  }
+
+  return { isValid: true };
+}
+
+export function validateQualificationBudget(val: string | number | undefined | null): { isValid: boolean; message?: string } {
+  if (val === undefined || val === null || val === '') {
+    return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  }
+  const str = String(val).trim();
+  if (!str) return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(str)) {
+    return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  }
+  
+  const num = Number(str);
+  if (isNaN(num) || num <= 0) {
+    return { isValid: false, message: 'Enter a valid budget greater than ₹0.' };
+  }
+  return { isValid: true };
+}
+
+export function validateQualificationDecisionMaker(val: string | undefined | null): { isValid: boolean; message?: string } {
+  if (!val) return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  const trimmed = val.trim();
+  if (!trimmed) return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  if (trimmed.length < 2) return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  if (trimmed.length > 100) return { isValid: false, message: 'Decision Maker name cannot exceed 100 characters.' };
+
+  if (/^[0-9]+$/.test(trimmed)) {
+    return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  }
+
+  if (!/^[a-zA-Z\s'\-\.]+$/.test(trimmed)) {
+    return { isValid: false, message: 'Enter the name of the customer decision maker.' };
+  }
+
+  return { isValid: true };
+}
+
+export function validateQualificationExpectedCloseDate(val: string | undefined | null): { isValid: boolean; message?: string } {
+  if (!val) return { isValid: false, message: 'Select today or a future expected close date.' };
+  const trimmed = val.trim();
+  if (!trimmed) return { isValid: false, message: 'Select today or a future expected close date.' };
+
+  const parsed = new Date(trimmed);
+  if (isNaN(parsed.getTime())) {
+    return { isValid: false, message: 'Select today or a future expected close date.' };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const parts = trimmed.split('-');
+  let inputDate: Date;
+  if (parts.length === 3) {
+    inputDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  } else {
+    inputDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+
+  if (inputDate.getTime() < today.getTime()) {
+    return { isValid: false, message: 'Select today or a future expected close date.' };
+  }
+
+  return { isValid: true };
+}
+
+export function validateAllQualificationFields(form: {
+  requirement?: string;
+  budget?: string | number;
+  decisionMaker?: string;
+  expectedCloseDate?: string;
+}): {
+  isValid: boolean;
+  errors: {
+    requirement?: string;
+    budget?: string;
+    decisionMaker?: string;
+    expectedCloseDate?: string;
+  };
+} {
+  const reqRes = validateQualificationRequirement(form.requirement);
+  const budgetRes = validateQualificationBudget(form.budget);
+  const dmRes = validateQualificationDecisionMaker(form.decisionMaker);
+  const dateRes = validateQualificationExpectedCloseDate(form.expectedCloseDate);
+
+  const errors: {
+    requirement?: string;
+    budget?: string;
+    decisionMaker?: string;
+    expectedCloseDate?: string;
+  } = {};
+
+  if (!reqRes.isValid) errors.requirement = reqRes.message;
+  if (!budgetRes.isValid) errors.budget = budgetRes.message;
+  if (!dmRes.isValid) errors.decisionMaker = dmRes.message;
+  if (!dateRes.isValid) errors.expectedCloseDate = dateRes.message;
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors,
+  };
+}
+
 export const isNegotiationInteraction = (act: Activity, lead: Lead): boolean => {
   if (act.status !== 'Completed') return false;
 
@@ -316,207 +433,76 @@ export const validateLeadStageTransition = (
 
   // STEP 2: Validation for Contacted -> Qualified
   if (currentStage === 'Contacted' && targetStage === 'Qualified') {
-    const missingFields: string[] = [];
+    const valResult = validateAllQualificationFields({
+      requirement: lead.requirement,
+      budget: lead.budget !== undefined ? lead.budget : lead.value,
+      decisionMaker: lead.decisionMaker || lead.contactPerson,
+      expectedCloseDate: lead.expectedCloseDate,
+    });
 
-    // 1. Requirement (meaningful text, not empty or whitespace-only)
-    const requirement = (lead.requirement || '').trim();
-    if (!requirement) {
-      missingFields.push('Requirement');
-    }
-
-    // 2. Budget (valid positive monetary value > 0)
-    const budgetVal =
-      lead.budget !== undefined && Number(lead.budget) > 0
-        ? Number(lead.budget)
-        : lead.value !== undefined && Number(lead.value) > 0
-        ? Number(lead.value)
-        : 0;
-
-    if (!budgetVal || budgetVal <= 0 || isNaN(budgetVal)) {
-      missingFields.push('Budget');
-    }
-
-    // 3. Decision Maker (identified purchasing authority)
-    const decisionMaker = (lead.decisionMaker || lead.contactPerson || '').trim();
-    if (!decisionMaker) {
-      missingFields.push('Decision Maker');
-    }
-
-    // 4. Expected Closing Date (valid date)
-    const expectedCloseDate = (lead.expectedCloseDate || '').trim();
-    if (!expectedCloseDate) {
-      missingFields.push('Expected Closing Date');
-    }
-
-    if (missingFields.length > 0) {
-      if (missingFields.length === 1) {
-        return {
-          allowed: false,
-          message: `Please provide the ${missingFields[0]} before qualifying this lead.`,
-        };
-      }
+    if (!valResult.isValid) {
+      const errorMsgs = Object.values(valResult.errors).filter(Boolean);
       return {
         allowed: false,
-        message: `Complete the following qualification details before moving this lead to Qualified:\n• ${missingFields.join('\n• ')}`,
+        message: 'Complete all 4 qualification details before moving this lead to Qualified:\n• ' + errorMsgs.join('\n• '),
       };
     }
   }
 
-  // STEP 3: Validation for Qualified -> Proposal
-  if (currentStage === 'Qualified' && targetStage === 'Proposal') {
-    // Look for associated quotation in quotations array
-    const linkedQuotation = quotations.find((q) =>
-      q.customerId === lead.id ||
-      q.leadId === lead.id ||
-      q.customerName === lead.name ||
-      (q.customerId && q.customerId.includes(lead.id)) ||
-      (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
-    );
-
-    // Has a proposal been created (either via Quotations or direct Lead proposal fields)?
-    const hasProposal =
-      !!linkedQuotation ||
-      lead.proposalStatus !== undefined ||
-      (lead.proposalAmount !== undefined && lead.proposalAmount > 0) ||
-      (lead.proposalDate !== undefined && lead.proposalDate.trim().length > 0);
-
-    if (!hasProposal) {
-      return {
-        allowed: false,
-        message: 'Please create and send a proposal before moving this lead to Proposal.',
-      };
-    }
-
-    const proposalStatus = (linkedQuotation?.status || lead.proposalStatus || 'Draft');
-    const proposalAmount =
-      linkedQuotation?.amount !== undefined
-        ? Number(linkedQuotation.amount)
-        : lead.proposalAmount !== undefined
-        ? Number(lead.proposalAmount)
-        : 0;
-    const proposalDate = (linkedQuotation?.date || lead.proposalDate || '').trim();
-    const sentDate = (linkedQuotation?.sentDate || lead.proposalSentDate || '').trim();
-
-    // Check Proposal Amount
-    if (!proposalAmount || proposalAmount <= 0 || isNaN(proposalAmount)) {
-      return {
-        allowed: false,
-        message: 'Please provide a valid positive proposal amount before moving this lead to Proposal.',
-      };
-    }
-
-    // Check Proposal Date
-    if (!proposalDate) {
-      return {
-        allowed: false,
-        message: 'Please provide a valid proposal date before moving this lead to Proposal.',
-      };
-    }
-
-    // Check Proposal Status (must be 'Sent')
-    if (proposalStatus !== 'Sent') {
-      return {
-        allowed: false,
-        message: 'Please send the proposal before moving this lead to Proposal.',
-      };
-    }
-
-    // Check Sent Date (must exist when status is Sent)
-    if (!sentDate) {
-      return {
-        allowed: false,
-        message: 'Please provide the sent date for the proposal before moving this lead to Proposal.',
-      };
-    }
-  }
-
-  // STEP 4: Validation for Proposal -> Negotiation
-  if (targetStage === 'Negotiation') {
-    // Prevent stage skipping (e.g. from New/Contacted/Qualified directly to Negotiation)
-    if (currentStage !== 'Proposal') {
-      return {
-        allowed: false,
-        message: `Lead must be in "Proposal" stage with a sent proposal before moving to "Negotiation". Current stage is "${currentStage}".`,
-      };
-    }
-
-    const hasNegotiationActivity = activities.some((act) => isNegotiationInteraction(act, lead));
-
-    if (!hasNegotiationActivity) {
-      return {
-        allowed: false,
-        message: 'Record a completed customer negotiation or response before moving this lead to Negotiation.',
-      };
-    }
-  }
-
-  // STEP 5: Validation for Negotiation -> Won
+  // Direct transition to Won in CRM is blocked
   if (targetStage === 'Won') {
-    // Prevent stage skipping (e.g. from New/Contacted/Qualified/Proposal directly to Won)
-    if (currentStage !== 'Negotiation') {
-      return {
-        allowed: false,
-        message: `Lead must be in "Negotiation" stage before moving to "Won". Current stage is "${currentStage}".`,
-      };
-    }
-
-    const missingWonRequirements: string[] = [];
-
-    // 1. Customer Acceptance Confirmation Activity
-    const hasAcceptanceActivity = activities.some((act) => isDealAcceptedInteraction(act, lead));
-    if (!hasAcceptanceActivity) {
-      missingWonRequirements.push('Customer Acceptance (completed activity confirming deal acceptance/closure)');
-    }
-
-    // 2. Final Agreed Amount (> 0)
-    const finalAmount =
-      lead.finalAgreedAmount !== undefined && Number(lead.finalAgreedAmount) > 0
-        ? Number(lead.finalAgreedAmount)
-        : lead.value !== undefined && Number(lead.value) > 0
-        ? Number(lead.value)
-        : lead.budget !== undefined && Number(lead.budget) > 0
-        ? Number(lead.budget)
-        : 0;
-
-    if (!finalAmount || finalAmount <= 0 || isNaN(finalAmount)) {
-      missingWonRequirements.push('Final Agreed Amount (valid positive number)');
-    }
-
-    // 3. Closed/Won Date
-    const wonDate = (lead.wonDate || lead.expectedCloseDate || '').trim();
-    if (!wonDate) {
-      missingWonRequirements.push('Closed/Won Date');
-    }
-
-    if (missingWonRequirements.length > 0) {
-      if (missingWonRequirements.length === 1) {
-        if (!hasAcceptanceActivity) {
-          return {
-            allowed: false,
-            message: 'Record a completed customer acceptance or deal closure activity before marking this deal as Won.',
-          };
-        }
-        if (!finalAmount || finalAmount <= 0 || isNaN(finalAmount)) {
-          return {
-            allowed: false,
-            message: 'Please provide a valid positive Final Agreed Amount before marking this deal as Won.',
-          };
-        }
-        if (!wonDate) {
-          return {
-            allowed: false,
-            message: 'Please provide the Closed/Won Date before marking this deal as Won.',
-          };
-        }
-      }
-
-      return {
-        allowed: false,
-        message: `Complete the following requirements before moving this lead to Won:\n• ${missingWonRequirements.join('\n• ')}`,
-      };
-    }
+    return {
+      allowed: false,
+      message: 'Lead stage cannot be manually changed to Won. It is automatically updated when the linked quotation in Sales is accepted.',
+    };
   }
 
-  // All other stage transitions are allowed
+  // STEP 1: Validation for New -> Contacted
+  if (currentStage === 'New' && targetStage === 'Contacted') {
+    const hasCompletedInteraction = activities.some((act) => {
+      const isRelated =
+        act.relatedTo === lead.id ||
+        act.relatedTo === lead.name ||
+        (act.relatedTo && act.relatedTo.includes(lead.name)) ||
+        (act.relatedTo && act.relatedTo.includes(lead.id));
+
+      const isInteractionType =
+        act.type === 'Call' || act.type === 'Email' || act.type === 'Meeting';
+
+      const isCompleted = act.status === 'Completed';
+
+      return isRelated && isInteractionType && isCompleted;
+    });
+
+    if (!hasCompletedInteraction) {
+      return {
+        allowed: false,
+        message: 'Please record a completed call, email, or meeting before moving this lead to Contacted.',
+      };
+    }
+
+    return { allowed: true };
+  }
+
+  // STEP 2: Validation for Contacted -> Qualified
+  if (currentStage === 'Contacted' && targetStage === 'Qualified') {
+    const valResult = validateAllQualificationFields({
+      requirement: lead.requirement,
+      budget: lead.budget !== undefined ? lead.budget : lead.value,
+      decisionMaker: lead.decisionMaker || lead.contactPerson,
+      expectedCloseDate: lead.expectedCloseDate,
+    });
+
+    if (!valResult.isValid) {
+      const errorMsgs = Object.values(valResult.errors).filter(Boolean);
+      return {
+        allowed: false,
+        message: 'Complete all 4 qualification details before moving this lead to Qualified:\n' + errorMsgs.join('\n'),
+      };
+    }
+
+    return { allowed: true };
+  }
+
   return { allowed: true };
 };

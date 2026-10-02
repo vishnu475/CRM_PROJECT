@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import {
   LeadsAPI,
   CustomersAPI,
+  CRMNotesAPI,
   ContactsAPI,
   OpportunitiesAPI,
   CRMActivitiesAPI,
@@ -140,7 +141,9 @@ interface AppContextType {
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
   deleteFollowUp: (id: string) => Promise<void> | void;
   notes: Note[];
-  addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  addNote: (note: Partial<Note>) => Promise<void> | void;
+  updateNote: (id: string, updates: Partial<Note>) => Promise<void> | void;
+  deleteNote: (id: string) => Promise<void> | void;
   products: Product[];
   addProduct: (product: any) => Promise<Product | null>;
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
@@ -204,7 +207,8 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   addProject: (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => Promise<Project | null>;
-  deleteProject: (id: string) => Promise<boolean>;
+  updateProject: (projectId: string, updatedFields: Partial<Project>) => Promise<{ success: boolean; data?: any }>;
+  deleteProject: (projectId: string) => Promise<{ success: boolean }>;
   createProjectFromLead: (
     leadId: string,
     customData?: {
@@ -984,6 +988,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })));
         }
 
+        // 15c. Load Notes from CRM PostgreSQL
+        try {
+          const notesRes = await CRMNotesAPI.getAll();
+          if (notesRes.success && Array.isArray(notesRes.data)) {
+            setNotes(notesRes.data.map((r: any) => ({
+              id: r.id,
+              title: r.title || 'Untitled Note',
+              type: r.type || 'General',
+              content: r.content || '',
+              relatedType: r.related_type || r.entity_type || '',
+              related_type: r.related_type || r.entity_type || '',
+              relatedId: r.related_id || r.entity_id || '',
+              related_id: r.related_id || r.entity_id || '',
+              relatedRecord: r.related_id || r.entity_id || '',
+              createdBy: r.created_by || r.author || 'Sarah Jenkins',
+              created_by: r.created_by || r.author || 'Sarah Jenkins',
+              author: r.author || r.created_by || 'Sarah Jenkins',
+              createdAt: r.created_at || undefined,
+              created_at: r.created_at || undefined,
+              updatedAt: r.updated_at || undefined,
+              updated_at: r.updated_at || undefined,
+            })));
+          }
+        } catch (err) {
+          console.warn('⚠️ [CRM] Failed to load notes:', err);
+        }
+
         // 15b. Load Follow-ups from CRM PostgreSQL
         const followUpsRes = await CRMFollowUpsAPI.getAll();
         if (followUpsRes.success && Array.isArray(followUpsRes.data)) {
@@ -999,6 +1030,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             activityId: r.activity_id || undefined,
             activityType: r.activity_type || 'Call',
             dueDate: r.due_date || '',
+            due_date: r.due_date || '',
+            dueTime: r.due_time || '10:00',
+            due_time: r.due_time || '10:00',
             owner: r.owner || r.assigned_to || '',
             assignedTo: r.assigned_to || r.owner || '',
             priority: r.priority || 'Medium',
@@ -1036,6 +1070,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
             acceptedDate: r.accepted_date ? (typeof r.accepted_date === 'string' ? r.accepted_date.split('T')[0] : new Date(r.accepted_date).toISOString().split('T')[0]) : '',
             revisionNumber: parseInt(r.revision_number) || 1,
+            revisionGroupId: r.revision_group_id || r.id,
             terms: r.terms || '',
             notes: r.notes || '',
             owner: r.owner || '',
@@ -1133,6 +1168,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             spent: parseFloat(r.spent) || 0,
             progress: parseInt(r.progress) || 0,
             status: r.status || 'Not Started',
+            priority: r.priority || 'Medium',
+            weightage: r.weightage !== undefined ? parseFloat(r.weightage) : 100,
+            repositoryUrl: r.repository_url || '',
+            requirementDocuments: Array.isArray(r.requirement_documents) ? r.requirement_documents : [],
+            projectLinks: Array.isArray(r.project_links) ? r.project_links : [],
+            activeTasksCount: parseInt(r.active_tasks_count) || 0,
+            totalTasksCount: parseInt(r.total_tasks_count) || 0,
+            assignedMembersCount: parseInt(r.assigned_members_count) || 0,
+            assignedEmployees: Array.isArray(r.assigned_employees) ? r.assigned_employees : [],
             createdAt: r.created_at || '',
             updatedAt: r.updated_at || '',
           })));
@@ -1902,17 +1946,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newProject;
   }, []);
 
-  const deleteProject = useCallback(async (id: string): Promise<boolean> => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+  const updateProject = useCallback(async (projectId: string, updatedFields: Partial<Project>) => {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, ...updatedFields, updatedAt: new Date().toISOString() } : p))
+    );
     try {
-      const res = await ProjectsAPI.delete(id);
-      return Boolean(res.success);
-    } catch (err) {
-      console.warn('⚠️ [Projects] deleteProject failed:', err);
-      return false;
+      const res = await ProjectsAPI.update(projectId, {
+        name: updatedFields.name,
+        client: updatedFields.client,
+        customerId: updatedFields.customerId,
+        projectRequirement: updatedFields.projectRequirement,
+        projectNotes: updatedFields.projectNotes,
+        projectManager: updatedFields.projectManager,
+        startDate: updatedFields.startDate,
+        endDate: updatedFields.endDate,
+        budget: updatedFields.budget,
+        spent: updatedFields.spent,
+        progress: updatedFields.progress,
+        status: updatedFields.status,
+        priority: updatedFields.priority,
+        weightage: updatedFields.weightage,
+        repositoryUrl: updatedFields.repositoryUrl,
+        requirementDocuments: updatedFields.requirementDocuments,
+        projectLinks: updatedFields.projectLinks,
+      });
+      if (res.success && res.data) {
+        return { success: true, data: res.data };
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Failed to update project on backend:', err.message);
     }
+    return { success: true };
   }, []);
 
+  const deleteProject = useCallback(async (projectId: string) => {
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    try {
+      const res = await ProjectsAPI.delete(projectId);
+      if (res.success) {
+        return { success: true };
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Failed to delete project on backend:', err.message);
+    }
+    return { success: true };
+  }, []);
 
   const createProjectFromLead = useCallback(async (
     leadId: string,
@@ -2357,10 +2435,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activityId: fu.activityId,
         activityType: fu.activityType,
         dueDate: fu.dueDate,
+        dueTime: fu.dueTime,
         owner: fu.owner || fu.assignedTo,
         assignedTo: fu.assignedTo || fu.owner,
         priority: fu.priority,
-        status: fu.status,
+        status: fu.status || 'Pending',
         reminder: fu.reminder,
       });
     } catch (err) {
@@ -2384,6 +2463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activityId: updates.activityId,
         activityType: updates.activityType,
         dueDate: updates.dueDate,
+        dueTime: updates.dueTime,
         owner: updates.owner || updates.assignedTo,
         assignedTo: updates.assignedTo || updates.owner,
         priority: updates.priority,
@@ -2460,7 +2540,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addQuotation = useCallback(async (quotation: Omit<Quotation, 'id'>): Promise<Quotation | null> => {
-    const tempId = `QT-${Date.now()}`;
+    const tempId = "QT-" + Date.now();
     const newQuote: Quotation = { id: tempId, ...quotation };
     setQuotations((prev) => [newQuote, ...prev]);
     try {
@@ -2470,8 +2550,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...newQuote,
           id: res.data.id,
           quoteNumber: res.data.quote_number || newQuote.quoteNumber,
+          revisionNumber: res.data.revision_number ? Number(res.data.revision_number) : newQuote.revisionNumber,
+          revisionGroupId: res.data.revision_group_id || newQuote.revisionGroupId,
+          status: res.data.status || newQuote.status,
         };
-        setQuotations((prev) => prev.map((q) => (q.id === tempId ? savedQuote : q)));
+
+        const reFetch = await QuotationsAPI.getAll();
+        if (reFetch.success && Array.isArray(reFetch.data)) {
+          setQuotations(reFetch.data.map((r: any) => ({
+            id: r.id,
+            quoteNumber: r.quote_number || r.id,
+            customerId: r.customer_id || '',
+            leadId: r.lead_id || '',
+            opportunityId: r.opportunity_id || '',
+            contactId: r.contact_id || '',
+            customerName: r.customer_name || '',
+            date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+            validUntil: r.valid_until ? (typeof r.valid_until === 'string' ? r.valid_until.split('T')[0] : new Date(r.valid_until).toISOString().split('T')[0]) : '',
+            amount: parseFloat(r.amount) || 0,
+            subtotal: parseFloat(r.subtotal) || 0,
+            taxAmount: parseFloat(r.tax_amount) || 0,
+            discountAmount: parseFloat(r.discount_amount) || 0,
+            status: r.status || 'Draft',
+            sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
+            acceptedDate: r.accepted_date ? (typeof r.accepted_date === 'string' ? r.accepted_date.split('T')[0] : new Date(r.accepted_date).toISOString().split('T')[0]) : '',
+            revisionNumber: parseInt(r.revision_number) || 1,
+            revisionGroupId: r.revision_group_id || r.id,
+            terms: r.terms || '',
+            notes: r.notes || '',
+            owner: r.owner || '',
+            salesOrderId: r.sales_order_id || '',
+            salesOrderNumber: r.sales_order_number || '',
+            itemsCount: parseInt(r.items_count) || 1,
+          })));
+        } else {
+          setQuotations((prev) => prev.map((q) => (q.id === tempId ? savedQuote : q)));
+        }
         return savedQuote;
       }
     } catch (err) { console.warn('⚠️ [CRM] addQuotation failed:', err); }
@@ -2482,12 +2596,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setQuotations((prev) =>
       prev.map((q) => (q.id === id ? { ...q, ...updates } : q))
     );
+
+    if (updates.status === 'Accepted') {
+      const targetQuote = quotations.find((q) => q.id === id);
+      if (targetQuote) {
+        const oppId = targetQuote.opportunityId;
+        const leadId = targetQuote.leadId;
+        const finalAmt = updates.amount || targetQuote.amount || 0;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        if (oppId) {
+          setOpportunities((prev) =>
+            prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Won', probability: 100 } : opp))
+          );
+        }
+
+        setLeads((prev) =>
+          prev.map((ld) => {
+            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId) || (targetQuote.customerName && (ld.company === targetQuote.customerName || ld.name === targetQuote.customerName))) {
+              return {
+                ...ld,
+                stage: 'Won',
+                finalAgreedAmount: ld.finalAgreedAmount || finalAmt,
+                wonDate: ld.wonDate || todayStr,
+              };
+            }
+            return ld;
+          })
+        );
+      }
+    } else if (updates.status === 'Rejected') {
+      const targetQuote = quotations.find((q) => q.id === id);
+      if (targetQuote) {
+        const oppId = targetQuote.opportunityId;
+        const leadId = targetQuote.leadId;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        if (oppId) {
+          setOpportunities((prev) =>
+            prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Lost', probability: 0 } : opp))
+          );
+        }
+
+        setLeads((prev) =>
+          prev.map((ld) => {
+            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId) || (targetQuote.customerName && (ld.company === targetQuote.customerName || ld.name === targetQuote.customerName))) {
+              return {
+                ...ld,
+                stage: 'Lost',
+                lostDate: ld.lostDate || todayStr,
+                lostReason: ld.lostReason || 'Quotation Rejected by Customer',
+                lostNotes: ld.lostNotes || 'Quotation Rejected in Sales module',
+              };
+            }
+            return ld;
+          })
+        );
+      }
+    }
+
     try {
       await QuotationsAPI.update(id, updates);
     } catch (err) {
       console.warn('⚠️ [CRM] updateQuotation failed:', err);
     }
-  }, []);
+  }, [quotations]);
 
   const deleteQuotation = useCallback(async (id: string) => {
     setQuotations((prev) => prev.filter((q) => q.id !== id));
@@ -2774,15 +2947,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const addNote = (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const addNote = useCallback(async (note: Partial<Note>) => {
+    const tempId = note.id || `NOTE-${Date.now()}`;
     const newNote: Note = {
-      ...note,
-      id: `NOTE-${Date.now()}`,
-      createdAt: 'Just now',
-      updatedAt: 'Just now',
+      id: tempId,
+      title: note.title || 'Untitled Note',
+      type: note.type || 'General',
+      content: note.content || '',
+      relatedType: note.relatedType || note.related_type || note.entityType || note.entity_type || '',
+      related_type: note.relatedType || note.related_type || note.entityType || note.entity_type || '',
+      relatedId: note.relatedId || note.related_id || note.entityId || note.entity_id || note.relatedRecord || '',
+      related_id: note.relatedId || note.related_id || note.entityId || note.entity_id || note.relatedRecord || '',
+      relatedRecord: note.relatedRecord || note.relatedId || note.related_id || '',
+      createdBy: note.createdBy || note.created_by || note.author || userProfile?.name || 'Sarah Jenkins',
+      created_by: note.createdBy || note.created_by || note.author || userProfile?.name || 'Sarah Jenkins',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    setNotes((prev) => [newNote, ...prev]);
-  };
+
+    setNotes((prev) => [newNote, ...prev]); // Optimistic
+    try {
+      const res = await CRMNotesAPI.create({
+        id: tempId,
+        title: newNote.title,
+        type: newNote.type,
+        content: newNote.content,
+        relatedType: newNote.relatedType,
+        relatedId: newNote.relatedId,
+        createdBy: newNote.createdBy,
+      });
+      if (res && res.data) {
+        setNotes((prev) => prev.map(n => n.id === tempId ? {
+          ...n,
+          id: res.data.id || tempId,
+          createdAt: res.data.created_at || n.createdAt,
+          updatedAt: res.data.updated_at || n.updatedAt,
+        } : n));
+      }
+    } catch (err) {
+      console.warn('⚠️ [CRM] addNote failed:', err);
+      throw err;
+    }
+  }, [userProfile]);
+
+  const updateNote = useCallback(async (id: string, updates: Partial<Note>) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n))
+    );
+    try {
+      await CRMNotesAPI.update(id, {
+        title: updates.title,
+        type: updates.type,
+        content: updates.content,
+        relatedType: updates.relatedType || updates.related_type,
+        relatedId: updates.relatedId || updates.related_id,
+        createdBy: updates.createdBy || updates.created_by,
+      });
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateNote failed:', err);
+      throw err;
+    }
+  }, []);
+
+  const deleteNote = useCallback(async (id: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== id)); // Optimistic
+    try {
+      await CRMNotesAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteNote failed:', err);
+      throw err;
+    }
+  }, []);
 
   const addDocument = (doc: Omit<DocumentFile, 'id' | 'updatedAt'>) => {
     const now = new Date().toISOString().split('T')[0];
@@ -3073,6 +3308,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteFollowUp,
         notes,
         addNote,
+        updateNote,
+        deleteNote,
         products,
         addProduct,
         updateProduct,
@@ -3135,6 +3372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         projects,
         setProjects,
         addProject,
+        updateProject,
         deleteProject,
         createProjectFromLead,
         tasks,

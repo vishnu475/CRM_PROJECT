@@ -71,15 +71,15 @@ router.post('/', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO follow_ups (
         id, title, notes, related_entity, opportunity_id, customer_id,
-        lead_id, contact_id, activity_id, activity_type, due_date,
+        lead_id, contact_id, activity_id, activity_type, due_date, due_time,
         owner, assigned_to, priority, status, reminder
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
       RETURNING *`,
       [
         fuId,
         actionTitle,
         notes || '',
-        relatedEntity || 'General Account',
+        relatedEntity || 'lead',
         opportunityId || null,
         customerId || null,
         leadId || null,
@@ -87,6 +87,7 @@ router.post('/', async (req, res) => {
         activityId || null,
         activityType || 'Call',
         cleanDueDate,
+        dueTime || '10:00',
         assignee,
         assignee,
         fuPriority,
@@ -126,6 +127,7 @@ router.patch('/:id', async (req, res) => {
     const isComp = status && ['completed', 'done'].includes(status.toLowerCase());
     const finalCompletedAt = isComp ? (completedAt || new Date().toISOString()) : null;
 
+    const dueTime = b.dueTime !== undefined ? b.dueTime : b.due_time;
     const result = await pool.query(
       `UPDATE follow_ups SET
         title = COALESCE($2, title),
@@ -138,13 +140,14 @@ router.patch('/:id', async (req, res) => {
         activity_id = COALESCE($9, activity_id),
         activity_type = COALESCE($10, activity_type),
         due_date = COALESCE($11, due_date),
-        owner = COALESCE($12, owner),
-        assigned_to = COALESCE($13, assigned_to),
-        priority = COALESCE($14, priority),
-        status = COALESCE($15, status),
-        reminder = COALESCE($16, reminder),
+        due_time = COALESCE($12, due_time),
+        owner = COALESCE($13, owner),
+        assigned_to = COALESCE($14, assigned_to),
+        priority = COALESCE($15, priority),
+        status = COALESCE($16, status),
+        reminder = COALESCE($17, reminder),
         completed_at = CASE
-          WHEN LOWER(COALESCE($15, status)) IN ('completed', 'done') THEN COALESCE($17::timestamp, completed_at, CURRENT_TIMESTAMP)
+          WHEN LOWER(COALESCE($16, status)) IN ('completed', 'done') THEN COALESCE($18::timestamp, completed_at, CURRENT_TIMESTAMP)
           ELSE NULL
         END
       WHERE id = $1
@@ -161,6 +164,7 @@ router.patch('/:id', async (req, res) => {
         activityId !== undefined ? activityId : null,
         activityType !== undefined ? activityType : null,
         dueDate !== undefined ? dueDate : null,
+        dueTime !== undefined ? dueTime : null,
         (owner || assignedTo) !== undefined ? (owner || assignedTo) : null,
         (assignedTo || owner) !== undefined ? (assignedTo || owner) : null,
         priority !== undefined ? priority : null,

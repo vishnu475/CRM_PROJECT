@@ -205,19 +205,36 @@ export const QuotationModal: React.FC<QuotationModalProps> = ({
     const customerName = cust ? cust.customerName : 'Direct Corporate Account';
 
     if (isRevisionMode && quotationToEdit) {
-      // Revision workflow
+      // Revision workflow: mark previous version as 'Revised' and create NEW revision
+      if (quotationToEdit.status === 'Sent') {
+        await updateQuotation(quotationToEdit.id, { status: 'Revised' });
+      }
+
       const nextRev = (quotationToEdit.revisionNumber || 1) + 1;
-      await updateQuotation(quotationToEdit.id, {
-        status: 'Revised',
-        revisionNumber: nextRev,
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      await addQuotation({
+        quoteNumber: quotationToEdit.quoteNumber || `QT-${new Date().getFullYear()}-${Math.floor(Math.random() * 900) + 100}`,
+        customerId: customerId || quotationToEdit.customerId || 'CUST-001',
+        customerName: customerName || quotationToEdit.customerName || 'Direct Corporate Account',
+        leadId: quotationToEdit.leadId,
+        opportunityId: opportunityId || quotationToEdit.opportunityId,
+        contactId: contactId || quotationToEdit.contactId,
+        date: date || todayStr,
+        validUntil: validUntil || quotationToEdit.validUntil,
         amount: financialTotals.grandTotal,
         subtotal: financialTotals.subtotal,
         taxAmount: financialTotals.taxAmount,
         discountAmount: financialTotals.discountAmount,
-        validUntil,
+        status: 'Sent',
+        sentDate: todayStr,
+        revisionNumber: nextRev,
+        revisionGroupId: quotationToEdit.revisionGroupId || quotationToEdit.id,
         terms,
         notes,
+        owner: owner || quotationToEdit.owner || 'Sales Executive',
         items,
+        itemsCount: items.length,
       });
     } else if (quotationToEdit) {
       // Direct edit

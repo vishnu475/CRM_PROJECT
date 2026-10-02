@@ -1,3 +1,4 @@
+import { sendEmail } from '../services/emailService.js';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -218,6 +219,212 @@ function sanitizeTags(tagsInput) {
 }
 
 // POST /api/leads — Create new lead in CRM database
+
+// POST /api/leads/:leadId/proposal/send - Send proposal email to lead
+router.post('/:leadId/proposal/send', async (req, res) => {
+  const { leadId } = req.params;
+  try {
+    // 1. Read lead using leadId
+    const leadRes = await pool.query('SELECT * FROM leads WHERE id = $1', [leadId]);
+    if (leadRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    const lead = leadRes.rows[0];
+
+    // 2. Read recipient email from lead.email
+    const recipientEmail = lead.email ? lead.email.trim() : '';
+    if (!recipientEmail) {
+      return res.status(400).json({ success: false, message: 'Lead does not have an email address.' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(recipientEmail)) {
+      return res.status(400).json({ success: false, message: 'Lead email address is invalid.' });
+    }
+
+    // 3. Receive proposal info from body
+    const {
+      proposalAmount,
+      proposalDate,
+      paymentTerms,
+      revisionNotes,
+      projectRequirements,
+      sentDate,
+    } = req.body;
+
+    // 4. Validation
+    const numericAmount = parseFloat(proposalAmount);
+    if (proposalAmount === undefined || proposalAmount === null || isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Proposal amount must be a positive number.' });
+    }
+
+    if (!proposalDate || isNaN(new Date(proposalDate).getTime())) {
+      return res.status(400).json({ success: false, message: 'Proposal date must be a valid date.' });
+    }
+
+    // Helper for HTML escaping
+    const sanitizeHtml = (str) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    };
+
+    const leadNameClean = sanitizeHtml(lead.name || 'Valued Customer');
+    const companyNameClean = lead.company ? sanitizeHtml(lead.company) : '';
+    const termsClean = paymentTerms ? sanitizeHtml(paymentTerms) : 'Standard payment terms apply.';
+    const reqsClean = projectRequirements || lead.requirement ? sanitizeHtml(projectRequirements || lead.requirement) : 'As per discussions';
+    const notesClean = revisionNotes ? sanitizeHtml(revisionNotes) : '';
+    const formattedAmount = `₹${numericAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formattedDate = new Date(proposalDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    // Subject format: Proposal – {company or lead name} – {project/requirement}
+    const companyOrName = lead.company ? lead.company.trim() : lead.name.trim();
+    const reqSnippet = (projectRequirements || lead.requirement || 'Commercial Proposal').trim();
+    const subject = `Proposal – ${companyOrName} – ${reqSnippet}`;
+
+    const textBody = `
+Dear ${lead.name},
+
+Please find our proposal details below:
+
+Company: ${lead.company || 'N/A'}
+Proposal Amount: ${formattedAmount}
+Proposal Date: ${formattedDate}
+Payment Terms: ${paymentTerms || 'Standard terms'}
+Project Requirements: ${projectRequirements || lead.requirement || 'As discussed'}
+${revisionNotes ? `Revision Notes: ${revisionNotes}
+` : ''}
+Thank you for your interest. Please feel free to reach out if you have any questions.
+
+Best regards,
+Sales Team
+`.trim();
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333333; margin: 0; padding: 20px; background-color: #f8fafc; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .header { border-bottom: 2px solid #4f46e5; padding-bottom: 15px; margin-bottom: 20px; }
+    .header h2 { color: #1e1b4b; margin: 0; font-size: 20px; }
+    .section { margin-bottom: 20px; }
+    .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .table td { padding: 10px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+    .table td.label { font-weight: bold; color: #475569; width: 40%; }
+    .amount { font-size: 18px; font-weight: bold; color: #047857; }
+    .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>Commercial Proposal</h2>
+    </div>
+    <div class="section">
+      <p>Dear <strong>${leadNameClean}</strong>,</p>
+      <p>We are pleased to present our commercial proposal for your review.</p>
+    </div>
+    <div class="section">
+      <table class="table">
+        ${companyNameClean ? `<tr><td class="label">Company Name</td><td>${companyNameClean}</td></tr>` : ''}
+        <tr><td class="label">Proposal Amount</td><td class="amount">${formattedAmount}</td></tr>
+        <tr><td class="label">Proposal Date</td><td>${formattedDate}</td></tr>
+        <tr><td class="label">Payment Terms</td><td>${termsClean}</td></tr>
+        <tr><td class="label">Project Requirements</td><td>${reqsClean}</td></tr>
+        ${notesClean ? `<tr><td class="label">Revision Notes</td><td>${notesClean}</td></tr>` : ''}
+      </table>
+    </div>
+    <div class="section">
+      <p>Please review the proposal details above. Should you have any questions or require modifications, do not hesitate to contact us.</p>
+    </div>
+    <div class="footer">
+      <p>Best regards,<br><strong>Sales Team</strong></p>
+    </div>
+  </div>
+</body>
+</html>
+`.trim();
+
+    // 5. Send email using sendEmail service
+    const emailResult = await sendEmail({
+      to: recipientEmail,
+      subject,
+      text: textBody,
+      html: htmlBody,
+    });
+
+    if (!emailResult.success) {
+      // Failed to send email! DO NOT update lead stage or proposal status!
+      console.error(`[Proposal Email Failed] Lead ID: ${leadId}, Recipient: ${recipientEmail}, Reason: ${emailResult.message}`);
+      return res.status(500).json({
+        success: false,
+        message: 'Proposal could not be sent. Please check the email configuration and try again.',
+        error: emailResult.message,
+      });
+    }
+
+    // 6. Email sent successfully -> update lead
+    const effectiveSentDate = sentDate || new Date().toISOString().split('T')[0];
+    const newStage = lead.stage === 'Qualified' ? 'Proposal' : lead.stage;
+
+    const updateRes = await pool.query(
+      `UPDATE leads SET
+        proposal_amount = $2,
+        proposal_date = $3,
+        proposal_status = 'Sent',
+        proposal_sent_date = $4,
+        stage = $5,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 RETURNING *`,
+      [leadId, numericAmount, proposalDate, effectiveSentDate, newStage]
+    );
+
+    const updatedLead = updateRes.rows[0];
+
+    // 7. Log Activity in activities table
+    try {
+      const actId = `ACT-${Date.now()}`;
+      await pool.query(
+        `INSERT INTO activities (id, title, type, purpose, related_to, customer_id, status, outcome, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
+        [
+          actId,
+          `Proposal – ${companyOrName}`,
+          'Email',
+          'Proposal',
+          `Lead: ${lead.name} (${leadId})`,
+          leadId,
+          'Completed',
+          `Proposal sent to ${recipientEmail}`,
+        ]
+      );
+    } catch (actErr) {
+      console.error('Failed to log email activity:', actErr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Proposal sent successfully to ${recipientEmail}`,
+      data: updatedLead,
+    });
+  } catch (err) {
+    console.error('Send proposal email endpoint error:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error while sending proposal email.',
+    });
+  }
+});
+
+
 router.post('/', async (req, res) => {
   const { 
     id, name, company, email, phone, value, stage, score, source, assignedTo, assignedToEmployeeId,
@@ -586,11 +793,94 @@ router.post('/', async (req, res) => {
   }
 });
 
+
+const MEANINGLESS_PLACEHOLDERS = new Set([
+  'yes', 'ok', 'test', 'abc', '123', 'none', 'n/a', 'na', 'no', 'null', 'undefined', 'xyz'
+]);
+
+function validateQualificationBackend(lead) {
+  const errors = [];
+
+  // 1. Requirement
+  const req = (lead.requirement || '').trim();
+  if (!req || req.length < 10 || req.length > 5000 || MEANINGLESS_PLACEHOLDERS.has(req.toLowerCase())) {
+    errors.push('Enter meaningful customer requirements.');
+  }
+
+  // 2. Budget
+  const budgetStr = String(lead.budget !== undefined && lead.budget !== null && lead.budget !== '' ? lead.budget : (lead.value || '')).trim();
+  const budgetNum = Number(budgetStr);
+  if (!budgetStr || !/^[0-9]+(\.[0-9]+)?$/.test(budgetStr) || isNaN(budgetNum) || budgetNum <= 0) {
+    errors.push('Enter a valid budget greater than ₹0.');
+  }
+
+  // 3. Decision Maker
+  const dm = (lead.decisionMaker || lead.contactPerson || '').trim();
+  if (!dm || dm.length < 2 || dm.length > 100 || /^[0-9]+$/.test(dm) || !/^[a-zA-Z\s'\-\.]+$/.test(dm)) {
+    errors.push('Enter the name of the customer decision maker.');
+  }
+
+  // 4. Expected Close Date
+  const dateStr = (lead.expectedCloseDate || lead.expected_close_date || '').trim();
+  if (!dateStr) {
+    errors.push('Select today or a future expected close date.');
+  } else {
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime())) {
+      errors.push('Select today or a future expected close date.');
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const parts = dateStr.split('-');
+      let inputDate;
+      if (parts.length === 3) {
+        inputDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      } else {
+        inputDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+      }
+      if (inputDate.getTime() < today.getTime()) {
+        errors.push('Select today or a future expected close date.');
+      }
+    }
+  }
+
+  return errors;
+}
+
 // PUT & PATCH /api/leads/:id — Update lead stage or details
 const updateHandler = async (req, res) => {
   const { id } = req.params;
   const fields = { ...req.body };
   try {
+    if (fields.stage === 'Qualified') {
+      const existingRes = await pool.query('SELECT * FROM leads WHERE id = $1', [id]);
+      if (existingRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
+      const existing = existingRes.rows[0];
+
+      // Stage skipping protection: only allow transition from Contacted -> Qualified (or remaining in Qualified)
+      if (existing.stage !== 'Contacted' && existing.stage !== 'Qualified') {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot transition lead stage from "${existing.stage}" to "Qualified". Leads can only move to Qualified from "Contacted" stage.`
+        });
+      }
+
+      const merged = {
+        requirement: fields.requirement !== undefined ? fields.requirement : existing.requirement,
+        budget: fields.budget !== undefined ? fields.budget : (fields.value !== undefined ? fields.value : existing.budget || existing.value),
+        value: fields.value !== undefined ? fields.value : (fields.budget !== undefined ? fields.budget : existing.value || existing.budget),
+        decisionMaker: fields.decisionMaker !== undefined ? fields.decisionMaker : (fields.contactPerson !== undefined ? fields.contactPerson : existing.decision_maker || existing.contact_person),
+        expectedCloseDate: fields.expectedCloseDate !== undefined ? fields.expectedCloseDate : existing.expected_close_date,
+      };
+
+      const valErrors = validateQualificationBackend(merged);
+      if (valErrors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Qualification validation failed: ' + valErrors.join(' ')
+        });
+      }
+    }
     // If assignedTo or assignedToEmployeeId is being updated
     if ('assignedTo' in fields || 'assignedToEmployeeId' in fields) {
       const targetEmpId = fields.assignedToEmployeeId || fields.assignedTo;

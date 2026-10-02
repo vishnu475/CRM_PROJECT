@@ -1,3 +1,19 @@
+export interface ProjectDocument {
+  id?: string;
+  name: string;
+  url?: string;
+  path?: string;
+  type?: string;
+  size?: number | string;
+  uploadedAt?: string;
+}
+
+export interface ProjectLink {
+  id?: string;
+  title: string;
+  url: string;
+}
+
 export * from './common';
 export * from './api';
 
@@ -92,7 +108,7 @@ export interface Lead {
   email: string;
   phone: string;
   value: number;
-  stage: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Won' | 'Lost' | 'Negotiation';
+  stage: 'New' | 'Contacted' | 'Qualified' | 'Won' | 'Lost';
   score: number;
   source: string;
   assignedTo: string;
@@ -111,7 +127,7 @@ export interface Lead {
   budget?: number;
   proposalAmount?: number;
   proposalDate?: string;
-  proposalStatus?: 'Draft' | 'Sent';
+  proposalStatus?: 'Draft' | 'Sent' | 'Accepted' | 'Revised';
   proposalSentDate?: string;
   finalAgreedAmount?: number;
   wonDate?: string;
@@ -319,6 +335,7 @@ export interface Quotation {
   opportunityId?: string;
   contactId?: string;
   revisionNumber?: number;
+  revisionGroupId?: string;
   terms?: string;
   notes?: string;
   owner?: string;
@@ -736,6 +753,14 @@ export interface Vendor {
 }
 
 export interface Project {
+  weightage?: number;
+  repositoryUrl?: string;
+  requirementDocuments?: ProjectDocument[] | string[];
+  projectLinks?: ProjectLink[];
+  activeTasksCount?: number;
+  totalTasksCount?: number;
+  assignedMembersCount?: number;
+  assignedEmployees?: string[];
   id: string;
   code: string;
   name: string;
@@ -887,10 +912,23 @@ export interface FollowUp {
 export interface Note {
   id: string;
   title: string;
+  type?: 'General' | 'Customer Requirements' | 'Internal' | 'Technical' | 'Commercial' | string;
   content: string;
-  relatedRecord: string; // e.g., 'Lead: John Doe'
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  visibility: 'Public' | 'Private';
+  relatedType?: 'Lead' | 'Customer' | 'Opportunity' | '' | string;
+  related_type?: string;
+  relatedId?: string;
+  related_id?: string;
+  entityType?: string;
+  entity_type?: string;
+  entityId?: string;
+  entity_id?: string;
+  relatedRecord?: string;
+  createdBy?: string;
+  created_by?: string;
+  author?: string;
+  createdAt?: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
+  visibility?: 'Public' | 'Private';
 }

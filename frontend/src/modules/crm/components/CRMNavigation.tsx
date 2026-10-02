@@ -10,8 +10,6 @@ export const CRMNavigation: React.FC<CRMNavigationProps> = ({ activeView, onView
   const navItems: { id: CrmView; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'leads', label: 'Leads' },
-    { id: 'customers', label: 'Customers' },
-    { id: 'contacts', label: 'Contacts' },
     { id: 'opportunities', label: 'Opportunities' },
     { id: 'activities', label: 'Activities' },
     { id: 'follow-ups', label: 'Follow-ups' },

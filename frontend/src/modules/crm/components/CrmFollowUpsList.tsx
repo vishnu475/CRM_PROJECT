@@ -11,7 +11,6 @@ import {
   Eye,
   Edit3,
   Trash2,
-  ExternalLink,
   Check,
   MoreVertical,
   CheckCircle2,
@@ -22,6 +21,8 @@ import {
   Bell,
   Sparkles,
   ArrowUpRight,
+  User,
+  CheckCircle,
 } from 'lucide-react';
 
 interface CrmFollowUpsListProps {
@@ -47,6 +48,7 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
     customers,
     contacts,
     opportunities,
+    employees,
     userProfile,
   } = useApp();
 
@@ -55,6 +57,14 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
+
+  // Toast Notification State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   // Filter criteria
   const [filterPriority, setFilterPriority] = useState<string>('all');
@@ -74,16 +84,17 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduleNote, setRescheduleNote] = useState('');
 
-  // Form State
+  // Form State & Error
+  const [formError, setFormError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
-    relatedEntity: 'lead' as 'lead' | 'customer' | 'opportunity' | 'contact' | 'general',
+    relatedEntity: 'lead' as 'lead' | 'customer' | 'opportunity',
     relatedId: '',
+    activityType: 'Call' as 'Call' | 'Email' | 'Meeting' | 'Task',
     dueDate: new Date().toISOString().split('T')[0],
     dueTime: '10:00',
     priority: 'Medium' as 'Low' | 'Medium' | 'High' | 'Urgent',
-    assignedTo: userProfile?.name || 'Unassigned',
-    reminder: '1_hour_before',
+    assignedTo: userProfile?.name || (employees && employees.length > 0 ? employees[0].name : 'Sarah Jenkins'),
     notes: '',
   });
 
@@ -122,9 +133,8 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
 
   // Status and Overdue resolver
   const getFollowUpStatusInfo = (f: FollowUp) => {
-    const status = (f.status || 'scheduled').toLowerCase();
-    const d = parseDueDate(f);
-    const isCompleted = status === 'done' || status === 'completed';
+    const status = (f.status || 'pending').toLowerCase();
+    const isCompleted = status === 'completed' || status === 'done';
     const isCancelled = status === 'cancelled';
 
     if (isCompleted) {
@@ -133,25 +143,23 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
     if (isCancelled) {
       return { key: 'cancelled', label: 'Cancelled', color: 'bg-slate-100 text-slate-600 border-slate-200' };
     }
+
+    const d = parseDueDate(f);
     if (d && isPastDate(d)) {
       return { key: 'overdue', label: 'Overdue', color: 'bg-rose-50 text-rose-700 border-rose-200' };
     }
     if (d && isTodayDate(d)) {
       return { key: 'today', label: 'Due Today', color: 'bg-amber-50 text-amber-700 border-amber-200' };
     }
-    if (status === 'in_progress' || status === 'in-progress') {
-      return { key: 'in_progress', label: 'In Progress', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
-    }
-    return { key: 'scheduled', label: 'Scheduled', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+    return { key: 'pending', label: 'Pending', color: 'bg-blue-50 text-blue-700 border-blue-200' };
   };
 
   // Resolve related entity details
   const getEntityDetails = (f: FollowUp) => {
-    const entityType = f.relatedEntity || f.related_entity || (f.leadId || f.lead_id ? 'lead' : f.customerId || f.customer_id ? 'customer' : f.opportunityId || f.opportunity_id ? 'opportunity' : f.contactId || f.contact_id ? 'contact' : 'general');
+    const entityType = (f.relatedEntity || f.related_entity || (f.leadId || f.lead_id ? 'lead' : f.customerId || f.customer_id ? 'customer' : f.opportunityId || f.opportunity_id ? 'opportunity' : 'general')).toLowerCase();
     const leadId = f.leadId || f.lead_id;
     const customerId = f.customerId || f.customer_id;
     const opportunityId = f.opportunityId || f.opportunity_id;
-    const contactId = f.contactId || f.contact_id;
 
     if (entityType === 'lead' || leadId) {
       const lead = leads.find((l) => l.id === leadId);
@@ -184,27 +192,14 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
     if (entityType === 'opportunity' || opportunityId) {
       const opp = opportunities.find((o) => o.id === opportunityId);
       if (opp) {
-        const valStr = opp.value ? `$${Number(opp.value).toLocaleString()}` : '';
+        const valStr = opp.value ? `₹${Number(opp.value).toLocaleString('en-IN')}` : '';
         return {
           type: 'Opportunity',
           typeBadge: 'bg-amber-50 text-amber-700 border-amber-200',
           title: opp.name || 'Deal',
-          subtitle: [opp.stage, valStr].filter(Boolean).join(' • ') || 'Opportunity',
+          subtitle: [opp.customerName, valStr].filter(Boolean).join(' • ') || 'Opportunity',
           id: opp.id,
           onNavigate: onOpportunitySelect ? () => onOpportunitySelect(opp.id) : undefined,
-        };
-      }
-    }
-
-    if (entityType === 'contact' || contactId) {
-      const contact = contacts.find((c) => c.id === contactId);
-      if (contact) {
-        return {
-          type: 'Contact',
-          typeBadge: 'bg-teal-50 text-teal-700 border-teal-200',
-          title: contact.name || 'Contact',
-          subtitle: contact.customerName || contact.designation || contact.email || 'Contact Record',
-          id: contact.id,
         };
       }
     }
@@ -217,7 +212,7 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
     };
   };
 
-  // Metrics computation
+  // Metrics computation from persisted records
   const metrics = useMemo(() => {
     let total = followUps.length;
     let pending = 0;
@@ -260,15 +255,24 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
     }
   };
 
-  // Assignee list for filter
-  const uniqueAssignees = useMemo(() => {
-    const list = new Set<string>();
-    followUps.forEach((f) => {
+  // Assignees list for filter and form
+  const availableAssignees = useMemo(() => {
+    const set = new Set<string>();
+    if (employees && employees.length > 0) {
+      employees.forEach(e => set.add(e.name));
+    }
+    if (userProfile?.name) set.add(userProfile.name);
+    set.add('Sarah Jenkins');
+    set.add('John Doe');
+    set.add('Admin');
+
+    followUps.forEach(f => {
       const a = f.assignedTo || f.assigned_to;
-      if (a && a.trim()) list.add(a.trim());
+      if (a && a.trim()) set.add(a.trim());
     });
-    return Array.from(list);
-  }, [followUps]);
+
+    return Array.from(set);
+  }, [employees, userProfile, followUps]);
 
   // Filter and Search logic
   const filteredFollowUps = useMemo(() => {
@@ -350,22 +354,25 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
     searchTerm,
     leads,
     customers,
-    contacts,
     opportunities,
   ]);
 
   // Handlers
   const handleOpenAddModal = () => {
     setEditingFollowUp(null);
+    setFormError(null);
+    const defaultRel = 'lead';
+    const defaultRelId = leads[0]?.id || '';
+
     setFormData({
       title: '',
-      relatedEntity: 'lead',
-      relatedId: leads[0]?.id || '',
+      relatedEntity: defaultRel,
+      relatedId: defaultRelId,
+      activityType: 'Call',
       dueDate: new Date().toISOString().split('T')[0],
       dueTime: '10:00',
       priority: 'Medium',
-      assignedTo: userProfile?.name || 'Admin',
-      reminder: '1_hour_before',
+      assignedTo: userProfile?.name || availableAssignees[0] || 'Sarah Jenkins',
       notes: '',
     });
     setShowModal(true);
@@ -373,32 +380,77 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
 
   const handleOpenEditModal = (f: FollowUp) => {
     setEditingFollowUp(f);
-    const entityType = (f.relatedEntity || f.related_entity || (f.leadId ? 'lead' : f.customerId ? 'customer' : f.opportunityId ? 'opportunity' : f.contactId ? 'contact' : 'general')) as any;
-    const relId = f.leadId || f.lead_id || f.customerId || f.customer_id || f.opportunityId || f.opportunity_id || f.contactId || f.contact_id || '';
+    setFormError(null);
+    const entityType = (f.relatedEntity || f.related_entity || (f.leadId ? 'lead' : f.customerId ? 'customer' : f.opportunityId ? 'opportunity' : 'lead')) as 'lead' | 'customer' | 'opportunity';
+    const relId = f.leadId || f.lead_id || f.customerId || f.customer_id || f.opportunityId || f.opportunity_id || '';
 
     setFormData({
       title: f.title || f.action || '',
       relatedEntity: entityType,
       relatedId: relId,
+      activityType: (f.activityType || f.action || 'Call') as any,
       dueDate: f.dueDate ? f.dueDate.split('T')[0] : (f.due_date ? f.due_date.split('T')[0] : new Date().toISOString().split('T')[0]),
       dueTime: f.dueTime || f.due_time || '10:00',
       priority: (f.priority ? (f.priority.charAt(0).toUpperCase() + f.priority.slice(1).toLowerCase()) : 'Medium') as any,
-      assignedTo: f.assignedTo || f.assigned_to || userProfile?.name || 'Admin',
-      reminder: f.reminder || '1_hour_before',
+      assignedTo: f.assignedTo || f.assigned_to || userProfile?.name || 'Sarah Jenkins',
       notes: f.notes || '',
     });
     setShowModal(true);
   };
 
+  const handleRelatedEntityChange = (newRel: 'lead' | 'customer' | 'opportunity') => {
+    let newRelId = '';
+    if (newRel === 'lead') newRelId = leads[0]?.id || '';
+    if (newRel === 'customer') newRelId = customers[0]?.id || '';
+    if (newRel === 'opportunity') newRelId = opportunities[0]?.id || '';
+
+    setFormData((prev) => ({
+      ...prev,
+      relatedEntity: newRel,
+      relatedId: newRelId,
+    }));
+  };
+
   const handleSaveFollowUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.title.trim()) return;
+    setFormError(null);
+
+    // Validation
+    if (!formData.title.trim()) {
+      setFormError('Follow-up / Action title is required.');
+      return;
+    }
+    if (!formData.relatedEntity) {
+      setFormError('Related To category is required.');
+      return;
+    }
+    if (!formData.relatedId) {
+      setFormError('Please select a valid record.');
+      return;
+    }
+    if (!formData.activityType) {
+      setFormError('Follow-up Type is required.');
+      return;
+    }
+    if (!formData.dueDate) {
+      setFormError('Due Date is required.');
+      return;
+    }
+    if (!formData.priority) {
+      setFormError('Priority is required.');
+      return;
+    }
+    if (!formData.assignedTo) {
+      setFormError('Assigned Owner is required.');
+      return;
+    }
 
     const payload: Partial<FollowUp> = {
       title: formData.title.trim(),
       action: formData.title.trim(),
       relatedEntity: formData.relatedEntity,
       related_entity: formData.relatedEntity,
+      activityType: formData.activityType,
       dueDate: formData.dueDate,
       due_date: formData.dueDate,
       dueTime: formData.dueTime,
@@ -406,7 +458,6 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
       priority: formData.priority,
       assignedTo: formData.assignedTo,
       assigned_to: formData.assignedTo,
-      reminder: formData.reminder,
       notes: formData.notes.trim(),
       leadId: formData.relatedEntity === 'lead' ? formData.relatedId : undefined,
       lead_id: formData.relatedEntity === 'lead' ? formData.relatedId : undefined,
@@ -414,34 +465,36 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
       customer_id: formData.relatedEntity === 'customer' ? formData.relatedId : undefined,
       opportunityId: formData.relatedEntity === 'opportunity' ? formData.relatedId : undefined,
       opportunity_id: formData.relatedEntity === 'opportunity' ? formData.relatedId : undefined,
-      contactId: formData.relatedEntity === 'contact' ? formData.relatedId : undefined,
-      contact_id: formData.relatedEntity === 'contact' ? formData.relatedId : undefined,
     };
 
     try {
       if (editingFollowUp) {
         await updateFollowUp(editingFollowUp.id, payload);
+        showToast('Follow-up updated successfully');
       } else {
         await addFollowUp({
           ...payload,
-          status: 'Scheduled',
+          status: 'Pending',
         } as any);
+        showToast('Follow-up created successfully');
       }
       setShowModal(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save follow-up:', err);
+      setFormError(err?.message || 'Failed to save follow-up. Please check your data and try again.');
     }
   };
 
   const handleToggleComplete = async (f: FollowUp) => {
     const isComp = (f.status || '').toLowerCase() === 'completed' || (f.status || '').toLowerCase() === 'done';
-    const nextStatus = isComp ? 'Scheduled' : 'Completed';
+    const nextStatus = isComp ? 'Pending' : 'Completed';
     try {
       await updateFollowUp(f.id, {
         status: nextStatus,
         completedAt: nextStatus === 'Completed' ? new Date().toISOString() : undefined,
         completed_at: nextStatus === 'Completed' ? new Date().toISOString() : undefined,
       });
+      showToast(nextStatus === 'Completed' ? 'Follow-up marked as completed' : 'Follow-up marked as pending');
       if (selectedFollowUp && selectedFollowUp.id === f.id) {
         setSelectedFollowUp({ ...selectedFollowUp, status: nextStatus });
       }
@@ -472,16 +525,18 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
         due_date: rescheduleDate,
         dueTime: rescheduleTime,
         due_time: rescheduleTime,
-        status: 'Scheduled',
+        status: 'Pending',
         notes: updatedNotes,
       });
+
+      showToast('Follow-up rescheduled successfully');
 
       if (selectedFollowUp && selectedFollowUp.id === rescheduleFollowUp.id) {
         setSelectedFollowUp({
           ...selectedFollowUp,
           dueDate: rescheduleDate,
           dueTime: rescheduleTime,
-          status: 'Scheduled',
+          status: 'Pending',
           notes: updatedNotes,
         });
       }
@@ -494,6 +549,7 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
   const handleDelete = async (id: string) => {
     try {
       await deleteFollowUp(id);
+      showToast('Follow-up deleted successfully');
       setDeleteConfirmId(null);
       if (selectedFollowUp?.id === id) {
         setSelectedFollowUp(null);
@@ -503,748 +559,521 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
     }
   };
 
-  const activeFilterCount = [
-    filterPriority !== 'all',
-    filterAssignee !== 'all',
-    filterRelatedType !== 'all',
-    filterDateRange !== 'all',
-  ].filter(Boolean).length;
-
-  const resetFilters = () => {
-    setFilterPriority('all');
-    setFilterAssignee('all');
-    setFilterRelatedType('all');
-    setFilterDateRange('all');
-    setSearchTerm('');
-  };
-
-  const quickActionSuggestions = [
-    'Follow up on quotation proposal',
-    'Schedule product demonstration',
-    'Call to confirm contract terms',
-    'Send onboarding checklist',
-    'Discuss feature requirements with decision maker',
-    'Check budget approval status',
-    'Quarterly check-in review meeting',
-  ];
-
   return (
     <div className="space-y-6">
-      {/* 1. Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl border border-slate-800 flex items-center gap-2.5 animate-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Header & Main Action */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Follow-ups</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Manage customer actions, reminders, and next steps.
+          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
+            <ListTodo className="text-indigo-600" size={24} />
+            Follow-ups &amp; Next Actions
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Track, schedule, and complete sales follow-up activities across your pipeline.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleOpenAddModal}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium shadow-sm transition-all hover:shadow"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Follow-up</span>
-          </button>
+
+        <button
+          onClick={handleOpenAddModal}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer self-start md:self-auto"
+        >
+          <Plus size={16} />
+          <span>+ Add Follow-up</span>
+        </button>
+      </div>
+
+      {/* 1. METRICS / KPI SUMMARY CARDS */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-semibold">Total Follow-ups</span>
+            <ListTodo className="w-4 h-4 text-slate-400" />
+          </div>
+          <p className="text-2xl font-black text-slate-900">{metrics.total}</p>
+          <span className="text-[10px] text-slate-400 mt-1">All recorded actions</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-semibold">Pending</span>
+            <Clock className="w-4 h-4 text-blue-500" />
+          </div>
+          <p className="text-2xl font-black text-blue-600">{metrics.pending}</p>
+          <span className="text-[10px] text-slate-400 mt-1">Open next steps</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-semibold">Due Today</span>
+            <Calendar className="w-4 h-4 text-amber-500" />
+          </div>
+          <p className="text-2xl font-black text-amber-600">{metrics.dueToday}</p>
+          <span className="text-[10px] text-slate-400 mt-1">Action needed today</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-semibold">Overdue</span>
+            <AlertTriangle className="w-4 h-4 text-rose-500" />
+          </div>
+          <p className="text-2xl font-black text-rose-600">{metrics.overdue}</p>
+          <span className="text-[10px] text-slate-400 mt-1">Past due date</span>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-semibold">Completed</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          </div>
+          <p className="text-2xl font-black text-emerald-600">{metrics.completed}</p>
+          <span className="text-[10px] text-slate-400 mt-1">Successfully closed</span>
         </div>
       </div>
 
-      {/* 2. Summary Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-        <div
-          onClick={() => setActiveTab('all')}
-          className={`cursor-pointer bg-white rounded-xl border p-4 transition-all hover:border-slate-300 ${
-            activeTab === 'all' ? 'ring-2 ring-primary-500 border-primary-500' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Follow-ups</span>
-            <div className="p-2 rounded-lg bg-slate-50 text-slate-600">
-              <ListTodo className="w-4 h-4" />
-            </div>
+      {/* 2. FILTER TABS & SEARCH CONTROLS */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-4">
+        {/* Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/70 p-1 rounded-xl">
+            {(
+              [
+                { key: 'all', label: 'All', count: metrics.total },
+                { key: 'pending', label: 'Pending', count: metrics.pending },
+                { key: 'today', label: 'Due Today', count: metrics.dueToday },
+                { key: 'upcoming', label: 'Upcoming' },
+                { key: 'overdue', label: 'Overdue', count: metrics.overdue },
+                { key: 'completed', label: 'Completed', count: metrics.completed },
+              ] as { key: TabKey; label: string; count?: number }[]
+            ).map((t) => {
+              const active = activeTab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                    active
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  <span>{t.label}</span>
+                  {t.count !== undefined && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        active ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {t.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div className="text-2xl font-bold text-slate-900 mt-2">{metrics.total}</div>
-          <span className="text-xs text-slate-400 mt-0.5 block">All registered actions</span>
+
+          {/* Search & Filter Trigger */}
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-1 md:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search action, title, lead, owner..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                showFilterDropdown || filterPriority !== 'all' || filterAssignee !== 'all' || filterRelatedType !== 'all'
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filter</span>
+            </button>
+          </div>
         </div>
 
-        <div
-          onClick={() => setActiveTab('pending')}
-          className={`cursor-pointer bg-white rounded-xl border p-4 transition-all hover:border-slate-300 ${
-            activeTab === 'pending' ? 'ring-2 ring-blue-500 border-blue-500' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Pending</span>
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-              <Timer className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-blue-700 mt-2">{metrics.pending}</div>
-          <span className="text-xs text-slate-400 mt-0.5 block">Awaiting execution</span>
-        </div>
-
-        <div
-          onClick={() => setActiveTab('today')}
-          className={`cursor-pointer bg-white rounded-xl border p-4 transition-all hover:border-slate-300 ${
-            activeTab === 'today' ? 'ring-2 ring-amber-500 border-amber-500' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-amber-700">Due Today</span>
-            <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
-              <Clock className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-amber-700 mt-2">{metrics.dueToday}</div>
-          <span className="text-xs text-amber-600 font-medium mt-0.5 block">Requires action today</span>
-        </div>
-
-        <div
-          onClick={() => setActiveTab('overdue')}
-          className={`cursor-pointer bg-white rounded-xl border p-4 transition-all hover:border-slate-300 ${
-            activeTab === 'overdue' ? 'ring-2 ring-rose-500 border-rose-500' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-rose-700">Overdue</span>
-            <div className="p-2 rounded-lg bg-rose-50 text-rose-600">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-rose-700 mt-2">{metrics.overdue}</div>
-          <span className="text-xs text-rose-600 font-medium mt-0.5 block">Past scheduled date</span>
-        </div>
-
-        <div
-          onClick={() => setActiveTab('completed')}
-          className={`cursor-pointer bg-white rounded-xl border p-4 transition-all hover:border-slate-300 col-span-2 sm:col-span-1 ${
-            activeTab === 'completed' ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Completed</span>
-            <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-emerald-700 mt-2">{metrics.completed}</div>
-          <span className="text-xs text-emerald-600 font-medium mt-0.5 block">Successfully closed</span>
-        </div>
-      </div>
-
-      {/* 3. Main Workspace Container */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        {/* Navigation Tabs & Search/Filter Header */}
-        <div className="border-b border-slate-200">
-          <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            {/* Status Tabs */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
-              {(
-                [
-                  { key: 'all', label: 'All', count: metrics.total },
-                  { key: 'pending', label: 'Pending', count: metrics.pending },
-                  { key: 'today', label: 'Due Today', count: metrics.dueToday, badgeColor: 'bg-amber-100 text-amber-800' },
-                  { key: 'upcoming', label: 'Upcoming' },
-                  { key: 'overdue', label: 'Overdue', count: metrics.overdue, badgeColor: 'bg-rose-100 text-rose-800' },
-                  { key: 'completed', label: 'Completed', count: metrics.completed },
-                ] as { key: TabKey; label: string; count?: number; badgeColor?: string }[]
-              ).map((tab) => {
-                const isActive = activeTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                      isActive
-                        ? 'bg-slate-900 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    {tab.count !== undefined && (
-                      <span
-                        className={`px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
-                          isActive
-                            ? 'bg-slate-800 text-white'
-                            : tab.badgeColor || 'bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Search & Filter Controls */}
-            <div className="flex items-center gap-2.5">
-              <div className="relative flex-1 sm:w-64">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search follow-ups, records..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-white text-slate-900 placeholder:text-slate-400 transition-all"
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              <button
-                onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
-                  showFilterDropdown || activeFilterCount > 0
-                    ? 'border-primary-500 bg-primary-50 text-primary-700'
-                    : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
+        {/* Extended Filters */}
+        {showFilterDropdown && (
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 bg-slate-50 p-3 rounded-lg border border-slate-200">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Priority</label>
+              <select
+                value={filterPriority}
+                onChange={(e) => setFilterPriority(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-md text-xs bg-white text-slate-800"
               >
-                <Filter className="w-3.5 h-3.5" />
-                <span>Filters</span>
-                {activeFilterCount > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center">
-                    {activeFilterCount}
-                  </span>
-                )}
+                <option value="all">All Priorities</option>
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Assignee</label>
+              <select
+                value={filterAssignee}
+                onChange={(e) => setFilterAssignee(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-md text-xs bg-white text-slate-800"
+              >
+                <option value="all">All Owners</option>
+                {availableAssignees.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Related Type</label>
+              <select
+                value={filterRelatedType}
+                onChange={(e) => setFilterRelatedType(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-md text-xs bg-white text-slate-800"
+              >
+                <option value="all">All Entities</option>
+                <option value="lead">Lead</option>
+                <option value="customer">Customer</option>
+                <option value="opportunity">Opportunity</option>
+              </select>
+            </div>
+
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setFilterPriority('all');
+                  setFilterAssignee('all');
+                  setFilterRelatedType('all');
+                  setFilterDateRange('all');
+                }}
+                className="w-full px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 rounded-md text-xs font-semibold"
+              >
+                Reset Filters
               </button>
             </div>
           </div>
+        )}
 
-          {/* Secondary Filter Panel */}
-          {showFilterDropdown && (
-            <div className="bg-slate-50/80 px-4 sm:px-5 py-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Priority</label>
-                <select
-                  value={filterPriority}
-                  onChange={(e) => setFilterPriority(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-700 focus:ring-1 focus:ring-primary-500 focus:outline-none"
-                >
-                  <option value="all">All Priorities</option>
-                  <option value="Urgent">Urgent</option>
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Related Type</label>
-                <select
-                  value={filterRelatedType}
-                  onChange={(e) => setFilterRelatedType(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-700 focus:ring-1 focus:ring-primary-500 focus:outline-none"
-                >
-                  <option value="all">All Entity Types</option>
-                  <option value="lead">Lead</option>
-                  <option value="customer">Customer</option>
-                  <option value="opportunity">Opportunity</option>
-                  <option value="contact">Contact</option>
-                  <option value="general">General</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Assigned Owner</label>
-                <select
-                  value={filterAssignee}
-                  onChange={(e) => setFilterAssignee(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-700 focus:ring-1 focus:ring-primary-500 focus:outline-none"
-                >
-                  <option value="all">All Assignees</option>
-                  {uniqueAssignees.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Timing</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={filterDateRange}
-                    onChange={(e) => setFilterDateRange(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-700 focus:ring-1 focus:ring-primary-500 focus:outline-none"
-                  >
-                    <option value="all">All Dates</option>
-                    <option value="today">Due Today</option>
-                    <option value="upcoming">Upcoming</option>
-                    <option value="overdue">Overdue</option>
-                  </select>
-                  {activeFilterCount > 0 && (
-                    <button
-                      onClick={resetFilters}
-                      className="px-2 py-1.5 text-xs text-slate-600 hover:text-slate-900 font-medium underline whitespace-nowrap"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* 4. Action-Oriented Data Table */}
+        {/* TABLE DISPLAY */}
         <div className="overflow-x-auto">
-          {filteredFollowUps.length === 0 ? (
-            <div className="py-16 px-4 text-center">
-              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400 mb-3">
-                <ListTodo className="w-6 h-6" />
-              </div>
-              <h3 className="text-base font-semibold text-slate-800">No follow-ups found</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                {activeFilterCount > 0 || searchTerm
-                  ? 'No actions match the selected filter criteria. Try resetting your search or filters.'
-                  : 'You have no scheduled follow-ups. Stay on top of your deals and customer relationships by planning next actions.'}
-              </p>
-              <div className="mt-4 flex items-center justify-center gap-2">
-                {activeFilterCount > 0 || searchTerm ? (
-                  <button
-                    onClick={resetFilters}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
-                  >
-                    Clear Filters
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleOpenAddModal}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm transition-all"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Create First Follow-up</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  <th className="py-3 px-4 w-10 text-center">Done</th>
-                  <th className="py-3 px-4 min-w-[220px]">Follow-up / Action</th>
-                  <th className="py-3 px-4 min-w-[180px]">Related To</th>
-                  <th className="py-3 px-4 min-w-[150px]">Due Date & Time</th>
-                  <th className="py-3 px-4 min-w-[100px]">Priority</th>
-                  <th className="py-3 px-4 min-w-[130px]">Assigned To</th>
-                  <th className="py-3 px-4 min-w-[110px]">Status</th>
-                  <th className="py-3 px-4 w-20 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 text-xs">
-                {filteredFollowUps.map((f) => {
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                <th className="p-3 w-8">#</th>
+                <th className="p-3">Follow-up / Action</th>
+                <th className="p-3">Related To</th>
+                <th className="p-3">Type</th>
+                <th className="p-3">Due Date &amp; Time</th>
+                <th className="p-3">Priority</th>
+                <th className="p-3">Owner</th>
+                <th className="p-3">Status</th>
+                <th className="p-3 text-right">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100 text-xs">
+              {filteredFollowUps.length > 0 ? (
+                filteredFollowUps.map((f, idx) => {
                   const statusInfo = getFollowUpStatusInfo(f);
-                  const isComp = statusInfo.key === 'completed';
                   const entity = getEntityDetails(f);
                   const dueDateObj = parseDueDate(f);
+                  const displayDate = dueDateObj
+                    ? dueDateObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : f.dueDate || f.due_date || 'No Date';
+                  const displayTime = f.dueTime || f.due_time || '10:00';
+                  const actionText = f.title || f.action || 'Follow up with client';
 
                   return (
-                    <tr
-                      key={f.id}
-                      className={`hover:bg-slate-50/80 transition-colors group ${
-                        isComp ? 'bg-slate-50/40 opacity-75' : ''
-                      }`}
-                    >
-                      {/* Checkbox Quick Complete */}
-                      <td className="py-3.5 px-4 text-center align-top">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleComplete(f)}
-                          title={isComp ? 'Mark as Incomplete' : 'Mark as Complete'}
-                          className={`w-5 h-5 rounded flex items-center justify-center border transition-all ${
-                            isComp
-                              ? 'bg-emerald-600 border-emerald-600 text-white'
-                              : 'border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 text-transparent hover:text-emerald-600'
-                          }`}
-                        >
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        </button>
-                      </td>
+                    <tr key={f.id} className="hover:bg-slate-50/80 transition-colors group">
+                      <td className="p-3 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
 
-                      {/* Action Title & Notes Preview */}
-                      <td className="py-3.5 px-4 align-top">
-                        <div className="space-y-1">
-                          <div className="flex items-start gap-2">
-                            <span
-                              onClick={() => setSelectedFollowUp(f)}
-                              className={`font-semibold cursor-pointer hover:text-primary-600 transition-colors ${
-                                isComp ? 'line-through text-slate-500 font-normal' : 'text-slate-900'
-                              }`}
-                            >
-                              {f.title || f.action || 'Untitled Follow-up'}
-                            </span>
-                          </div>
-                          {f.notes && (
-                            <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                              {f.notes}
-                            </p>
-                          )}
+                      {/* Follow-up / Action */}
+                      <td className="p-3">
+                        <div className="font-bold text-[#0f172a] hover:text-indigo-600 cursor-pointer" onClick={() => setSelectedFollowUp(f)}>
+                          {actionText}
                         </div>
+                        {f.notes && (
+                          <div className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">{f.notes}</div>
+                        )}
                       </td>
 
-                      {/* Related To (2-line display) */}
-                      <td className="py-3.5 px-4 align-top">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${entity.typeBadge}`}
-                            >
-                              {entity.type}
-                            </span>
-                            {entity.onNavigate ? (
-                              <button
-                                onClick={entity.onNavigate}
-                                className="font-medium text-slate-800 hover:text-primary-600 flex items-center gap-1 group/link truncate max-w-[150px]"
-                                title={`View ${entity.type} details`}
-                              >
-                                <span className="truncate">{entity.title}</span>
-                                <ExternalLink className="w-3 h-3 text-slate-400 group-hover/link:text-primary-600 flex-shrink-0" />
-                              </button>
-                            ) : (
-                              <span className="font-medium text-slate-800 truncate max-w-[150px]">
-                                {entity.title}
-                              </span>
-                            )}
+                      {/* Related To */}
+                      <td className="p-3">
+                        <div className="space-y-0.5">
+                          <span
+                            className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider border ${entity.typeBadge}`}
+                          >
+                            {entity.type}
+                          </span>
+                          <div
+                            className={`font-semibold text-slate-800 ${
+                              entity.onNavigate ? 'hover:text-indigo-600 cursor-pointer underline decoration-dotted' : ''
+                            }`}
+                            onClick={() => entity.onNavigate && entity.onNavigate()}
+                          >
+                            {entity.title}
                           </div>
                           {entity.subtitle && (
-                            <div className="text-[11px] text-slate-500 truncate max-w-[180px]">
-                              {entity.subtitle}
-                            </div>
+                            <div className="text-[10px] text-slate-400">{entity.subtitle}</div>
                           )}
                         </div>
+                      </td>
+
+                      {/* Type */}
+                      <td className="p-3">
+                        <span className="inline-flex items-center gap-1 font-semibold text-slate-700">
+                          {f.activityType || f.action || 'Call'}
+                        </span>
                       </td>
 
                       {/* Due Date & Time */}
-                      <td className="py-3.5 px-4 align-top">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1.5 text-slate-800 font-medium">
-                            <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
-                            <span>
-                              {dueDateObj
-                                ? dueDateObj.toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                  })
-                                : 'No date'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                            {(f.dueTime || f.due_time) && (
-                              <span className="inline-flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-slate-400" />
-                                {f.dueTime || f.due_time}
-                              </span>
-                            )}
-                            {statusInfo.key === 'overdue' && !isComp && (
-                              <span className="inline-block text-[10px] font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded">
-                                Overdue
-                              </span>
-                            )}
-                            {statusInfo.key === 'today' && !isComp && (
-                              <span className="inline-block text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded">
-                                Today
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Priority */}
-                      <td className="py-3.5 px-4 align-top">
-                        {getPriorityBadge(f.priority)}
-                      </td>
-
-                      {/* Assigned To */}
-                      <td className="py-3.5 px-4 align-top">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-700">
-                            {(f.assignedTo || f.assigned_to || 'U').charAt(0).toUpperCase()}
-                          </div>
-                          <span className="text-xs text-slate-700 truncate max-w-[110px]">
-                            {f.assignedTo || f.assigned_to || 'Unassigned'}
+                      <td className="p-3">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-800 flex items-center gap-1">
+                            <Calendar size={12} className="text-slate-400" />
+                            {displayDate}
+                          </span>
+                          <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                            <Clock size={10} className="text-slate-400" />
+                            {displayTime}
                           </span>
                         </div>
                       </td>
 
+                      {/* Priority */}
+                      <td className="p-3">{getPriorityBadge(f.priority)}</td>
+
+                      {/* Assigned Owner */}
+                      <td className="p-3">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-700">
+                            {(f.assignedTo || f.assigned_to || f.owner || 'U').charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium text-slate-700">{f.assignedTo || f.assigned_to || f.owner || 'Unassigned'}</span>
+                        </div>
+                      </td>
+
                       {/* Status */}
-                      <td className="py-3.5 px-4 align-top">
+                      <td className="p-3">
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${statusInfo.color}`}
+                          className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border ${statusInfo.color}`}
                         >
-                          <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
                           {statusInfo.label}
                         </span>
                       </td>
 
-                      {/* Actions Menu */}
-                      <td className="py-3.5 px-4 align-top text-right relative">
+                      {/* Actions */}
+                      <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => handleOpenReschedule(f)}
-                            title="Reschedule Follow-up"
-                            className="p-1.5 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            title="Mark Complete"
+                            onClick={() => handleToggleComplete(f)}
+                            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                              statusInfo.key === 'completed'
+                                ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                                : 'bg-white border-slate-200 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
+                            }`}
                           >
-                            <Calendar className="w-4 h-4" />
+                            <Check size={14} className="stroke-[2.5]" />
                           </button>
-                          <button
-                            onClick={() => setSelectedFollowUp(f)}
-                            title="View Details"
-                            className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <div className="relative">
-                            <button
-                              onClick={() =>
-                                setOpenActionMenuId(openActionMenuId === f.id ? null : f.id)
-                              }
-                              className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
 
-                            {openActionMenuId === f.id && (
-                              <>
-                                <div
-                                  className="fixed inset-0 z-10"
-                                  onClick={() => setOpenActionMenuId(null)}
-                                />
-                                <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-20 text-left">
-                                  <button
-                                    onClick={() => {
-                                      setOpenActionMenuId(null);
-                                      handleToggleComplete(f);
-                                    }}
-                                    className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>{isComp ? 'Mark Incomplete' : 'Mark Completed'}</span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setOpenActionMenuId(null);
-                                      handleOpenReschedule(f);
-                                    }}
-                                    className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                  >
-                                    <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                                    <span>Reschedule</span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setOpenActionMenuId(null);
-                                      handleOpenEditModal(f);
-                                    }}
-                                    className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>Edit Follow-up</span>
-                                  </button>
-                                  <div className="my-1 border-t border-slate-100" />
-                                  <button
-                                    onClick={() => {
-                                      setOpenActionMenuId(null);
-                                      setDeleteConfirmId(f.id);
-                                    }}
-                                    className="w-full px-3 py-2 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Delete</span>
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
+                          <button
+                            title="View Details"
+                            onClick={() => setSelectedFollowUp(f)}
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
+                          >
+                            <Eye size={14} />
+                          </button>
+
+                          <button
+                            title="Edit Follow-up"
+                            onClick={() => handleOpenEditModal(f)}
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-indigo-600 transition-colors cursor-pointer"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+
+                          <button
+                            title="Reschedule"
+                            onClick={() => handleOpenReschedule(f)}
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-amber-50 hover:text-amber-600 transition-colors cursor-pointer"
+                          >
+                            <CalendarDays size={14} />
+                          </button>
+
+                          <button
+                            title="Delete"
+                            onClick={() => setDeleteConfirmId(f.id)}
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          )}
+                })
+              ) : (
+                <tr>
+                  <td colSpan={9} className="p-12 text-center text-slate-500">
+                    <ListTodo className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <p className="font-semibold text-slate-700 text-sm">No follow-ups found</p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Try adjusting your search criteria or click "+ Add Follow-up" to schedule a new action.
+                    </p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* 5. ADD / EDIT FOLLOW-UP MODAL */}
+      {/* ============================================================ */}
+      {/* 3. CREATE / EDIT FOLLOW-UP MODAL */}
+      {/* ============================================================ */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-primary-50 text-primary-600">
-                  <ListTodo className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">
-                    {editingFollowUp ? 'Edit Follow-up' : 'Create Next Action / Follow-up'}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Schedule a proactive next step or reminder
-                  </p>
-                </div>
-              </div>
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <ListTodo className="text-indigo-600" size={18} />
+                <span>{editingFollowUp ? 'Edit Follow-up' : 'Create Follow-up'}</span>
+              </h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200/50 transition-colors"
               >
-                <X className="w-4 h-4" />
+                <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveFollowUp} className="p-6 space-y-4 text-xs">
-              {/* Action Title */}
+            {/* Error Banner */}
+            {formError && (
+              <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            {/* Modal Body / Form */}
+            <form onSubmit={handleSaveFollowUp} className="p-6 space-y-4">
+              {/* A. Follow-up / Action */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Action Title <span className="text-rose-500">*</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Follow-up / Action <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Follow up on proposal, send contract draft, confirm demo"
+                  placeholder="e.g. Call customer for proposal feedback"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900"
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900"
                 />
-                {/* Quick suggestions pills */}
-                {!editingFollowUp && (
-                  <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                    <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-500" /> Quick:
-                    </span>
-                    {quickActionSuggestions.slice(0, 3).map((sug) => (
-                      <button
-                        key={sug}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, title: sug })}
-                        className="px-2 py-0.5 rounded-full bg-slate-100 hover:bg-primary-50 hover:text-primary-700 text-[10px] text-slate-600 whitespace-nowrap transition-colors"
-                      >
-                        {sug}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
-              {/* Related Record Type & Selector */}
+              {/* B & C. Related To & Select Record */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Related Entity
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Related To <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={formData.relatedEntity}
-                    onChange={(e) => {
-                      const rel = e.target.value as any;
-                      let defaultId = '';
-                      if (rel === 'lead' && leads[0]) defaultId = leads[0].id;
-                      if (rel === 'customer' && customers[0]) defaultId = customers[0].id;
-                      if (rel === 'opportunity' && opportunities[0]) defaultId = opportunities[0].id;
-                      if (rel === 'contact' && contacts[0]) defaultId = contacts[0].id;
-                      setFormData({ ...formData, relatedEntity: rel, relatedId: defaultId });
-                    }}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white text-slate-900"
+                    onChange={(e) => handleRelatedEntityChange(e.target.value as any)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-900 font-semibold"
                   >
                     <option value="lead">Lead</option>
                     <option value="customer">Customer</option>
                     <option value="opportunity">Opportunity</option>
-                    <option value="contact">Contact</option>
-                    <option value="general">General / Internal</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Specific Record
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Select Record <span className="text-rose-500">*</span>
                   </label>
-                  {formData.relatedEntity === 'general' ? (
-                    <input
-                      type="text"
-                      disabled
-                      value="No linked record"
-                      className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-xs text-slate-500"
-                    />
-                  ) : (
-                    <select
-                      value={formData.relatedId}
-                      onChange={(e) => setFormData({ ...formData, relatedId: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white text-slate-900"
-                    >
-                      <option value="">-- Select {formData.relatedEntity} --</option>
-                      {formData.relatedEntity === 'lead' &&
-                        leads.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.name} {l.company ? `(${l.company})` : ''}
-                          </option>
-                        ))}
-                      {formData.relatedEntity === 'customer' &&
-                        customers.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.customerName} {c.industry ? `(${c.industry})` : ''}
-                          </option>
-                        ))}
-                      {formData.relatedEntity === 'opportunity' &&
-                        opportunities.map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.name}
-                          </option>
-                        ))}
-                      {formData.relatedEntity === 'contact' &&
-                        contacts.map((ct) => (
-                          <option key={ct.id} value={ct.id}>
-                            {ct.name} {ct.customerName ? `(${ct.customerName})` : ''}
-                          </option>
-                        ))}
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              {/* Due Date & Time */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Due Date <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
+                  <select
                     required
-                    value={formData.dueDate}
-                    onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Due Time
-                  </label>
-                  <input
-                    type="time"
-                    value={formData.dueTime}
-                    onChange={(e) => setFormData({ ...formData, dueTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900"
-                  />
+                    value={formData.relatedId}
+                    onChange={(e) => setFormData({ ...formData, relatedId: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-900 font-medium"
+                  >
+                    <option value="">-- Select Record --</option>
+                    {formData.relatedEntity === 'lead' &&
+                      leads.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name} {l.company ? `- ${l.company}` : ''}
+                        </option>
+                      ))}
+                    {formData.relatedEntity === 'customer' &&
+                      customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.customerName} {c.industry ? `- ${c.industry}` : ''}
+                        </option>
+                      ))}
+                    {formData.relatedEntity === 'opportunity' &&
+                      opportunities.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name} {o.customerName ? `- ${o.customerName}` : ''}
+                        </option>
+                      ))}
+                  </select>
                 </div>
               </div>
 
-              {/* Priority & Assignee */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* D & G. Follow-up Type & Priority */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Follow-up Type <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={formData.activityType}
+                    onChange={(e) => setFormData({ ...formData, activityType: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-900 font-semibold"
+                  >
+                    <option value="Call">Call</option>
+                    <option value="Email">Email</option>
+                    <option value="Meeting">Meeting</option>
+                    <option value="Task">Task</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Priority <span className="text-rose-500">*</span>
+                  </label>
                   <select
                     value={formData.priority}
                     onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white text-slate-900"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-900 font-semibold"
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -1252,68 +1081,76 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
                     <option value="Urgent">Urgent</option>
                   </select>
                 </div>
+              </div>
 
+              {/* E & F. Due Date & Due Time */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Assigned Owner
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Due Date <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="text"
-                    placeholder="e.g. John Doe"
-                    value={formData.assignedTo}
-                    onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900"
+                    type="date"
+                    required
+                    value={formData.dueDate}
+                    onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Due Time</label>
+                  <input
+                    type="time"
+                    value={formData.dueTime}
+                    onChange={(e) => setFormData({ ...formData, dueTime: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900 font-medium"
                   />
                 </div>
               </div>
 
-              {/* Reminder option */}
+              {/* H. Assigned To */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Reminder Alert
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Assigned To <span className="text-rose-500">*</span>
                 </label>
-                <div className="flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-slate-400" />
-                  <select
-                    value={formData.reminder}
-                    onChange={(e) => setFormData({ ...formData, reminder: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white text-slate-900"
-                  >
-                    <option value="at_time">At due time</option>
-                    <option value="15_mins_before">15 minutes before</option>
-                    <option value="1_hour_before">1 hour before</option>
-                    <option value="1_day_before">1 day before</option>
-                    <option value="none">No reminder</option>
-                  </select>
-                </div>
+                <select
+                  required
+                  value={formData.assignedTo}
+                  onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-900 font-medium"
+                >
+                  {availableAssignees.map((ownerName) => (
+                    <option key={ownerName} value={ownerName}>
+                      {ownerName}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {/* Action Notes */}
+              {/* I. Notes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Action Details & Context Notes
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Notes</label>
                 <textarea
                   rows={3}
-                  placeholder="Provide context, agenda, or talking points for this next step..."
+                  placeholder="Ask whether the customer has reviewed the proposal..."
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900 resize-none"
+                  className="w-full px-3.5 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900 resize-none"
                 />
               </div>
 
               {/* Actions Footer */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 font-medium transition-colors"
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium shadow-sm transition-all"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-xs shadow-xs transition-all cursor-pointer"
                 >
                   {editingFollowUp ? 'Save Changes' : 'Create Follow-up'}
                 </button>
@@ -1323,247 +1160,82 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
         </div>
       )}
 
-      {/* 6. RESCHEDULE MODAL */}
-      {rescheduleFollowUp && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in duration-200">
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Reschedule Follow-up</h3>
-                  <p className="text-xs text-slate-500 truncate max-w-[240px]">
-                    {rescheduleFollowUp.title || rescheduleFollowUp.action}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setRescheduleFollowUp(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveReschedule} className="p-6 space-y-4 text-xs">
-              {/* Quick Preset Buttons */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Quick Presets
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const t = new Date();
-                      setRescheduleDate(t.toISOString().split('T')[0]);
-                    }}
-                    className="px-3 py-2 border border-slate-200 hover:border-primary-500 hover:bg-primary-50 rounded-lg text-xs font-medium text-slate-700 text-center transition-colors"
-                  >
-                    Today
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const t = new Date();
-                      t.setDate(t.getDate() + 1);
-                      setRescheduleDate(t.toISOString().split('T')[0]);
-                    }}
-                    className="px-3 py-2 border border-slate-200 hover:border-primary-500 hover:bg-primary-50 rounded-lg text-xs font-medium text-slate-700 text-center transition-colors"
-                  >
-                    Tomorrow
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const t = new Date();
-                      t.setDate(t.getDate() + 7);
-                      setRescheduleDate(t.toISOString().split('T')[0]);
-                    }}
-                    className="px-3 py-2 border border-slate-200 hover:border-primary-500 hover:bg-primary-50 rounded-lg text-xs font-medium text-slate-700 text-center transition-colors"
-                  >
-                    Next Week
-                  </button>
-                </div>
-              </div>
-
-              {/* Date & Time fields */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    New Date <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={rescheduleDate}
-                    onChange={(e) => setRescheduleDate(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Time</label>
-                  <input
-                    type="time"
-                    value={rescheduleTime}
-                    onChange={(e) => setRescheduleTime(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900"
-                  />
-                </div>
-              </div>
-
-              {/* Reason note */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Reschedule Note / Reason (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="e.g. Client requested callback on Friday after internal review"
-                  value={rescheduleNote}
-                  onChange={(e) => setRescheduleNote(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none text-slate-900 resize-none"
-                />
-              </div>
-
-              {/* Footer */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRescheduleFollowUp(null)}
-                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-700 font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-sm transition-all"
-                >
-                  Confirm Reschedule
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 7. FOLLOW-UP DETAILS MODAL */}
+      {/* ============================================================ */}
+      {/* 4. DETAILS VIEW MODAL */}
+      {/* ============================================================ */}
       {selectedFollowUp && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in duration-200">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between bg-slate-50/50">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${
-                      getFollowUpStatusInfo(selectedFollowUp).color
-                    }`}
-                  >
-                    {getFollowUpStatusInfo(selectedFollowUp).label}
-                  </span>
-                  {getPriorityBadge(selectedFollowUp.priority)}
-                </div>
-                <h3 className="text-lg font-bold text-slate-900">
-                  {selectedFollowUp.title || selectedFollowUp.action || 'Follow-up Details'}
-                </h3>
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                    getFollowUpStatusInfo(selectedFollowUp).color
+                  }`}
+                >
+                  {getFollowUpStatusInfo(selectedFollowUp).label}
+                </span>
+                <span className="text-xs font-mono text-slate-400">{selectedFollowUp.id}</span>
               </div>
               <button
                 onClick={() => setSelectedFollowUp(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200/50"
               >
-                <X className="w-4 h-4" />
+                <X size={16} />
               </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="p-6 space-y-5 text-xs">
-              {/* Linked Record Card */}
+            <div className="p-6 space-y-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">{selectedFollowUp.title || selectedFollowUp.action}</h3>
+                <p className="text-xs text-slate-500 mt-1">Type: {selectedFollowUp.activityType || 'Call'}</p>
+              </div>
+
+              {/* Related Entity */}
               {(() => {
                 const entity = getEntityDetails(selectedFollowUp);
                 return (
-                  <div className="bg-slate-50 rounded-lg p-3.5 border border-slate-200 flex items-center justify-between">
-                    <div className="space-y-0.5">
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 flex items-center justify-between">
+                    <div>
                       <div className="flex items-center gap-1.5">
-                        <span
-                          className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold uppercase tracking-wider border ${entity.typeBadge}`}
-                        >
+                        <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold uppercase tracking-wider border ${entity.typeBadge}`}>
                           {entity.type}
                         </span>
                         <span className="font-bold text-slate-900">{entity.title}</span>
                       </div>
-                      <p className="text-[11px] text-slate-500">{entity.subtitle}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{entity.subtitle}</p>
                     </div>
-                    {entity.onNavigate && (
-                      <button
-                        onClick={() => {
-                          setSelectedFollowUp(null);
-                          entity.onNavigate!();
-                        }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-300 rounded-md text-slate-700 font-medium shadow-xs transition-colors"
-                      >
-                        <span>View</span>
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
                 );
               })()}
 
-              {/* Schedule Info Grid */}
-              <div className="grid grid-cols-2 gap-4 border-y border-slate-100 py-3">
+              <div className="grid grid-cols-2 gap-4 border-y border-slate-100 py-3 text-xs">
                 <div>
-                  <span className="text-[11px] text-slate-500 block mb-1">Due Date & Time</span>
-                  <div className="flex items-center gap-1.5 font-semibold text-slate-900">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>
-                      {selectedFollowUp.dueDate || selectedFollowUp.due_date || 'Not set'}
-                    </span>
-                    {(selectedFollowUp.dueTime || selectedFollowUp.due_time) && (
-                      <span className="text-slate-500 font-normal">
-                        at {selectedFollowUp.dueTime || selectedFollowUp.due_time}
-                      </span>
-                    )}
+                  <span className="text-[11px] text-slate-400 block mb-1">Due Date &amp; Time</span>
+                  <div className="font-semibold text-slate-800 flex items-center gap-1">
+                    <Calendar size={12} className="text-slate-400" />
+                    <span>{selectedFollowUp.dueDate || selectedFollowUp.due_date || 'Not set'}</span>
                   </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">at {selectedFollowUp.dueTime || selectedFollowUp.due_time || '10:00'}</div>
                 </div>
 
                 <div>
-                  <span className="text-[11px] text-slate-500 block mb-1">Assigned Owner</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-700">
-                      {(selectedFollowUp.assignedTo || selectedFollowUp.assigned_to || 'U')
-                        .charAt(0)
-                        .toUpperCase()}
-                    </div>
-                    <span className="font-semibold text-slate-900">
-                      {selectedFollowUp.assignedTo || selectedFollowUp.assigned_to || 'Unassigned'}
-                    </span>
+                  <span className="text-[11px] text-slate-400 block mb-1">Assigned Owner</span>
+                  <div className="font-semibold text-slate-800 flex items-center gap-1">
+                    <User size={12} className="text-slate-400" />
+                    <span>{selectedFollowUp.assignedTo || selectedFollowUp.assigned_to || 'Unassigned'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Notes */}
               <div>
-                <span className="text-[11px] text-slate-500 block mb-1 font-semibold uppercase tracking-wider">
-                  Action Context & Notes
-                </span>
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-800 leading-relaxed whitespace-pre-wrap">
-                  {selectedFollowUp.notes || 'No additional notes provided for this action.'}
+                <span className="text-[11px] font-semibold text-slate-500 uppercase block mb-1">Action Context &amp; Notes</span>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-700 whitespace-pre-wrap">
+                  {selectedFollowUp.notes || 'No notes provided.'}
                 </div>
               </div>
-
-              {/* Reminder info */}
-              {selectedFollowUp.reminder && selectedFollowUp.reminder !== 'none' && (
-                <div className="flex items-center gap-2 text-slate-600">
-                  <Bell className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Reminder set for: {selectedFollowUp.reminder.replace(/_/g, ' ')}</span>
-                </div>
-              )}
             </div>
 
-            {/* Modal Footer Actions */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
               <button
                 onClick={() => {
@@ -1571,9 +1243,9 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
                   setSelectedFollowUp(null);
                   setDeleteConfirmId(toDelete);
                 }}
-                className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg font-medium transition-colors inline-flex items-center gap-1.5"
+                className="px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 size={14} />
                 <span>Delete</span>
               </button>
 
@@ -1584,33 +1256,17 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
                     setSelectedFollowUp(null);
                     handleOpenReschedule(toResched);
                   }}
-                  className="px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg font-medium text-slate-700 transition-colors"
+                  className="px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700"
                 >
                   Reschedule
                 </button>
                 <button
-                  onClick={() => {
-                    const toEdit = selectedFollowUp;
-                    setSelectedFollowUp(null);
-                    handleOpenEditModal(toEdit);
-                  }}
-                  className="px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg font-medium text-slate-700 transition-colors"
-                >
-                  Edit
-                </button>
-                <button
                   onClick={() => handleToggleComplete(selectedFollowUp)}
-                  className={`px-4 py-1.5 rounded-lg font-medium text-white shadow-sm transition-all inline-flex items-center gap-1.5 ${
-                    (selectedFollowUp.status || '').toLowerCase() === 'completed' || (selectedFollowUp.status || '').toLowerCase() === 'done'
-                      ? 'bg-slate-700 hover:bg-slate-800'
-                      : 'bg-emerald-600 hover:bg-emerald-700'
-                  }`}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center gap-1.5"
                 >
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <Check size={14} />
                   <span>
-                    {(selectedFollowUp.status || '').toLowerCase() === 'completed' || (selectedFollowUp.status || '').toLowerCase() === 'done'
-                      ? 'Mark Incomplete'
-                      : 'Mark Completed'}
+                    {(selectedFollowUp.status || '').toLowerCase() === 'completed' ? 'Mark Pending' : 'Mark Completed'}
                   </span>
                 </button>
               </div>
@@ -1619,12 +1275,84 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
         </div>
       )}
 
-      {/* 8. DELETE CONFIRMATION MODAL */}
+      {/* ============================================================ */}
+      {/* 5. RESCHEDULE MODAL */}
+      {/* ============================================================ */}
+      {rescheduleFollowUp && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <CalendarDays className="text-amber-500" size={18} />
+                <span>Reschedule Follow-up</span>
+              </h3>
+              <button onClick={() => setRescheduleFollowUp(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveReschedule} className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">New Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={rescheduleDate}
+                    onChange={(e) => setRescheduleDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">New Time</label>
+                  <input
+                    type="time"
+                    value={rescheduleTime}
+                    onChange={(e) => setRescheduleTime(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Reason for Rescheduling</label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Client requested to connect next week..."
+                  value={rescheduleNote}
+                  onChange={(e) => setRescheduleNote(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-900 resize-none"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRescheduleFollowUp(null)}
+                  className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold shadow-xs"
+                >
+                  Save Schedule
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 6. DELETE CONFIRMATION MODAL */}
+      {/* ============================================================ */}
       {deleteConfirmId && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-sm p-6 space-y-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm p-6 space-y-4 animate-in fade-in duration-150">
             <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5" />
+              <AlertTriangle size={20} />
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">Delete Follow-up?</h3>
@@ -1635,13 +1363,13 @@ export const CrmFollowUpsList: React.FC<CrmFollowUpsListProps> = ({
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 onClick={() => setDeleteConfirmId(null)}
-                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700"
+                className="px-3.5 py-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-700"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirmId)}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-medium shadow-sm"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-xs"
               >
                 Confirm Delete
               </button>
