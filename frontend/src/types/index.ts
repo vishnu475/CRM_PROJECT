@@ -108,7 +108,7 @@ export interface Lead {
   email: string;
   phone: string;
   value: number;
-  stage: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Won' | 'Lost' | 'Negotiation';
+  stage: 'New' | 'Contacted' | 'Qualified' | 'Won' | 'Lost';
   score: number;
   source: string;
   assignedTo: string;

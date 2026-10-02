@@ -449,161 +449,60 @@ export const validateLeadStageTransition = (
     }
   }
 
-  // STEP 3: Validation for Qualified -> Proposal
-  if (currentStage === 'Qualified' && targetStage === 'Proposal') {
-    // Look for associated quotation in quotations array
-    const linkedQuotation = quotations.find((q) =>
-      q.customerId === lead.id ||
-      q.leadId === lead.id ||
-      q.customerName === lead.name ||
-      (q.customerId && q.customerId.includes(lead.id)) ||
-      (q.customerName && lead.name && q.customerName.toLowerCase() === lead.name.toLowerCase())
-    );
-
-    // Has a proposal been created (either via Quotations or direct Lead proposal fields)?
-    const hasProposal =
-      !!linkedQuotation ||
-      lead.proposalStatus !== undefined ||
-      (lead.proposalAmount !== undefined && lead.proposalAmount > 0) ||
-      (lead.proposalDate !== undefined && lead.proposalDate.trim().length > 0);
-
-    if (!hasProposal) {
-      return {
-        allowed: false,
-        message: 'Please create and send a proposal before moving this lead to Proposal.',
-      };
-    }
-
-    const proposalStatus = (linkedQuotation?.status || lead.proposalStatus || 'Draft');
-    const proposalAmount =
-      linkedQuotation?.amount !== undefined
-        ? Number(linkedQuotation.amount)
-        : lead.proposalAmount !== undefined
-        ? Number(lead.proposalAmount)
-        : 0;
-    const proposalDate = (linkedQuotation?.date || lead.proposalDate || '').trim();
-    const sentDate = (linkedQuotation?.sentDate || lead.proposalSentDate || '').trim();
-
-    // Check Proposal Amount
-    if (!proposalAmount || proposalAmount <= 0 || isNaN(proposalAmount)) {
-      return {
-        allowed: false,
-        message: 'Please provide a valid positive proposal amount before moving this lead to Proposal.',
-      };
-    }
-
-    // Check Proposal Date
-    if (!proposalDate) {
-      return {
-        allowed: false,
-        message: 'Please provide a valid proposal date before moving this lead to Proposal.',
-      };
-    }
-
-    // Check Proposal Status (must be 'Sent')
-    if (proposalStatus !== 'Sent') {
-      return {
-        allowed: false,
-        message: 'Please send the proposal before moving this lead to Proposal.',
-      };
-    }
-
-    // Check Sent Date (must exist when status is Sent)
-    if (!sentDate) {
-      return {
-        allowed: false,
-        message: 'Please provide the sent date for the proposal before moving this lead to Proposal.',
-      };
-    }
-  }
-
-  // STEP 4: Validation for Proposal -> Negotiation
-  if (targetStage === 'Negotiation') {
-    // Prevent stage skipping (e.g. from New/Contacted/Qualified directly to Negotiation)
-    if (currentStage !== 'Proposal') {
-      return {
-        allowed: false,
-        message: `Lead must be in "Proposal" stage with a sent proposal before moving to "Negotiation". Current stage is "${currentStage}".`,
-      };
-    }
-
-    const hasNegotiationActivity = activities.some((act) => isNegotiationInteraction(act, lead));
-
-    if (!hasNegotiationActivity) {
-      return {
-        allowed: false,
-        message: 'Record a completed customer negotiation or response before moving this lead to Negotiation.',
-      };
-    }
-  }
-
-  // STEP 5: Validation for Negotiation -> Won
+  // Direct transition to Won in CRM is blocked
   if (targetStage === 'Won') {
-    // Prevent stage skipping (e.g. from New/Contacted/Qualified/Proposal directly to Won)
-    if (currentStage !== 'Negotiation') {
-      return {
-        allowed: false,
-        message: `Lead must be in "Negotiation" stage before moving to "Won". Current stage is "${currentStage}".`,
-      };
-    }
-
-    const missingWonRequirements: string[] = [];
-
-    // 1. Customer Acceptance Confirmation Activity
-    const hasAcceptanceActivity = activities.some((act) => isDealAcceptedInteraction(act, lead));
-    if (!hasAcceptanceActivity) {
-      missingWonRequirements.push('Customer Acceptance (completed activity confirming deal acceptance/closure)');
-    }
-
-    // 2. Final Agreed Amount (> 0)
-    const finalAmount =
-      lead.finalAgreedAmount !== undefined && Number(lead.finalAgreedAmount) > 0
-        ? Number(lead.finalAgreedAmount)
-        : lead.value !== undefined && Number(lead.value) > 0
-        ? Number(lead.value)
-        : lead.budget !== undefined && Number(lead.budget) > 0
-        ? Number(lead.budget)
-        : 0;
-
-    if (!finalAmount || finalAmount <= 0 || isNaN(finalAmount)) {
-      missingWonRequirements.push('Final Agreed Amount (valid positive number)');
-    }
-
-    // 3. Closed/Won Date
-    const wonDate = (lead.wonDate || lead.expectedCloseDate || '').trim();
-    if (!wonDate) {
-      missingWonRequirements.push('Closed/Won Date');
-    }
-
-    if (missingWonRequirements.length > 0) {
-      if (missingWonRequirements.length === 1) {
-        if (!hasAcceptanceActivity) {
-          return {
-            allowed: false,
-            message: 'Record a completed customer acceptance or deal closure activity before marking this deal as Won.',
-          };
-        }
-        if (!finalAmount || finalAmount <= 0 || isNaN(finalAmount)) {
-          return {
-            allowed: false,
-            message: 'Please provide a valid positive Final Agreed Amount before marking this deal as Won.',
-          };
-        }
-        if (!wonDate) {
-          return {
-            allowed: false,
-            message: 'Please provide the Closed/Won Date before marking this deal as Won.',
-          };
-        }
-      }
-
-      return {
-        allowed: false,
-        message: `Complete the following requirements before moving this lead to Won:\n• ${missingWonRequirements.join('\n• ')}`,
-      };
-    }
+    return {
+      allowed: false,
+      message: 'Lead stage cannot be manually changed to Won. It is automatically updated when the linked quotation in Sales is accepted.',
+    };
   }
 
-  // All other stage transitions are allowed
+  // STEP 1: Validation for New -> Contacted
+  if (currentStage === 'New' && targetStage === 'Contacted') {
+    const hasCompletedInteraction = activities.some((act) => {
+      const isRelated =
+        act.relatedTo === lead.id ||
+        act.relatedTo === lead.name ||
+        (act.relatedTo && act.relatedTo.includes(lead.name)) ||
+        (act.relatedTo && act.relatedTo.includes(lead.id));
+
+      const isInteractionType =
+        act.type === 'Call' || act.type === 'Email' || act.type === 'Meeting';
+
+      const isCompleted = act.status === 'Completed';
+
+      return isRelated && isInteractionType && isCompleted;
+    });
+
+    if (!hasCompletedInteraction) {
+      return {
+        allowed: false,
+        message: 'Please record a completed call, email, or meeting before moving this lead to Contacted.',
+      };
+    }
+
+    return { allowed: true };
+  }
+
+  // STEP 2: Validation for Contacted -> Qualified
+  if (currentStage === 'Contacted' && targetStage === 'Qualified') {
+    const valResult = validateAllQualificationFields({
+      requirement: lead.requirement,
+      budget: lead.budget !== undefined ? lead.budget : lead.value,
+      decisionMaker: lead.decisionMaker || lead.contactPerson,
+      expectedCloseDate: lead.expectedCloseDate,
+    });
+
+    if (!valResult.isValid) {
+      const errorMsgs = Object.values(valResult.errors).filter(Boolean);
+      return {
+        allowed: false,
+        message: 'Complete all 4 qualification details before moving this lead to Qualified:\n' + errorMsgs.join('\n'),
+      };
+    }
+
+    return { allowed: true };
+  }
+
   return { allowed: true };
 };

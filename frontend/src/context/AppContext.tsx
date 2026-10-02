@@ -2613,12 +2613,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         setLeads((prev) =>
           prev.map((ld) => {
-            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId)) {
+            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId) || (targetQuote.customerName && (ld.company === targetQuote.customerName || ld.name === targetQuote.customerName))) {
               return {
                 ...ld,
                 stage: 'Won',
                 finalAgreedAmount: ld.finalAgreedAmount || finalAmt,
                 wonDate: ld.wonDate || todayStr,
+              };
+            }
+            return ld;
+          })
+        );
+      }
+    } else if (updates.status === 'Rejected') {
+      const targetQuote = quotations.find((q) => q.id === id);
+      if (targetQuote) {
+        const oppId = targetQuote.opportunityId;
+        const leadId = targetQuote.leadId;
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        if (oppId) {
+          setOpportunities((prev) =>
+            prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Lost', probability: 0 } : opp))
+          );
+        }
+
+        setLeads((prev) =>
+          prev.map((ld) => {
+            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId) || (targetQuote.customerName && (ld.company === targetQuote.customerName || ld.name === targetQuote.customerName))) {
+              return {
+                ...ld,
+                stage: 'Lost',
+                lostDate: ld.lostDate || todayStr,
+                lostReason: ld.lostReason || 'Quotation Rejected by Customer',
+                lostNotes: ld.lostNotes || 'Quotation Rejected in Sales module',
               };
             }
             return ld;

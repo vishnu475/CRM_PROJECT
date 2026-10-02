@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { CrmView, Lead, Activity } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { formatINR, getLeadScoreColor, getLeadStageColor } from '../utils/crmUtils';
-import { validateLeadStageTransition, validateAllQualificationFields, validateQualificationRequirement, validateQualificationBudget, validateQualificationDecisionMaker, validateQualificationExpectedCloseDate, isNegotiationInteraction, isDealAcceptedInteraction, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
+import { validateLeadStageTransition, validateAllQualificationFields, validateQualificationRequirement, validateQualificationBudget, validateQualificationDecisionMaker, validateQualificationExpectedCloseDate, validateLeadConversion, CRM_LOST_REASONS } from '../utils/leadWorkflowValidation';
 import { findMatchingCustomer, DuplicateCustomerMatch } from '../utils/duplicateCustomerDetection';
 import { 
   Loader2, ChevronRight, ArrowLeft, MoreVertical, Edit2, Calendar, User, UserPlus, FileText, 
@@ -228,7 +228,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
 
     const targetStatus = statusOverride || proposalForm.status || 'Sent';
     const computedSentDate = targetStatus === 'Sent' ? (proposalForm.sentDate || new Date().toISOString().split('T')[0]) : '';
-    const isNegotiation = lead.stage === 'Negotiation';
+    const isNegotiation = false;
 
     if (targetStatus === 'Sent') {
       if (!lead.email || !lead.email.trim()) {
@@ -289,11 +289,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
             proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
             proposalStatus: 'Sent',
             proposalSentDate: computedSentDate,
-            stage: 'Negotiation',
+            stage: 'Qualified',
           });
           showToast(`Proposal sent successfully to ${lead.email}`);
         } else {
-          const targetRev = isNegotiation ? nextRevisionNumber : (leadQuotation ? (leadQuotation.revisionNumber || 1) + 1 : 1);
+          const targetRev = leadQuotation ? ((leadQuotation as any).revisionNumber || 1) + 1 : 1;
           await addQuotation({
             quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
             customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
@@ -312,7 +312,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           });
 
           const shouldAdvanceToProposal = lead.stage === 'Qualified' && numericAmount > 0;
-          const newStage = shouldAdvanceToProposal ? 'Proposal' : lead.stage;
+          const newStage = lead.stage;
           updateLead(lead.id, {
             proposalAmount: numericAmount,
             proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
@@ -358,10 +358,10 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           proposalDate: proposalForm.date || new Date().toISOString().split('T')[0],
           proposalStatus: 'Draft',
           proposalSentDate: '',
-          stage: 'Negotiation',
+          stage: 'Qualified',
         });
         showToast(`Revised proposal v${nextRevisionNumber} saved as Draft.`);
-      } else if (leadQuotation && lead.stage === 'Proposal') {
+      } else if (leadQuotation) {
         await updateQuotation(leadQuotation.id, {
           amount: numericAmount,
           date: proposalForm.date || new Date().toISOString().split('T')[0],
@@ -379,7 +379,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
         });
         showToast('Proposal draft updated successfully.');
       } else {
-        const targetRev = isNegotiation ? nextRevisionNumber : (leadQuotation ? (leadQuotation.revisionNumber || 1) + 1 : 1);
+        const targetRev = leadQuotation ? ((leadQuotation as any).revisionNumber || 1) + 1 : 1;
         await addQuotation({
           quoteNumber: `QT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
           customerId: customers.find(c => c.id === lead.id || (lead.name && c.customerName && c.customerName.toLowerCase() === lead.name.toLowerCase()))?.id || lead.id,
@@ -496,13 +496,13 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
         });
       }
 
-      const shouldAdvance = lead.stage === 'Qualified' && amount > 0;
+      
       updateLead(lead.id, {
         proposalStatus: 'Sent',
         proposalSentDate: today,
         proposalAmount: amount,
         proposalDate: date,
-        ...(shouldAdvance ? { stage: 'Proposal' } : {}),
+        
       });
 
       showToast(`Proposal sent successfully to ${lead.email}`);
@@ -904,23 +904,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
       updateLead(lead.id, { stage: 'Contacted' });
     }
 
-    // Auto-advance lead stage to 'Negotiation' if in 'Proposal' and completed negotiation activity recorded
-    if (lead.stage === 'Proposal' && actStatus === 'Completed') {
-      const isNeg = isNegotiationInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
-      if (isNeg) {
-        updateLead(lead.id, { stage: 'Negotiation' });
-      }
-    }
 
-    // Auto-advance lead stage to 'Won' if in 'Negotiation' and completed customer acceptance activity recorded
-    if (lead.stage === 'Negotiation' && actStatus === 'Completed') {
-      const isAccepted = isDealAcceptedInteraction({ ...newActivity, id: 'temp' } as Activity, lead);
-      const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
-      const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
-      if (isAccepted && hasAmount && hasDate) {
-        updateLead(lead.id, { stage: 'Won' });
-      }
-    }
 
     setActivityForm({ type: 'Call', purpose: 'General', title: '', date: '', outcome: '', status: 'Completed' });
     setShowActivityForm(false);
@@ -1036,7 +1020,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </button>
               )
             )}
-            {lead.stage === 'Negotiation' && (
+            {false && (
               <button
                 onClick={openWonModal}
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-lg shadow-sm transition flex items-center gap-1.5"
@@ -1237,79 +1221,6 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               <p className="text-[11px] text-rose-500 mt-1.5">
                 This opportunity is closed and excluded from the active sales pipeline.
               </p>
-            </div>
-          </div>
-        )}
-
-        {/* DEDICATED NEGOTIATION CONTROL PANEL BANNER */}
-        {lead.stage === 'Negotiation' && (
-          <div className="mb-6 p-4.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 border-2 border-purple-300 rounded-2xl flex flex-wrap items-center justify-between gap-4 animate-in fade-in duration-200 shadow-sm">
-            <div className="flex items-center gap-3.5">
-              <div className="p-3 bg-purple-600 text-white rounded-xl shadow-md">
-                <FileText size={22} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-sm font-extrabold text-purple-950 uppercase tracking-wider">Negotiation Active</h4>
-                  {leadQuotation && (
-                    <span className="px-3 py-0.5 rounded-full text-xs font-black bg-purple-600 text-white border border-purple-700 shadow-2xs">
-                      Version v{leadQuotation.revisionNumber || 1}
-                    </span>
-                  )}
-                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${
-                    leadQuotation?.status === 'Accepted'
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                      : leadQuotation?.status === 'Sent'
-                      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                      : 'bg-amber-100 text-amber-700 border-amber-200'
-                  }`}>
-                    {leadQuotation?.status || 'Active'}
-                  </span>
-                </div>
-                <p className="text-xs text-purple-900 font-semibold mt-1">
-                  Current Proposal Amount: <span className="font-black text-slate-900 text-sm">{formatINR(leadQuotation?.amount || lead.proposalAmount || 0)}</span>
-                  {leadQuotation?.date ? ` • Date: ${leadQuotation.date}` : ''}
-                  {leadQuotation?.sentDate ? ` • Sent: ${leadQuotation.sentDate}` : ''}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => {
-                  setActivityForm({
-                    type: 'Call',
-                    purpose: 'Negotiation',
-                    title: '',
-                    date: new Date().toISOString().split('T')[0],
-                    outcome: '',
-                    status: 'Completed',
-                  });
-                  setShowActivityForm(true);
-                  setActiveTab('activities');
-                }}
-                className="px-3.5 py-2 bg-white text-purple-800 hover:bg-purple-100 border border-purple-300 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 shadow-2xs"
-                title="Log customer feedback or meeting outcome"
-              >
-                💬 Log Customer Response
-              </button>
-
-              <button
-                onClick={openProposalModal}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 transform hover:scale-[1.02]"
-                title="Refine commercial terms and send revised proposal version to customer"
-              >
-                <Edit2 size={13} /> [ Refine & Resend Proposal ]
-              </button>
-
-              {leadQuotation?.status !== 'Accepted' && (
-                <button
-                  onClick={handleAcceptProposal}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5"
-                >
-                  <CheckCircle2 size={13} /> ✅ Accept Final Proposal
-                </button>
-              )}
             </div>
           </div>
         )}
@@ -1755,54 +1666,17 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 <h2 className="text-base font-bold text-[#0f172a]">Current Proposal</h2>
                 {leadQuotation && (
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-indigo-100 text-indigo-700 border border-indigo-200">
-                    Version v{leadQuotation.revisionNumber || 1}
+                    Version v{leadQuotation?.revisionNumber || 1}
                   </span>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {(leadQuotation?.status === 'Draft' || lead.proposalStatus === 'Draft') && (
-                  <button
-                    disabled={isSendingEmail}
-                    onClick={handleSendProposal}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Send proposal to customer"
-                  >
-                    {isSendingEmail ? (
-                      <>
-                        <Loader2 size={13} className="animate-spin" /> Sending Proposal...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 size={13} /> Send Proposal
-                      </>
-                    )}
-                  </button>
-                )}
-                {lead.stage === 'Negotiation' && (
-                  <button
-                    onClick={openProposalModal}
-                    className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                    title="Refine commercial terms and send revised proposal version to customer"
-                  >
-                    <Edit2 size={13} /> [ Refine & Resend Proposal ]
-                  </button>
-                )}
-                {lead.stage === 'Negotiation' && leadQuotation?.status !== 'Accepted' && (
-                  <button
-                    onClick={handleAcceptProposal}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-                  >
-                    <CheckCircle2 size={13} /> ✅ Accept Final Proposal
-                  </button>
-                )}
-                {lead.stage !== 'Negotiation' && (
-                  <button
-                    onClick={openProposalModal}
-                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
-                  >
-                    <Edit2 size={12} /> {leadQuotation || lead.proposalAmount ? 'Edit Proposal' : '+ Create Proposal'}
-                  </button>
-                )}
+                <button
+                  onClick={() => setActiveModule('sales')}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                >
+                  <FileText size={13} /> {leadQuotation ? 'View Quotation in Sales' : 'Create Quotation in Sales'}
+                </button>
               </div>
             </div>
 
@@ -2138,8 +2012,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 const isCall = activity.type === 'Call';
                 const isEmail = activity.type === 'Email';
                 const isCompleted = activity.status === 'Completed';
-                const isDealWon = activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead);
-                const isNeg = activity.purpose === 'Negotiation' || isNegotiationInteraction(activity, lead);
+                const isDealWon = activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed';
+                const isNeg = activity.purpose === 'Negotiation';
                 const Icon = isDealWon ? Award : (isCall ? Phone : (isEmail ? Mail : CheckCircle2));
                 const colorClass = isCompleted
                   ? (isDealWon ? 'bg-emerald-100 text-emerald-600' : isNeg ? 'bg-purple-100 text-purple-600' : isCall ? 'bg-emerald-100 text-emerald-600' : isEmail ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600')
@@ -2164,7 +2038,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                               🤝 Negotiation
                             </span>
                           )}
-                          {(activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed' || isDealAcceptedInteraction(activity, lead)) && (
+                          {(activity.purpose === 'Customer Acceptance' || activity.purpose === 'Deal Closed') && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
                               🎉 Customer Accepted
                             </span>
@@ -2178,16 +2052,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                                 if (lead.stage === 'New' && (activity.type === 'Call' || activity.type === 'Email' || activity.type === 'Meeting')) {
                                   updateLead(lead.id, { stage: 'Contacted' });
                                 }
-                                if (lead.stage === 'Proposal' && isNegotiationInteraction({ ...activity, status: 'Completed' }, lead)) {
-                                  updateLead(lead.id, { stage: 'Negotiation' });
-                                }
-                                if (lead.stage === 'Negotiation' && isDealAcceptedInteraction({ ...activity, status: 'Completed' }, lead)) {
-                                  const hasAmount = (lead.finalAgreedAmount && lead.finalAgreedAmount > 0) || (lead.value && lead.value > 0);
-                                  const hasDate = !!(lead.wonDate || lead.expectedCloseDate);
-                                  if (hasAmount && hasDate) {
-                                    updateLead(lead.id, { stage: 'Won' });
-                                  }
-                                }
+
                               }}
                               className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded transition flex items-center gap-1"
                               title="Mark this interaction completed and advance stage"
@@ -2423,7 +2288,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <span className="text-base">🎉</span>
                   <div>
                     <span className="font-bold">Deal Won / Customer Acceptance:</span> Record customer agreement confirmation, signed proposal, or purchase order.
-                    {activityForm.status === 'Completed' && lead.stage === 'Negotiation' && (
+                    {activityForm.status === 'Completed' && false && (
                       <span className="block mt-0.5 text-emerald-700 font-semibold">Completing this with a valid final agreed amount & date qualifies the deal to advance to "Won".</span>
                     )}
                   </div>
@@ -2433,7 +2298,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <span className="text-base">🤝</span>
                   <div>
                     <span className="font-bold">Negotiation Activity:</span> Record discussion regarding pricing, discounts, custom features, payment terms, or delivery timeline.
-                    {activityForm.status === 'Completed' && lead.stage === 'Proposal' && (
+                    {activityForm.status === 'Completed' && false && (
                       <span className="block mt-0.5 text-purple-700 font-semibold">Saving will advance lead to "Negotiation".</span>
                     )}
                   </div>
@@ -2511,7 +2376,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     ? `Save Scheduled Activity (Keep in ${lead.stage})`
                     : (lead.stage === 'New'
                       ? 'Save & Move to Contacted'
-                      : (lead.stage === 'Proposal' && activityForm.purpose === 'Negotiation'
+                      : (false && activityForm.purpose === 'Negotiation'
                         ? 'Save & Move to Negotiation'
                         : 'Save Interaction'))}
                 </button>
@@ -2786,7 +2651,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#0f172a]">
-                    {lead.stage === 'Negotiation' ? `Refine & Resend Proposal (v${nextRevisionNumber})` : (leadQuotation || lead.proposalAmount ? 'Edit Proposal / Quotation' : 'Create & Send Proposal')}
+                    {false ? `Refine & Resend Proposal (v${nextRevisionNumber})` : (leadQuotation || lead.proposalAmount ? 'Edit Proposal / Quotation' : 'Create & Send Proposal')}
                   </h3>
                   <p className="text-xs text-slate-500">Proposal requirements for {lead.name}</p>
                 </div>
@@ -2806,7 +2671,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <span className="font-bold text-slate-800">Recipient:</span> {associatedContact?.name || lead.name} ({lead.company})
                 </div>
                 <div className="font-semibold text-indigo-600">
-                  {lead.stage === 'Negotiation' ? `Revision Version v${nextRevisionNumber}` : 'Version v1'}
+                  {false ? `Revision Version v${nextRevisionNumber}` : 'Version v1'}
                 </div>
               </div>
 
@@ -2906,7 +2771,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               </div>
 
               {/* HELPER BANNER */}
-              {lead.stage === 'Negotiation' ? (
+              {false ? (
                 <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex items-start gap-2 animate-in fade-in">
                   <span className="text-sm">🤝</span>
                   <div>
@@ -2958,7 +2823,7 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 size={14} /> {lead.stage === 'Negotiation' ? 'Send Revised Proposal' : 'Send Proposal'}
+                      <CheckCircle2 size={14} /> {false ? 'Send Revised Proposal' : 'Send Proposal'}
                     </>
                   )}
                 </button>
