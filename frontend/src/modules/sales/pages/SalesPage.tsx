@@ -212,7 +212,7 @@ export const SalesPage: React.FC = () => {
   return (
     <div className="space-y-6 pb-8">
       {/* 1. PAGE HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-6 rounded-2xl text-white shadow-xl relative overflow-hidden">
         <div>
           <div className="flex items-center text-xs text-slate-500 mb-1 font-medium">
             <span>ERP Commercial</span> 
@@ -233,7 +233,7 @@ export const SalesPage: React.FC = () => {
           {activeTab === 'quotes' && (
             <button
               onClick={() => { setEditingQuotation(null); setIsRevisionMode(false); setShowQuoteModal(true); }}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs shadow-lg hover:shadow-emerald-500/25 transition-all transform hover:-translate-y-0.5 flex items-center gap-2"
             >
               <Plus size={15} /> New Quotation
             </button>
@@ -259,48 +259,84 @@ export const SalesPage: React.FC = () => {
 
       {/* 2. EXECUTIVE KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Quotes Pipeline</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-emerald-600">{formatINR(metrics.activeQuoteValue)}</p>
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-              {quotations.length} Quotes
-            </span>
+        {/* Active Quotes Pipeline */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Active Quotes Pipeline</span>
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform">
+              <TrendingUp size={18} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Pending customer approval & revisions</p>
+          <div className="mt-3">
+            <p className="text-2xl font-black text-slate-900 tracking-tight">{formatINR(metrics.activeQuoteValue)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500 font-medium">Pending Review & Revisions</span>
+              <span className="text-[11px] font-extrabold text-emerald-700 bg-emerald-100/80 border border-emerald-200 px-2 py-0.5 rounded-full">
+                {quotations.length} Quotes
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Confirmed Sales Orders</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-indigo-600">{formatINR(metrics.confirmedOrdersValue)}</p>
-            <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-              {metrics.confirmedOrdersCount} Orders
-            </span>
+        {/* Confirmed Sales Orders */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 to-purple-500" />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Confirmed Sales Orders</span>
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform">
+              <ShoppingCart size={18} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Accepted contracts ready for billing</p>
+          <div className="mt-3">
+            <p className="text-2xl font-black text-slate-900 tracking-tight">{formatINR(metrics.confirmedOrdersValue)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500 font-medium">Accepted Contracts Billed</span>
+              <span className="text-[11px] font-extrabold text-indigo-700 bg-indigo-100/80 border border-indigo-200 px-2 py-0.5 rounded-full">
+                {metrics.confirmedOrdersCount} Orders
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Invoiced Value</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-[#0f172a]">{formatINR(metrics.totalInvoiced)}</p>
-            <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
-              {invoices.length} Invoices
-            </span>
+        {/* Total Billed Revenue */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Invoiced Value</span>
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl group-hover:scale-110 transition-transform">
+              <Receipt size={18} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Total revenue billed through tax invoices</p>
+          <div className="mt-3">
+            <p className="text-2xl font-black text-slate-900 tracking-tight">{formatINR(metrics.totalInvoiced)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500 font-medium">Billed Revenue Invoices</span>
+              <span className="text-[11px] font-extrabold text-blue-700 bg-blue-100/80 border border-blue-200 px-2 py-0.5 rounded-full">
+                {invoices.length} Invoices
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Outstanding Balance</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-amber-600">{formatINR(metrics.outstandingBalance)}</p>
-            <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-              Accounts A/R
-            </span>
+        {/* Outstanding Balance */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-orange-500" />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Outstanding Balance</span>
+            <div className="p-2 bg-amber-50 text-amber-600 rounded-xl group-hover:scale-110 transition-transform">
+              <DollarSign size={18} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Receivables awaiting payment in Banking</p>
+          <div className="mt-3">
+            <p className="text-2xl font-black text-amber-600 tracking-tight">{formatINR(metrics.outstandingBalance)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500 font-medium">Receivables Awaiting Settlement</span>
+              <span className="text-[11px] font-extrabold text-amber-700 bg-amber-100/80 border border-amber-200 px-2 py-0.5 rounded-full">
+                Accounts A/R
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
