@@ -66,8 +66,8 @@ export const useCrmOverviewData = (): CrmOverviewData => {
   const pendingFollowUps = followUps.filter(f => f.status !== 'completed' && f.status !== 'Completed' && f.status !== 'Cancelled');
   const followUpsDue = pendingFollowUps.length;
 
-  // 2. LEAD CONVERSION (Including all 7 stages: New, Contacted, Qualified, Proposal, Negotiation, Won, Lost)
-  const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
+  // 2. LEAD CONVERSION (Including 5 target CRM stages: New, Contacted, Qualified, Won, Lost)
+  const leadStages = ['New', 'Contacted', 'Qualified', 'Won', 'Lost'];
   const leadConversion = leadStages.map(stage => {
     const count = activeLeads.filter(l => l.stage === stage).length;
     const percentage = totalLeads > 0 ? Number(((count / totalLeads) * 100).toFixed(1)) : 0;
@@ -78,8 +78,8 @@ export const useCrmOverviewData = (): CrmOverviewData => {
   const wonLeadsCount = activeLeads.filter(l => l.stage === 'Won').length;
   const overallConversionRate = totalLeads > 0 ? Number(((wonLeadsCount / totalLeads) * 100).toFixed(1)) : 0;
 
-  const qualifiedPlusLeads = activeLeads.filter(l => ['Qualified', 'Proposal', 'Negotiation', 'Won'].includes(l.stage)).length;
-  const convertedToOppLeads = activeLeads.filter(l => ['Proposal', 'Negotiation', 'Won'].includes(l.stage)).length;
+  const qualifiedPlusLeads = activeLeads.filter(l => ['Qualified', 'Won'].includes(l.stage)).length;
+  const convertedToOppLeads = activeLeads.filter(l => l.stage === 'Won' || l.isConverted).length;
   const qualifiedToOppRate = qualifiedPlusLeads > 0 
     ? Number(((convertedToOppLeads / qualifiedPlusLeads) * 100).toFixed(1)) 
     : (qualifiedLeads > 0 ? Number(((opportunities.length / qualifiedLeads) * 100).toFixed(1)) : 0);

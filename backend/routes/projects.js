@@ -459,13 +459,17 @@ async function createProjectHandler(req, res) {
       const projectId = id || `PRJ-${Date.now().toString().slice(-4)}`;
       const projectCode = code || projectId;
       const finalProjectName = name || `${resolvedCustName} - Implementation`;
+      const rawStartDate = (startDate || lead.won_date || isoToday || '').toString().trim();
+      const cleanStartDate = rawStartDate || isoToday;
+      const rawEndDate = (endDate || lead.expected_close_date || '').toString().trim();
+      const cleanEndDate = rawEndDate || null;
 
       const projectRes = await dbClient.query(
         `INSERT INTO projects (
           id, code, name, client, customer_id, source_lead_id, source_opportunity_id,
           project_requirement, project_notes, project_manager, start_date, end_date,
           budget, spent, progress, status, priority, weightage, repository_url, created_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING *`,
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13,$14,$15,$16,$17,$18,$19,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) RETURNING *`,
         [
           projectId,
           projectCode,
@@ -477,8 +481,8 @@ async function createProjectHandler(req, res) {
           projectRequirement !== undefined ? projectRequirement : (lead.requirement || null),
           projectNotes !== undefined ? projectNotes : (lead.notes || null),
           projectManager || lead.assigned_to || null,
-          startDate || lead.won_date || isoToday,
-          endDate || lead.expected_close_date || null,
+          cleanStartDate,
+          cleanEndDate,
           budget !== undefined ? budget : (lead.final_agreed_amount || lead.value || 0),
           spent || 0,
           progress || 0,
@@ -495,7 +499,7 @@ async function createProjectHandler(req, res) {
           id, code, name, client, customer_id, source_lead_id, source_opportunity_id,
           project_requirement, project_notes, project_manager, start_date, end_date,
           budget, spent, progress, status, priority, weightage, repository_url, created_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::date,$12::date,$13,$14,$15,$16,$17,$18,$19,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
         ON CONFLICT (id) DO UPDATE SET
           name = EXCLUDED.name,
           client = EXCLUDED.client,
@@ -514,8 +518,8 @@ async function createProjectHandler(req, res) {
           projectRequirement !== undefined ? projectRequirement : (lead.requirement || null),
           projectNotes !== undefined ? projectNotes : (lead.notes || null),
           projectManager || lead.assigned_to || null,
-          startDate || lead.won_date || isoToday,
-          endDate || lead.expected_close_date || null,
+          cleanStartDate,
+          cleanEndDate,
           budget !== undefined ? budget : (lead.final_agreed_amount || lead.value || 0),
           spent || 0,
           progress || 0,

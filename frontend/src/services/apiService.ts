@@ -207,6 +207,7 @@ export const LeadsAPI = {
   create:  (data: any)  => request('POST', '/leads', data),
   update:  (id: string, data: any) => request('PATCH', `/leads/${id}`, data),
   delete:  (id: string) => request('DELETE', `/leads/${id}`),
+  convert: (id: string, customData?: any) => request('POST', `/leads/${id}/convert`, customData),
   uploadAttachment: (payload: { fileName: string; fileData: string; fileSize?: number; fileType?: string }) =>
     request('POST', '/leads/upload-attachment', payload),
   deleteAttachment: (filename: string) =>

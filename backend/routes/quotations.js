@@ -265,10 +265,10 @@ const updateQuotationHandler = async (req, res) => {
          subtotal = COALESCE($4, subtotal),
          tax_amount = COALESCE($5, tax_amount),
          discount_amount = COALESCE($6, discount_amount),
-         valid_until = COALESCE($7, valid_until),
-         sent_date = COALESCE($8, sent_date),
-         accepted_date = COALESCE($9, accepted_date),
-         date = COALESCE($10, date),
+         valid_until = COALESCE($7::date, valid_until),
+         sent_date = COALESCE($8::text, sent_date),
+         accepted_date = COALESCE($9::text, accepted_date),
+         date = COALESCE($10::date, date),
          revision_number = COALESCE($11, revision_number),
          revision_group_id = COALESCE($12, revision_group_id),
          terms = COALESCE($13, terms),
@@ -292,6 +292,85 @@ const updateQuotationHandler = async (req, res) => {
         notes
       ]
     );
+
+    // Sync linked CRM lead when quotation status changes to Accepted or Rejected
+    const targetLeadId = current.lead_id || req.body.leadId;
+
+    if (status === 'Accepted' && targetLeadId) {
+      const leadRes = await client.query('SELECT * FROM leads WHERE id = $1', [targetLeadId]);
+      if (leadRes.rows.length > 0) {
+        const linkedLead = leadRes.rows[0];
+        if (linkedLead.stage === 'Lost') {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot accept quotation: linked CRM lead is marked as Lost.'
+          });
+        }
+        // Update linked CRM Lead to Won within the same transaction
+        const finalAmt = amount !== undefined ? parseFloat(amount) : parseFloat(current.amount) || 0;
+        await client.query(
+          `UPDATE leads SET
+            stage = 'Won',
+            final_agreed_amount = $2,
+            won_date = COALESCE(won_date, CURRENT_TIMESTAMP::text),
+            updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [targetLeadId, finalAmt]
+        );
+      }
+    } else if (status === 'Rejected' && targetLeadId) {
+      const leadRes = await client.query('SELECT * FROM leads WHERE id = $1', [targetLeadId]);
+      if (leadRes.rows.length > 0) {
+        const linkedLead = leadRes.rows[0];
+        if (linkedLead.stage === 'Won') {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot reject quotation: linked CRM lead is already marked as Won.'
+          });
+        }
+
+        const lostReason = (req.body.lostReason || linkedLead.lost_reason || '').trim();
+        const lostReasonDetails = (req.body.lostReasonDetails || linkedLead.lost_reason_details || '').trim();
+        const lostNotes = (req.body.lostNotes || linkedLead.lost_notes || '').trim();
+
+        if (!lostReason) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide a valid Lost Reason before rejecting the quotation and marking the linked lead as Lost.'
+          });
+        }
+        if (lostReason.toLowerCase() === 'other' && !lostReasonDetails && !lostNotes) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide a custom explanation when selecting "Other" as the Lost Reason.'
+          });
+        }
+        if (!lostNotes) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Please provide Lost Notes/Comments explaining why this deal was lost.'
+          });
+        }
+
+        // Update linked CRM Lead to Lost within the same transaction
+        await client.query(
+          `UPDATE leads SET
+            stage = 'Lost',
+            lost_reason = $2,
+            lost_reason_details = $3,
+            lost_notes = $4,
+            lost_date = COALESCE(lost_date, CURRENT_TIMESTAMP::text),
+            updated_at = CURRENT_TIMESTAMP
+           WHERE id = $1`,
+          [targetLeadId, lostReason, lostReasonDetails || null, lostNotes]
+        );
+      }
+    }
 
     // If replacement items provided
     if (items && Array.isArray(items)) {

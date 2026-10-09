@@ -42,7 +42,7 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
   // Derive Stage Counts for Tabs
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = { All: activeLeads.length };
-    const stages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
+    const stages = ['New', 'Contacted', 'Qualified', 'Won', 'Lost'];
     stages.forEach(s => counts[s] = 0);
     activeLeads.forEach(l => {
       if (counts[l.stage] !== undefined) counts[l.stage]++;
@@ -135,7 +135,7 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
 
       {/* STAGE TABS */}
       <div className="flex overflow-x-auto pb-2 mb-4 scrollbar-hide space-x-2">
-        {['All', 'New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'].map(stage => (
+        {['All', 'New', 'Contacted', 'Qualified', 'Won', 'Lost'].map(stage => (
           <button
             key={stage}
             onClick={() => { setActiveStageTab(stage); setCurrentPage(1); }}

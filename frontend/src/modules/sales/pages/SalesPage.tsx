@@ -11,6 +11,7 @@ import {
 import { QuotationModal } from '../components/QuotationModal';
 import { SalesOrderModal } from '../components/SalesOrderModal';
 import { InvoiceModal } from '../components/InvoiceModal';
+import { CRM_LOST_REASONS } from '../../crm/utils/leadWorkflowValidation';
 
 export const SalesPage: React.FC = () => {
   const { 
@@ -45,6 +46,12 @@ export const SalesPage: React.FC = () => {
 
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<SalesOrder | null>(null);
+
+  // Rejection Modal state
+  const [rejectionModalQuote, setRejectionModalQuote] = useState<Quotation | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('Price / Budget Constraints');
+  const [rejectReasonDetails, setRejectReasonDetails] = useState<string>('');
+  const [rejectNotes, setRejectNotes] = useState<string>('');
 
   // 1. KPI Stats Computations from live data
   const metrics = useMemo(() => {
@@ -144,10 +151,44 @@ export const SalesPage: React.FC = () => {
   };
 
   const handleRejectQuote = async (quote: Quotation) => {
-    if (window.confirm(`Mark quotation ${quote.quoteNumber} as Rejected?`)) {
+    if (quote.leadId || (quote as any).lead_id) {
+      setRejectionModalQuote(quote);
+      setRejectReason('Price / Budget Constraints');
+      setRejectReasonDetails('');
+      setRejectNotes('');
+    } else if (window.confirm(`Mark quotation ${quote.quoteNumber} as Rejected?`)) {
       await updateQuotation(quote.id, {
         status: 'Rejected',
       });
+    }
+  };
+
+  const handleConfirmRejectQuote = async () => {
+    if (!rejectionModalQuote) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      alert('Please select a Lost Reason.');
+      return;
+    }
+    if (reason === 'Other' && !rejectReasonDetails.trim() && !rejectNotes.trim()) {
+      alert('Please provide a custom explanation when selecting "Other" as the Lost Reason.');
+      return;
+    }
+    if (!rejectNotes.trim()) {
+      alert('Please provide Lost Notes/Comments explaining why this deal was lost.');
+      return;
+    }
+
+    try {
+      await updateQuotation(rejectionModalQuote.id, {
+        status: 'Rejected',
+        lostReason: reason,
+        lostReasonDetails: rejectReasonDetails.trim(),
+        lostNotes: rejectNotes.trim(),
+      } as any);
+      setRejectionModalQuote(null);
+    } catch (err: any) {
+      // Error handled inside AppContext or logged
     }
   };
 
@@ -939,6 +980,84 @@ export const SalesPage: React.FC = () => {
         onClose={() => { setShowInvoiceModal(false); setSelectedOrderForInvoice(null); }}
         salesOrder={selectedOrderForInvoice}
       />
+
+      {/* Rejection Modal for Lead-linked Quotation */}
+      {rejectionModalQuote && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <h3 className="text-base font-bold text-slate-900 mb-1">Reject Quotation & Mark Lead Lost</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Quotation <span className="font-semibold text-slate-800">{rejectionModalQuote.quoteNumber}</span> is linked to a CRM Lead. Specify the Lost Reason and Notes to proceed.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lost Reason <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none bg-white"
+                >
+                  {CRM_LOST_REASONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {rejectReason === 'Other' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Custom Reason Explanation <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Specify custom reason..."
+                    value={rejectReasonDetails}
+                    onChange={(e) => setRejectReasonDetails(e.target.value)}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lost Notes / Comments <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Provide details explaining why the deal was lost..."
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none text-slate-800"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRejectionModalQuote(null)}
+                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRejectQuote}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm"
+              >
+                Confirm Rejection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

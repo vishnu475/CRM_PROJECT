@@ -1645,244 +1645,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    const timestamp = Date.now();
-    const isoTimestamp = new Date().toISOString();
-    const today = isoTimestamp.split('T')[0];
-
-    // 1. Check for Duplicate / Existing Customer
-    let customerId = '';
-    let customerName = '';
-    let isExistingCustomerReused = false;
-    let newCustomerState: Customer | null = null;
-    let newCustomerPayload: any = null;
-
-    if (customData?.useExistingCustomerId) {
-      const existing = customers.find((c) => c.id === customData.useExistingCustomerId);
-      if (existing) {
-        customerId = existing.id;
-        customerName = existing.customerName;
-        isExistingCustomerReused = true;
-      }
-    }
-
-    if (!customerId && !customData?.forceNewCustomer) {
-      const match = findMatchingCustomer(lead, customers, customData);
-      if (match.hasDuplicate && match.matchingCustomer) {
-        customerId = match.matchingCustomer.id;
-        customerName = match.matchingCustomer.customerName;
-        isExistingCustomerReused = true;
-      }
-    }
-
-    if (!customerId) {
-      // Create new customer
-      customerId = `CUST-${timestamp}`;
-      customerName = customData?.customerName?.trim() || (lead.company?.trim() || lead.name.trim());
-      const customerType = customData?.customerType || (lead.company ? 'Company' : 'Individual');
-      const industry = customData?.industry || lead.industry || '';
-      const website = customData?.website || lead.website || '';
-      const contactPersonName = customData?.contactName?.trim() || (lead.decisionMaker || lead.contactPerson || lead.name).trim();
-      const designation = customData?.contactDesignation?.trim() || lead.designation || 'Primary Contact';
-      const contactEmail = customData?.contactEmail?.trim() || lead.email || '';
-      const contactPhone = customData?.contactPhone?.trim() || lead.phone || '';
-
-      newCustomerPayload = {
-        id: customerId,
-        customerCode: customerId,
-        customerName,
-        customerType,
-        industry,
-        ownerId: lead.assignedTo || '',
-        status: 'Active' as const,
-        creditLimit: 0,
-        contactName: contactPersonName,
-        contactEmail,
-        contactPhone,
-        billingCity: (lead as any).city || (lead as any).address || '',
-        billingCountry: (lead as any).country || '',
-        convertedFromLeadId: lead.id,
-      };
-
-      newCustomerState = {
-        id: customerId,
-        customerCode: customerId,
-        customerName,
-        customerType,
-        industry,
-        ownerId: lead.assignedTo || '',
-        status: 'Active',
-        primaryContact: {
-          name: contactPersonName,
-          email: contactEmail,
-          phone: contactPhone,
-          alternatePhone: lead.alternatePhone,
-        },
-        billingAddress: {
-          city: (lead as any).city || (lead as any).address || '',
-          country: (lead as any).country || '',
-        },
-        creditLimit: 0,
-        convertedFromLeadId: lead.id,
-        createdAt: isoTimestamp,
-        updatedAt: isoTimestamp,
-      };
-    }
-
-    // 2. Prepare Contact Data (Check for existing Contact on the Customer)
-    let contactId = '';
-    let isExistingContactReused = false;
-    let newContactState: Contact | null = null;
-    let newContactPayload: any = null;
-
-    const contactPersonName = customData?.contactName?.trim() || (lead.decisionMaker || lead.contactPerson || lead.name).trim();
-    const designation = customData?.contactDesignation?.trim() || lead.designation || 'Primary Contact';
-    const contactEmail = customData?.contactEmail?.trim() || lead.email || '';
-    const contactPhone = customData?.contactPhone?.trim() || lead.phone || '';
-
-    const matchedContact = findMatchingContact(lead, contacts, customerId, customData);
-    if (matchedContact) {
-      contactId = matchedContact.id;
-      isExistingContactReused = true;
-    } else {
-      contactId = `CON-${timestamp}`;
-      newContactPayload = {
-        id: contactId,
-        name: contactPersonName,
-        email: contactEmail,
-        phone: contactPhone,
-        company: customerName,
-        customerId,
-        leadId: lead.id,
-        title: designation,
-      };
-
-      newContactState = {
-        id: contactId,
-        name: contactPersonName,
-        customerId,
-        customerName,
-        designation,
-        email: contactEmail,
-        phone: contactPhone,
-        owner: lead.assignedTo || '',
-        lastInteraction: lead.wonDate || today,
-        status: 'Active',
-      };
-    }
-
-    // 3. Prepare Opportunity Data (Check for existing Opportunity on Customer to avoid duplicates on retry)
-    const defaultOppSummary = lead.requirement ? (lead.requirement.length > 40 ? `${lead.requirement.slice(0, 37)}...` : lead.requirement) : 'Deal';
-    const oppName = customData?.opportunityName?.trim() || (lead.company ? `${lead.company} - ${defaultOppSummary}` : `${lead.name} Deal`);
-    const oppValue = customData?.opportunityValue !== undefined && !isNaN(customData.opportunityValue)
-      ? customData.opportunityValue
-      : (lead.finalAgreedAmount || lead.value || lead.budget || 0);
-    const oppExpectedClose = customData?.expectedCloseDate || lead.wonDate || lead.expectedCloseDate || today;
-
-    let opportunityId = '';
-    let newOpportunityState: Opportunity | null = null;
-    let newOpportunityPayload: any = null;
-
-    const existingOpp = opportunities.find(
-      (o) => o.customerId === customerId && (o.id === lead.convertedToOpportunityId || o.name === oppName)
-    );
-
-    if (existingOpp) {
-      opportunityId = existingOpp.id;
-    } else {
-      opportunityId = `OPP-${timestamp}`;
-      newOpportunityPayload = {
-        id: opportunityId,
-        name: oppName,
-        customerId,
-        customerName,
-        value: oppValue,
-        probability: 100,
-        expectedClose: oppExpectedClose,
-        owner: lead.assignedTo || '',
-        stage: 'Won',
-      };
-
-      newOpportunityState = {
-        id: opportunityId,
-        name: oppName,
-        customerId,
-        customerName,
-        value: oppValue,
-        probability: 100,
-        expectedClose: oppExpectedClose,
-        owner: lead.assignedTo || '',
-        stage: 'Won',
-      };
-    }
-
-    // 4. Prepare Lead updates
-    const leadUpdates: Partial<Lead> = {
-      convertedToCustomerId: customerId,
-      convertedToContactId: contactId,
-      convertedToOpportunityId: opportunityId,
-      isConverted: true,
-      convertedAt: isoTimestamp,
-    };
-
     try {
-      // Step A: Create Customer in PostgreSQL if not reused
-      if (!isExistingCustomerReused && newCustomerPayload) {
-        const custRes = await CustomersAPI.create(newCustomerPayload);
-        if (!custRes.success) {
-          throw new Error(custRes.message || 'Failed to create Customer record');
-        }
+      const res = await LeadsAPI.convert(leadId, customData);
+      if (!res.success) {
+        return {
+          success: false,
+          message: res.message || 'Lead conversion failed on server.',
+        };
       }
 
-      // Step B: Create Contact in PostgreSQL if not reused, or link existing contact to customer
-      if (!isExistingContactReused && newContactPayload) {
-        const contRes = await ContactsAPI.create(newContactPayload);
-        if (!contRes.success) {
-          console.warn('⚠️ Contact creation failed during conversion, proceeding with customer:', contRes.message);
-        }
-      } else if (isExistingContactReused && matchedContact) {
-        setContacts((prev) =>
-          prev.map((c) =>
-            c.id === matchedContact.id
-              ? { ...c, customerId, customerName }
-              : c
-          )
-        );
-        try {
-          await ContactsAPI.update(matchedContact.id, {
-            customerId,
-            company: customerName,
-          });
-        } catch (cErr) {
-          console.warn('⚠️ Existing contact customer link update failed:', cErr);
-        }
+      const { customerId, contactId, opportunityId, isExistingCustomerReused, isExistingContactReused, data } = res as any;
+
+      // Update React state with server-confirmed records
+      if (data?.customer) {
+        const mappedCust: Customer = {
+          id: data.customer.id,
+          customerCode: data.customer.customer_code || data.customer.id,
+          customerName: data.customer.customer_name,
+          customerType: data.customer.customer_type || 'Company',
+          industry: data.customer.industry || 'General',
+          ownerId: data.customer.owner_id || '',
+          status: data.customer.status || 'Active',
+          primaryContact: {
+            name: data.customer.contact_name || '',
+            email: data.customer.contact_email || '',
+            phone: data.customer.contact_phone || '',
+          },
+          billingAddress: {
+            city: data.customer.billing_city || '',
+            country: data.customer.billing_country || '',
+          },
+          creditLimit: parseFloat(data.customer.credit_limit) || 0,
+          convertedFromLeadId: data.customer.converted_from_lead_id || leadId,
+          createdAt: data.customer.created_at || new Date().toISOString(),
+          updatedAt: data.customer.updated_at || new Date().toISOString(),
+        };
+        setCustomers((prev) => [mappedCust, ...prev.filter(c => c.id !== mappedCust.id)]);
       }
 
-      // Step C: Create Opportunity in PostgreSQL if not existing
-      if (newOpportunityPayload) {
-        const oppRes = await OpportunitiesAPI.create(newOpportunityPayload);
-        if (!oppRes.success) {
-          console.warn('⚠️ Opportunity creation failed during conversion, proceeding with customer:', oppRes.message);
-        }
+      if (data?.contact) {
+        const mappedCont: Contact = {
+          id: data.contact.id,
+          name: data.contact.name,
+          customerId: data.contact.customer_id,
+          customerName: data.contact.company || data.customer?.customer_name || '',
+          designation: data.contact.title || 'Primary Contact',
+          email: data.contact.email || '',
+          phone: data.contact.phone || '',
+          owner: lead.assignedTo || '',
+          lastInteraction: lead.wonDate || new Date().toISOString().split('T')[0],
+          status: 'Active',
+        };
+        setContacts((prev) => [mappedCont, ...prev.filter(c => c.id !== mappedCont.id)]);
       }
 
-      // Step D: Update Lead in PostgreSQL
-      const leadRes = await LeadsAPI.update(leadId, leadUpdates);
-      if (!leadRes.success) {
-        console.warn('⚠️ Lead conversion stamp update failed in backend:', leadRes.message);
+      if (data?.opportunity) {
+        const mappedOpp: Opportunity = {
+          id: data.opportunity.id,
+          name: data.opportunity.name,
+          customerId: data.opportunity.customer_id,
+          customerName: data.opportunity.customer_name,
+          value: parseFloat(data.opportunity.value) || 0,
+          probability: data.opportunity.probability !== undefined ? data.opportunity.probability : 100,
+          expectedClose: data.opportunity.expected_close || new Date().toISOString().split('T')[0],
+          owner: data.opportunity.owner || '',
+          stage: data.opportunity.stage || 'Won',
+        };
+        setOpportunities((prev) => [mappedOpp, ...prev.filter(o => o.id !== mappedOpp.id)]);
       }
 
-      // Step E: Update React states
-      if (newCustomerState) {
-        setCustomers((prev) => [newCustomerState!, ...prev]);
-      }
-      if (newContactState) {
-        setContacts((prev) => [newContactState!, ...prev]);
-      }
-      if (newOpportunityState) {
-        setOpportunities((prev) => [newOpportunityState!, ...prev]);
-      }
       setLeads((prev) =>
-        prev.map((l) => (l.id === leadId ? { ...l, ...leadUpdates } : l))
+        prev.map((l) =>
+          l.id === leadId
+            ? {
+                ...l,
+                isConverted: true,
+                convertedAt: data?.lead?.converted_at || new Date().toISOString(),
+                convertedToCustomerId: customerId,
+                convertedToContactId: contactId,
+                convertedToOpportunityId: opportunityId,
+              }
+            : l
+        )
       );
 
       return {
@@ -1900,7 +1744,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         message: err.message || 'An unexpected error occurred during lead conversion.',
       };
     }
-  }, [leads, customers, contacts, opportunities]);
+  }, [leads]);
 
   const addProject = useCallback(async (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => {
     const projectId = projectData.id || `PRJ-${Date.now().toString().slice(-4)}`;
@@ -2593,72 +2437,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const updateQuotation = useCallback(async (id: string, updates: Partial<Quotation>) => {
-    setQuotations((prev) =>
-      prev.map((q) => (q.id === id ? { ...q, ...updates } : q))
-    );
+    try {
+      const res = await QuotationsAPI.update(id, updates);
+      if (!res.success) {
+        alert(res.message || 'Failed to update quotation.');
+        throw new Error(res.message || 'Failed to update quotation.');
+      }
 
-    if (updates.status === 'Accepted') {
+      const updatedQuote = res.data || updates;
+
+      setQuotations((prev) =>
+        prev.map((q) => (q.id === id ? { ...q, ...updatedQuote } : q))
+      );
+
       const targetQuote = quotations.find((q) => q.id === id);
-      if (targetQuote) {
-        const oppId = targetQuote.opportunityId;
-        const leadId = targetQuote.leadId;
-        const finalAmt = updates.amount || targetQuote.amount || 0;
-        const todayStr = new Date().toISOString().split('T')[0];
+      const leadId = updatedQuote.leadId || targetQuote?.leadId || (targetQuote as any)?.lead_id;
+      const oppId = updatedQuote.opportunityId || targetQuote?.opportunityId;
+      const todayStr = new Date().toISOString().split('T')[0];
 
+      if (updates.status === 'Accepted') {
         if (oppId) {
           setOpportunities((prev) =>
             prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Won', probability: 100 } : opp))
           );
         }
-
-        setLeads((prev) =>
-          prev.map((ld) => {
-            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId) || (targetQuote.customerName && (ld.company === targetQuote.customerName || ld.name === targetQuote.customerName))) {
-              return {
-                ...ld,
-                stage: 'Won',
-                finalAgreedAmount: ld.finalAgreedAmount || finalAmt,
-                wonDate: ld.wonDate || todayStr,
-              };
-            }
-            return ld;
-          })
-        );
-      }
-    } else if (updates.status === 'Rejected') {
-      const targetQuote = quotations.find((q) => q.id === id);
-      if (targetQuote) {
-        const oppId = targetQuote.opportunityId;
-        const leadId = targetQuote.leadId;
-        const todayStr = new Date().toISOString().split('T')[0];
-
+        if (leadId) {
+          setLeads((prev) =>
+            prev.map((ld) => {
+              if (ld.id === leadId) {
+                return {
+                  ...ld,
+                  stage: 'Won',
+                  finalAgreedAmount: ld.finalAgreedAmount || updates.amount || targetQuote?.amount || 0,
+                  wonDate: ld.wonDate || todayStr,
+                };
+              }
+              return ld;
+            })
+          );
+        }
+      } else if (updates.status === 'Rejected') {
         if (oppId) {
           setOpportunities((prev) =>
             prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Lost', probability: 0 } : opp))
           );
         }
-
-        setLeads((prev) =>
-          prev.map((ld) => {
-            if ((leadId && ld.id === leadId) || (oppId && ld.convertedToOpportunityId === oppId) || (targetQuote.customerName && (ld.company === targetQuote.customerName || ld.name === targetQuote.customerName))) {
-              return {
-                ...ld,
-                stage: 'Lost',
-                lostDate: ld.lostDate || todayStr,
-                lostReason: ld.lostReason || 'Quotation Rejected by Customer',
-                lostNotes: ld.lostNotes || 'Quotation Rejected in Sales module',
-              };
-            }
-            return ld;
-          })
-        );
+        if (leadId) {
+          const lReason = (updates as any).lostReason || 'Quotation Rejected by Customer';
+          const lNotes = (updates as any).lostNotes || 'Quotation Rejected in Sales module';
+          setLeads((prev) =>
+            prev.map((ld) => {
+              if (ld.id === leadId) {
+                return {
+                  ...ld,
+                  stage: 'Lost',
+                  lostDate: ld.lostDate || todayStr,
+                  lostReason: lReason,
+                  lostNotes: lNotes,
+                };
+              }
+              return ld;
+            })
+          );
+        }
       }
-    }
-
-    try {
-      await QuotationsAPI.update(id, updates);
-    } catch (err) {
-      console.warn('⚠️ [CRM] updateQuotation failed:', err);
+    } catch (err: any) {
+      console.error('⚠️ [CRM] updateQuotation failed:', err.message);
+      throw err;
     }
   }, [quotations]);
 
