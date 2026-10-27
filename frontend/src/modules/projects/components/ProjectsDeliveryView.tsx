@@ -4,14 +4,17 @@ import { Project } from '../../../types';
 import { 
   FolderKanban, Search, Filter, Calendar, User, DollarSign, 
   CheckCircle2, Clock, FileText, X, ArrowRight, Building2, 
-  Sparkles, ShieldCheck, ChevronRight, Trash2
+  Sparkles, ShieldCheck, ChevronRight, Trash2, Layers, Users
 } from 'lucide-react';
+import { TestingDocumentsView } from '../../testing/components/TestingDocumentsView';
+import { ProjectAllocationPanel } from './ProjectAllocationPanel';
 
 export const ProjectsDeliveryView: React.FC = () => {
   const { projects, deleteProject } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [projectModalTab, setProjectModalTab] = useState<'overview' | 'team' | 'testing'>('overview');
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState<boolean>(false);
 
@@ -258,72 +261,128 @@ export const ProjectsDeliveryView: React.FC = () => {
               </button>
             </div>
 
+            {/* Modal Tabs: Overview vs Testing Documents */}
+            <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-2.5 gap-2">
+              <button
+                type="button"
+                onClick={() => setProjectModalTab('overview')}
+                className={`px-4 py-2 text-xs font-bold border-b-2 transition ${
+                  projectModalTab === 'overview'
+                    ? 'border-purple-600 text-purple-700 bg-white rounded-t-lg shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectModalTab('team')}
+                className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  projectModalTab === 'team'
+                    ? 'border-purple-600 text-purple-700 bg-white rounded-t-lg shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Users size={13} />
+                Team Allocations & Progress
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectModalTab('testing')}
+                className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  projectModalTab === 'testing'
+                    ? 'border-purple-600 text-purple-700 bg-white rounded-t-lg shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <FileText size={13} />
+                Testing Documents
+              </button>
+            </div>
+
             {/* Modal Content */}
-            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto text-xs">
-              {/* Project Stats Banner */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Budget</span>
-                  <span className="text-sm font-bold text-slate-900">{formatCurrency(selectedProject.budget)}</span>
-                </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Progress</span>
-                  <span className="text-sm font-bold text-purple-700">{selectedProject.progress}%</span>
-                </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Start Date</span>
-                  <span className="text-xs font-bold text-slate-800">{selectedProject.startDate || '—'}</span>
-                </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Expected End</span>
-                  <span className="text-xs font-bold text-slate-800">{selectedProject.endDate || '—'}</span>
-                </div>
-              </div>
-
-              {/* Project Manager */}
-              <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold">
-                    <User size={16} />
+            {projectModalTab === 'overview' ? (
+              <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto text-xs">
+                {/* Project Stats Banner */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Budget</span>
+                    <span className="text-sm font-bold text-slate-900">{formatCurrency(selectedProject.budget)}</span>
                   </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Project Manager</span>
-                    <span className="text-xs font-bold text-slate-900">{selectedProject.projectManager || 'Unassigned'}</span>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Progress</span>
+                    <span className="text-sm font-bold text-purple-700">{selectedProject.progress}%</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Start Date</span>
+                    <span className="text-xs font-bold text-slate-800">{selectedProject.startDate || '—'}</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Expected End</span>
+                    <span className="text-xs font-bold text-slate-800">{selectedProject.endDate || '—'}</span>
                   </div>
                 </div>
-                <span className="text-[11px] text-indigo-700 font-semibold bg-white px-2.5 py-1 rounded-lg border border-indigo-200">
-                  Lead Delivery Owner
-                </span>
-              </div>
 
-              {/* Project Requirement */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
-                    <FileText size={14} className="text-purple-600" />
-                    Project Requirement (Customer Scope)
-                  </label>
-                  <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                    Canonical Requirement
+                {/* Project Manager */}
+                <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold">
+                      <User size={16} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Project Manager</span>
+                      <span className="text-xs font-bold text-slate-900">{selectedProject.projectManager || 'Unassigned'}</span>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-indigo-700 font-semibold bg-white px-2.5 py-1 rounded-lg border border-indigo-200">
+                    Lead Delivery Owner
                   </span>
                 </div>
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-normal leading-relaxed whitespace-pre-wrap">
-                  {selectedProject.projectRequirement || <span className="text-slate-400 italic">No specific project requirement recorded.</span>}
-                </div>
-              </div>
 
-              {/* Project Notes */}
-              {selectedProject.projectNotes && (
+                {/* Project Requirement */}
                 <div className="space-y-1.5">
-                  <label className="font-bold text-slate-800 text-xs">
-                    Project Notes & Kick-off Details
-                  </label>
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
-                    {selectedProject.projectNotes}
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                      <FileText size={14} className="text-purple-600" />
+                      Project Requirement (Customer Scope)
+                    </label>
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                      Canonical Requirement
+                    </span>
+                  </div>
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-normal leading-relaxed whitespace-pre-wrap">
+                    {selectedProject.projectRequirement || <span className="text-slate-400 italic">No specific project requirement recorded.</span>}
                   </div>
                 </div>
-              )}
-            </div>
+
+                {/* Project Notes */}
+                {selectedProject.projectNotes && (
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-800 text-xs">
+                      Project Notes & Kick-off Details
+                    </label>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                      {selectedProject.projectNotes}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : projectModalTab === 'team' ? (
+              <div className="p-6 max-h-[75vh] overflow-y-auto">
+                <ProjectAllocationPanel
+                  projectId={selectedProject.id}
+                  projectName={selectedProject.name}
+                />
+              </div>
+            ) : (
+              <div className="p-6 max-h-[75vh] overflow-y-auto">
+                <TestingDocumentsView
+                  projectId={selectedProject.id}
+                  title={`${selectedProject.name} Testing Documents`}
+                  subtitle="Quality gate verified reports for modules in this project"
+                />
+              </div>
+            )}
 
             {/* Modal Footer */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">

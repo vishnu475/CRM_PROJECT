@@ -27,7 +27,10 @@ import {
 import { useApp } from '../../context/AppContext';
 
 export const ExecutiveDashboard: React.FC = () => {
-  const { setActiveModule, approveLeave, approveExpense } = useApp();
+  const { setActiveModule, approveLeave, approveExpense, userProfile } = useApp();
+
+  const [revPeriod, setRevPeriod] = React.useState<'this_month' | 'last_month' | 'this_quarter' | 'this_year'>('this_month');
+  const [pipelinePeriod, setPipelinePeriod] = React.useState<'this_month' | 'last_month' | 'this_quarter' | 'this_year'>('this_month');
 
   return (
     <div className="space-y-6">
@@ -35,7 +38,7 @@ export const ExecutiveDashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[#0f172a] flex items-center gap-2">
-            Welcome back, John! <span className="animate-bounce">👋</span>
+            Welcome back, {userProfile?.name || 'Administrator'}! <span className="animate-bounce">👋</span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             Here's what's happening with your business today.
@@ -190,133 +193,193 @@ export const ExecutiveDashboard: React.FC = () => {
         <div className="lg:col-span-5 bg-white shadow-sm border border-slate-200 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#0f172a]">Revenue Overview</h2>
-            <button className="flex items-center space-x-1 text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-              <span>This Month</span>
-              <ChevronDown size={14} />
-            </button>
-          </div>
-
-          <div className="my-6 relative">
-            {/* SVG Area Chart */}
-            <div className="h-44 w-full relative">
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 400 150">
-                <defs>
-                  <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366F1" stopOpacity="0.4" />
-                    <stop offset="100%" stopColor="#6366F1" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M0 130 Q40 100 80 110 T160 80 T240 60 T320 30 T400 20 L400 150 L0 150 Z"
-                  fill="url(#revGrad)"
-                />
-                <path
-                  d="M0 130 Q40 100 80 110 T160 80 T240 60 T320 30 T400 20"
-                  fill="none"
-                  stroke="#6366F1"
-                  strokeWidth="3"
-                />
-
-                {/* Data point dot on May 20 */}
-                <circle cx="240" cy="60" r="5" fill="#6366F1" stroke="#FFFFFF" strokeWidth="2" />
-
-                {/* Tooltip Overlay */}
-                <g transform="translate(200, 15)">
-                  <rect width="90" height="34" rx="6" fill="#1E293B" stroke="#475569" strokeWidth="1" />
-                  <text x="45" y="14" fill="#FFFFFF" fontSize="9" fontWeight="bold" textAnchor="middle">
-                    ₹ 1,48,35,000
-                  </text>
-                  <text x="45" y="26" fill="#94A3B8" fontSize="8" textAnchor="middle">
-                    20 May, 2025
-                  </text>
-                </g>
-              </svg>
-            </div>
-
-            {/* X Axis Labels */}
-            <div className="flex justify-between text-[10px] text-slate-500 mt-2 px-1 font-medium">
-              <span>01 May</span>
-              <span>05 May</span>
-              <span>10 May</span>
-              <span>15 May</span>
-              <span>20 May</span>
-              <span>25 May</span>
-              <span>31 May</span>
+            <div className="relative">
+              <select
+                id="revenue-period-select"
+                value={revPeriod}
+                onChange={(e) => setRevPeriod(e.target.value as any)}
+                className="text-xs text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none pr-6"
+              >
+                <option value="this_month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="this_quarter">This Quarter</option>
+                <option value="this_year">This Year</option>
+              </select>
+              <ChevronDown size={12} className="absolute right-2 top-2 pointer-events-none text-slate-500" />
             </div>
           </div>
+
+          {(() => {
+            const revData = {
+              this_month: {
+                amount: '₹ 1,48,35,000',
+                date: '20 May, 2026',
+                labels: ['01 May', '05 May', '10 May', '15 May', '20 May', '25 May', '31 May'],
+                path: 'M0 130 Q40 100 80 110 T160 80 T240 60 T320 30 T400 20',
+                fill: 'M0 130 Q40 100 80 110 T160 80 T240 60 T320 30 T400 20 L400 150 L0 150 Z',
+                dot: { cx: 240, cy: 60, tx: 200, ty: 15 }
+              },
+              last_month: {
+                amount: '₹ 1,32,10,000',
+                date: '30 Apr, 2026',
+                labels: ['01 Apr', '05 Apr', '10 Apr', '15 Apr', '20 Apr', '25 Apr', '30 Apr'],
+                path: 'M0 140 Q40 120 80 100 T160 90 T240 75 T320 50 T400 35',
+                fill: 'M0 140 Q40 120 80 100 T160 90 T240 75 T320 50 T400 35 L400 150 L0 150 Z',
+                dot: { cx: 240, cy: 75, tx: 200, ty: 25 }
+              },
+              this_quarter: {
+                amount: '₹ 4,12,80,000',
+                date: 'Q2 FY 2026-27',
+                labels: ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'],
+                path: 'M0 140 Q60 110 120 85 T240 45 T360 25 T400 15',
+                fill: 'M0 140 Q60 110 120 85 T240 45 T360 25 T400 15 L400 150 L0 150 Z',
+                dot: { cx: 240, cy: 45, tx: 200, ty: 10 }
+              },
+              this_year: {
+                amount: '₹ 16,75,40,000',
+                date: 'FY 2026-27 Annual',
+                labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+                path: 'M0 145 Q100 115 200 70 T300 40 T400 10',
+                fill: 'M0 145 Q100 115 200 70 T300 40 T400 10 L400 150 L0 150 Z',
+                dot: { cx: 200, cy: 70, tx: 160, ty: 20 }
+              }
+            }[revPeriod];
+
+            return (
+              <div className="my-6 relative">
+                {/* SVG Area Chart */}
+                <div className="h-44 w-full relative">
+                  <svg className="w-full h-full overflow-visible" viewBox="0 0 400 150">
+                    <defs>
+                      <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366F1" stopOpacity="0.4" />
+                        <stop offset="100%" stopColor="#6366F1" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
+                    <path d={revData.fill} fill="url(#revGrad)" />
+                    <path d={revData.path} fill="none" stroke="#6366F1" strokeWidth="3" />
+
+                    {/* Data point dot */}
+                    <circle cx={revData.dot.cx} cy={revData.dot.cy} r="5" fill="#6366F1" stroke="#FFFFFF" strokeWidth="2" />
+
+                    {/* Tooltip Overlay */}
+                    <g transform={`translate(${revData.dot.tx}, ${revData.dot.ty})`}>
+                      <rect width="96" height="34" rx="6" fill="#1E293B" stroke="#475569" strokeWidth="1" />
+                      <text x="48" y="14" fill="#FFFFFF" fontSize="9" fontWeight="bold" textAnchor="middle">
+                        {revData.amount}
+                      </text>
+                      <text x="48" y="26" fill="#94A3B8" fontSize="8" textAnchor="middle">
+                        {revData.date}
+                      </text>
+                    </g>
+                  </svg>
+                </div>
+
+                {/* X Axis Labels */}
+                <div className="flex justify-between text-[10px] text-slate-500 mt-2 px-1 font-medium">
+                  {revData.labels.map((lbl, idx) => (
+                    <span key={idx}>{lbl}</span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Sales Pipeline */}
         <div className="lg:col-span-4 bg-white shadow-sm border border-slate-200 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#0f172a]">Sales Pipeline</h2>
-            <button className="flex items-center space-x-1 text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-              <span>This Month</span>
-              <ChevronDown size={14} />
-            </button>
-          </div>
-
-          <div className="my-4 space-y-2">
-            {/* Funnel Stage 1 */}
-            <div className="relative group">
-              <div
-                className="h-8 rounded-lg bg-blue-600/80 flex items-center justify-between px-3 text-xs font-semibold text-[#0f172a] transition-all group-hover:bg-blue-500"
-                style={{ width: '100%' }}
+            <div className="relative">
+              <select
+                id="pipeline-period-select"
+                value={pipelinePeriod}
+                onChange={(e) => setPipelinePeriod(e.target.value as any)}
+                className="text-xs text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none pr-6"
               >
-                <span>New Leads</span>
-                <span>320</span>
-              </div>
-            </div>
-
-            {/* Funnel Stage 2 */}
-            <div className="relative group">
-              <div
-                className="h-8 rounded-lg bg-cyan-600/80 flex items-center justify-between px-3 text-xs font-semibold text-[#0f172a] transition-all group-hover:bg-cyan-500 mx-auto"
-                style={{ width: '82%' }}
-              >
-                <span>Contacted</span>
-                <span>180</span>
-              </div>
-            </div>
-
-            {/* Funnel Stage 3 */}
-            <div className="relative group">
-              <div
-                className="h-8 rounded-lg bg-teal-600/80 flex items-center justify-between px-3 text-xs font-semibold text-[#0f172a] transition-all group-hover:bg-teal-500 mx-auto"
-                style={{ width: '68%' }}
-              >
-                <span>Qualified</span>
-                <span>98</span>
-              </div>
-            </div>
-
-            {/* Funnel Stage 4 */}
-            <div className="relative group">
-              <div
-                className="h-8 rounded-lg bg-emerald-600/80 flex items-center justify-between px-3 text-xs font-semibold text-[#0f172a] transition-all group-hover:bg-emerald-500 mx-auto"
-                style={{ width: '52%' }}
-              >
-                <span>Proposal</span>
-                <span>45</span>
-              </div>
-            </div>
-
-            {/* Funnel Stage 5 */}
-            <div className="relative group">
-              <div
-                className="h-8 rounded-lg bg-green-500 flex items-center justify-between px-3 text-xs font-extrabold text-[#0f172a] transition-all group-hover:bg-green-400 mx-auto"
-                style={{ width: '38%' }}
-              >
-                <span>Won</span>
-                <span>20</span>
-              </div>
+                <option value="this_month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="this_quarter">This Quarter</option>
+                <option value="this_year">This Year</option>
+              </select>
+              <ChevronDown size={12} className="absolute right-2 top-2 pointer-events-none text-slate-500" />
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-3 border-t border-slate-200/80 text-xs">
-            <span className="text-slate-500">Conversion Rate</span>
-            <span className="font-bold text-emerald-400">6.25%</span>
-          </div>
+          {(() => {
+            const pipeData = {
+              this_month: { newLeads: 320, contacted: 180, qualified: 98, proposal: 45, won: 20, convRate: '6.25%' },
+              last_month: { newLeads: 285, contacted: 160, qualified: 84, proposal: 38, won: 18, convRate: '6.31%' },
+              this_quarter: { newLeads: 950, contacted: 540, qualified: 290, proposal: 135, won: 65, convRate: '6.84%' },
+              this_year: { newLeads: 3820, contacted: 2180, qualified: 1140, proposal: 520, won: 248, convRate: '6.49%' }
+            }[pipelinePeriod];
+
+            return (
+              <>
+                <div className="my-4 space-y-2">
+                  {/* Funnel Stage 1 */}
+                  <div className="relative group">
+                    <div
+                      className="h-8 rounded-lg bg-blue-600/80 flex items-center justify-between px-3 text-xs font-semibold text-white transition-all group-hover:bg-blue-500"
+                      style={{ width: '100%' }}
+                    >
+                      <span>New Leads</span>
+                      <span>{pipeData.newLeads}</span>
+                    </div>
+                  </div>
+
+                  {/* Funnel Stage 2 */}
+                  <div className="relative group">
+                    <div
+                      className="h-8 rounded-lg bg-cyan-600/80 flex items-center justify-between px-3 text-xs font-semibold text-white transition-all group-hover:bg-cyan-500 mx-auto"
+                      style={{ width: '82%' }}
+                    >
+                      <span>Contacted</span>
+                      <span>{pipeData.contacted}</span>
+                    </div>
+                  </div>
+
+                  {/* Funnel Stage 3 */}
+                  <div className="relative group">
+                    <div
+                      className="h-8 rounded-lg bg-teal-600/80 flex items-center justify-between px-3 text-xs font-semibold text-white transition-all group-hover:bg-teal-500 mx-auto"
+                      style={{ width: '68%' }}
+                    >
+                      <span>Qualified</span>
+                      <span>{pipeData.qualified}</span>
+                    </div>
+                  </div>
+
+                  {/* Funnel Stage 4 */}
+                  <div className="relative group">
+                    <div
+                      className="h-8 rounded-lg bg-emerald-600/80 flex items-center justify-between px-3 text-xs font-semibold text-white transition-all group-hover:bg-emerald-500 mx-auto"
+                      style={{ width: '52%' }}
+                    >
+                      <span>Proposal</span>
+                      <span>{pipeData.proposal}</span>
+                    </div>
+                  </div>
+
+                  {/* Funnel Stage 5 */}
+                  <div className="relative group">
+                    <div
+                      className="h-8 rounded-lg bg-green-500 flex items-center justify-between px-3 text-xs font-extrabold text-[#0f172a] transition-all group-hover:bg-green-400 mx-auto"
+                      style={{ width: '38%' }}
+                    >
+                      <span>Won</span>
+                      <span>{pipeData.won}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-slate-200/80 text-xs">
+                  <span className="text-slate-500 font-medium">Conversion Rate</span>
+                  <span className="font-bold text-emerald-600">{pipeData.convRate}</span>
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* Pending Approvals */}

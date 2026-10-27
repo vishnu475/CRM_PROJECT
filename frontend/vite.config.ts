@@ -35,6 +35,11 @@ export default defineConfig({
       '/ws': {
         target: 'ws://127.0.0.1:5000',
         ws: true,
+        configure: (proxy) => {
+          proxy.on('error', (_err) => {
+            // Suppress noisy socket abort/reset errors on page refresh/disconnect
+          });
+        }
       }
     }
   }

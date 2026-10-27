@@ -30,7 +30,7 @@ const MainLayout: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8faff] text-slate-900 selection:bg-blue-100 selection:text-blue-900">
+    <div className="flex h-screen overflow-hidden bg-[#f8faff] dark:bg-[#090D16] text-slate-900 dark:text-slate-100 selection:bg-blue-100 selection:text-blue-900">
       {/* Navigation Sidebar */}
       <Sidebar />
 

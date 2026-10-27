@@ -28,6 +28,10 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
   // Filtering and Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStageTab, setActiveStageTab] = useState<string>('All');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterOwner, setFilterOwner] = useState('All');
+  const [filterSource, setFilterSource] = useState('All');
+  const [filterMinScore, setFilterMinScore] = useState<number>(0);
   
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,6 +43,24 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
 
   // Derive Active Leads
   const activeLeads = useMemo(() => leads.filter(l => l.status !== 'archived'), [leads]);
+
+  // Unique Owners and Sources for Filter options
+  const uniqueOwners = useMemo(() => {
+    const s = new Set<string>();
+    activeLeads.forEach(l => {
+      const o = getLeadOwnerDisplay(l);
+      if (o) s.add(o);
+    });
+    return Array.from(s).sort();
+  }, [activeLeads, employees]);
+
+  const uniqueSources = useMemo(() => {
+    const s = new Set<string>();
+    activeLeads.forEach(l => {
+      if (l.source) s.add(l.source);
+    });
+    return Array.from(s).sort();
+  }, [activeLeads]);
 
   // Derive Stage Counts for Tabs
   const stageCounts = useMemo(() => {
@@ -76,12 +98,22 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
       });
     }
 
-    // 3. Sort (Default by creation date descending)
-    // Note: Since mock doesn't have real dates, we'll sort by ID assuming higher ID = newer
+    // 3. Advanced Filters (BUG-109)
+    if (filterOwner !== 'All') {
+      result = result.filter(l => getLeadOwnerDisplay(l) === filterOwner);
+    }
+    if (filterSource !== 'All') {
+      result = result.filter(l => l.source === filterSource);
+    }
+    if (filterMinScore > 0) {
+      result = result.filter(l => (l.score || 0) >= filterMinScore);
+    }
+
+    // 4. Sort (Default by creation date descending)
     result = [...result].sort((a, b) => b.id.localeCompare(a.id));
 
     return result;
-  }, [activeLeads, activeStageTab, searchQuery]);
+  }, [activeLeads, activeStageTab, searchQuery, filterOwner, filterSource, filterMinScore]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredLeads.length / itemsPerPage);
@@ -163,10 +195,99 @@ export const CrmLeadsList: React.FC<CrmLeadsListProps> = ({ onViewChange, onLead
           />
         </div>
 
-        <button className="w-full sm:w-auto px-4 py-2 bg-white border border-slate-200 text-[#0f172a] font-semibold text-sm rounded-lg hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
-          <Filter size={16} /> Filters
-        </button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          {((filterOwner !== 'All') || (filterSource !== 'All') || (filterMinScore > 0) || (searchQuery.trim() !== '') || (activeStageTab !== 'All')) && (
+            <button
+              onClick={() => {
+                setFilterOwner('All');
+                setFilterSource('All');
+                setFilterMinScore(0);
+                setActiveStageTab('All');
+                setSearchQuery('');
+                setCurrentPage(1);
+              }}
+              className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline px-2 py-1 transition-colors cursor-pointer"
+            >
+              Reset Filters
+            </button>
+          )}
+
+          <button 
+            id="crm-leads-filter-btn"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`w-full sm:w-auto px-4 py-2 border font-semibold text-sm rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+              showFilters || (filterOwner !== 'All' || filterSource !== 'All' || filterMinScore > 0)
+                ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                : 'bg-white border-slate-200 text-[#0f172a] hover:bg-slate-50'
+            }`}
+          >
+            <Filter size={16} /> Filters
+            {(filterOwner !== 'All' || filterSource !== 'All' || filterMinScore > 0) && (
+              <span className="ml-1 px-1.5 py-0.2 bg-indigo-600 text-white rounded-full text-[10px] font-bold">
+                {[filterOwner !== 'All', filterSource !== 'All', filterMinScore > 0].filter(Boolean).length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* EXPANDABLE FILTER PANEL (BUG-109) */}
+      {showFilters && (
+        <div className="bg-slate-50 border-x border-b border-slate-200 p-4 space-y-3 animate-in fade-in duration-150">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Refine Lead Criteria</span>
+            <span className="text-xs text-slate-500">{filteredLeads.length} leads matching criteria</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Filter by Owner */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Lead Owner</label>
+              <select
+                value={filterOwner}
+                onChange={(e) => { setFilterOwner(e.target.value); setCurrentPage(1); }}
+                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="All">All Owners</option>
+                {uniqueOwners.map(owner => (
+                  <option key={owner} value={owner}>{owner}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter by Lead Source */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Lead Source</label>
+              <select
+                value={filterSource}
+                onChange={(e) => { setFilterSource(e.target.value); setCurrentPage(1); }}
+                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="All">All Sources</option>
+                {uniqueSources.map(src => (
+                  <option key={src} value={src}>{src}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter by Minimum Score */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Minimum Lead Score</label>
+              <select
+                value={filterMinScore}
+                onChange={(e) => { setFilterMinScore(Number(e.target.value)); setCurrentPage(1); }}
+                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value={0}>Any Score</option>
+                <option value={30}>30+ (Warm & Hot)</option>
+                <option value={50}>50+ (High Intent)</option>
+                <option value={75}>75+ (Ready to Close)</option>
+                <option value={90}>90+ (Top Tier)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* DATA TABLE (Desktop) */}
       <div className="hidden lg:block bg-white border border-slate-200 rounded-b-xl overflow-x-auto">

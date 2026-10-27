@@ -30,6 +30,16 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
     const emp = employees.find((e: any) => e.id === empCodeOrId || e.empCode === empCodeOrId);
     const empId = emp ? (emp.empCode || emp.id) : empCodeOrId;
 
+    if (emp) {
+      const jDate = emp.joiningDate || emp.joining_date;
+      if (jDate) {
+        const jDateStr = String(jDate).split('T')[0];
+        if (dateStr < jDateStr) {
+          return 'Not Joined';
+        }
+      }
+    }
+
     // Filter matching attendance records
     const dayRecords = records.filter((r: any) => (r.employeeId === empId || r.empId === empId || r.employeeId === empCodeOrId || r.empId === empCodeOrId) && r.date === dateStr);
 
@@ -64,6 +74,7 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
 
   const getStatusAbbr = (status: string) => {
     switch (status) {
+      case 'Not Joined': case 'NOT_JOINED': return 'NJ';
       case 'Present': case 'PRESENT': return 'P';
       case 'Late In': case 'LATE_IN': return 'L';
       case 'Early Out': case 'EARLY_OUT': return 'EO';
@@ -78,6 +89,8 @@ export const AttendanceCalendarView: React.FC<AttendanceCalendarViewProps> = ({ 
 
   const getStatusStyle = (status: string) => {
     switch (status) {
+      case 'Not Joined': case 'NOT_JOINED':
+        return 'bg-slate-100 text-slate-400 font-medium border-dashed border-slate-300';
       case 'Present': case 'PRESENT':
         return 'bg-emerald-100 text-emerald-800 font-bold border-emerald-200';
       case 'Late In': case 'LATE_IN':

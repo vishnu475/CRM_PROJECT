@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { PurchaseOrder, PurchaseOrderItem, Vendor, Product } from '../../../types';
 import { formatINR } from '../../crm/utils/crmUtils';
@@ -53,6 +53,17 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // Memoized unique vendors to prevent duplicate options (BUG-110)
+  const uniqueVendors = useMemo(() => {
+    const seen = new Set<string>();
+    return vendors.filter((v: Vendor) => {
+      const norm = (v.name || '').trim().toLowerCase();
+      if (!norm || seen.has(norm)) return false;
+      seen.add(norm);
+      return true;
+    });
+  }, [vendors]);
+
   // Initialize on open or when editing
   useEffect(() => {
     if (isOpen) {
@@ -78,7 +89,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
           })));
         }
       } else {
-        const targetVendor = (initialVendorId ? vendors.find(v => v.id === initialVendorId) : null) || (vendors.length > 0 ? vendors[0] : null);
+        const targetVendor = (initialVendorId ? uniqueVendors.find((v: Vendor) => v.id === initialVendorId) : null) || (uniqueVendors.length > 0 ? uniqueVendors[0] : null);
         setVendorId(targetVendor?.id || '');
         setVendorName(targetVendor?.name || '');
         setDate(new Date().toISOString().split('T')[0]);
@@ -272,7 +283,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                 onChange={(e) => handleVendorSelect(e.target.value)}
                 className="w-full text-xs border border-slate-300 rounded-xl p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
               >
-                {vendors.map(v => (
+                {uniqueVendors.map((v: Vendor) => (
                   <option key={v.id} value={v.id}>
                     {v.name} ({v.code || v.id})
                   </option>

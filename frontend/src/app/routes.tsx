@@ -57,7 +57,62 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'reports', path: '/tasks/reports', label: 'Task Reports' },
     ]
   },
-  { id: 'helpdesk', path: '/helpdesk', label: 'Support Helpdesk & Tickets' },
+  {
+    id: 'testing',
+    path: '/testing',
+    label: 'Testing & QA Management',
+    defaultSubSection: 'dashboard',
+    subSections: [
+      { id: 'dashboard', path: '/testing/dashboard', label: 'Testing Dashboard' },
+      { id: 'queue', path: '/testing/queue', label: 'Testing Queue' },
+      { id: 'test-cases', path: '/testing/test-cases', label: 'Test Cases' },
+      { id: 'bugs', path: '/testing/bugs', label: 'Bug Management' },
+      { id: 'reports', path: '/testing/reports', label: 'Testing Reports' },
+      { id: 'my-testing', path: '/testing/my-testing', label: 'My Assigned Testing' },
+      { id: 'my-bugs', path: '/testing/my-bugs', label: 'My Reported Bugs' },
+      { id: 'audit-logs', path: '/testing/audit-logs', label: 'Testing Audit Logs' },
+    ]
+  },
+  {
+    id: 'timesheet',
+    path: '/timesheet',
+    label: 'Timesheet Management',
+    defaultSubSection: 'dashboard',
+    subSections: [
+      { id: 'dashboard', path: '/timesheet/dashboard', label: 'Timesheet Dashboard' },
+      { id: 'employee-timesheets', path: '/timesheet/employee-timesheets', label: 'Employee Timesheets' },
+      { id: 'my-timesheet', path: '/timesheet/my-timesheet', label: 'My Timesheet' },
+      { id: 'my-history', path: '/timesheet/my-history', label: 'My History' },
+      { id: 'history', path: '/timesheet/history', label: 'Timesheet History' },
+      { id: 'reports', path: '/timesheet/reports', label: 'Timesheet Reports' },
+    ]
+  },
+  {
+    id: 'timesheets',
+    path: '/timesheets',
+    label: 'Timesheet Management',
+    defaultSubSection: 'dashboard',
+    subSections: [
+      { id: 'dashboard', path: '/timesheets/dashboard', label: 'Timesheet Dashboard' },
+      { id: 'employee-timesheets', path: '/timesheets/employee-timesheets', label: 'Employee Timesheets' },
+      { id: 'my-timesheet', path: '/timesheets/my-timesheet', label: 'My Timesheet' },
+      { id: 'my-history', path: '/timesheets/my-history', label: 'My History' },
+      { id: 'history', path: '/timesheets/history', label: 'Timesheet History' },
+      { id: 'reports', path: '/timesheets/reports', label: 'Timesheet Reports' },
+    ]
+  },
+  {
+    id: 'helpdesk',
+    path: '/helpdesk',
+    label: 'Support Helpdesk & Tickets',
+    defaultSubSection: 'my-tickets',
+    subSections: [
+      { id: 'my-tickets', path: '/helpdesk/my-tickets', label: 'My Tickets' },
+      { id: 'all-tickets', path: '/helpdesk/all-tickets', label: 'All System Tickets' },
+      { id: 'raise-ticket', path: '/helpdesk/raise-ticket', label: 'Raise a Ticket' },
+      { id: 'queue', path: '/helpdesk/queue', label: 'My Tickets Queue' },
+    ]
+  },
   {
     id: 'administration',
     path: '/administration',
@@ -264,6 +319,38 @@ export function parseRouteFromPath(pathname: string): { module: ModuleId; subSec
   // Tasks direct mapping for root /tasks and /tasks/all
   if (moduleSlug === 'tasks' && (!subSlug || subSlug === 'all')) {
     return { module: 'tasks', subSection: 'all-tasks' };
+  }
+
+  // Testing & QA direct mapping for root /testing and /qa (including deep project/employee/module routes)
+  if (moduleSlug === 'testing' || moduleSlug === 'qa') {
+    if (parts.length > 1) {
+      return { module: 'testing', subSection: parts.slice(1).join('/') };
+    }
+    return { module: 'testing', subSection: 'projects' };
+  }
+
+  // Helpdesk & Support Tickets direct mapping (including /tickets, /my-tickets, /raise-ticket)
+  if (moduleSlug === 'helpdesk' || moduleSlug === 'tickets') {
+    if (subSlug === 'raise-ticket' || subSlug === 'new') {
+      return { module: 'helpdesk', subSection: 'raise-ticket' };
+    }
+    if (subSlug === 'all-tickets' || subSlug === 'all') {
+      return { module: 'helpdesk', subSection: 'all-tickets' };
+    }
+    if (subSlug === 'queue') {
+      return { module: 'helpdesk', subSection: 'queue' };
+    }
+    return { module: 'helpdesk', subSection: 'my-tickets' };
+  }
+
+  // Direct alias for Customer Portal ticket routes
+  if (moduleSlug === 'customer') {
+    if (subSlug === 'raise-ticket' || subSlug === 'raise') {
+      return { module: 'helpdesk', subSection: 'raise-ticket' };
+    }
+    if (subSlug === 'tickets' || subSlug === 'my-tickets') {
+      return { module: 'helpdesk', subSection: 'my-tickets' };
+    }
   }
 
   const routeConfig = MODULE_ROUTES.find(r => r.id === moduleSlug || r.path === `/${moduleSlug}`);

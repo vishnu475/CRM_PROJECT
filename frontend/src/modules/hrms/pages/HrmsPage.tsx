@@ -73,6 +73,8 @@ export const HrmsPage: React.FC = () => {
           address: 'H.No 12, Tech Park Enclave, City',
           department: emp.department || 'Engineering',
           designation: emp.designation || 'Software Engineer',
+          annualSalary: Number(emp.annualSalary || emp.annualCtc || (Number(emp.salary) >= 100000 ? emp.salary : Number(emp.salary) * 12)) || 0,
+          annualCtc: Number(emp.annualCtc || emp.annualSalary || (Number(emp.salary) >= 100000 ? emp.salary : Number(emp.salary) * 12)) || 0,
           salary: Number(emp.salary) || 0,
           basicSalary: Number(emp.basicSalary) || Math.round((Number(emp.salary) || 0) * 0.6),
           allowances: Number(emp.allowances) || Math.round((Number(emp.salary) || 0) * 0.4),
@@ -101,10 +103,10 @@ export const HrmsPage: React.FC = () => {
     setTimeout(() => setRefreshMessage(null), 3000);
   };
 
-  // Load on mount and whenever employees context changes
+  // Load on mount
   useEffect(() => {
     refreshFromDB();
-  }, [refreshFromDB, employees]);
+  }, [refreshFromDB]);
 
   const { activeSubSection, setActiveSubSection } = useApp();
   const subSectionLower = (activeSubSection || '').toLowerCase();

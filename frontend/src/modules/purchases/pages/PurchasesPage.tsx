@@ -164,6 +164,17 @@ export const PurchasesPage: React.FC = () => {
     }
   };
 
+  // Memoized unique vendors to prevent duplicate options in dropdowns (BUG-110)
+  const uniqueVendors = useMemo(() => {
+    const seen = new Set<string>();
+    return vendors.filter(v => {
+      const norm = (v.name || '').trim().toLowerCase();
+      if (!norm || seen.has(norm)) return false;
+      seen.add(norm);
+      return true;
+    });
+  }, [vendors]);
+
   // Filtered List
   const filteredOrders = useMemo(() => {
     return purchaseOrders.filter(po => {
@@ -171,9 +182,16 @@ export const PurchasesPage: React.FC = () => {
       if (selectedStatusTab !== 'All' && po.status !== selectedStatusTab) {
         return false;
       }
-      // Vendor filter
-      if (vendorFilter !== 'All' && (po.vendor_id !== vendorFilter && po.vendorId !== vendorFilter)) {
-        return false;
+      // Vendor filter (BUG-110: matches both id and vendor name)
+      if (vendorFilter !== 'All') {
+        const selectedVendor = uniqueVendors.find(v => v.id === vendorFilter);
+        const selName = (selectedVendor?.name || '').trim().toLowerCase();
+        const poName = (po.vendor_name || po.vendorName || '').trim().toLowerCase();
+        const idMatch = po.vendor_id === vendorFilter || po.vendorId === vendorFilter;
+        const nameMatch = Boolean(selName && poName && selName === poName);
+        if (!idMatch && !nameMatch) {
+          return false;
+        }
       }
       // Receipt filter
       const rStatus = po.receiptStatus || po.receipt_status || 'Not Received';
@@ -387,7 +405,7 @@ export const PurchasesPage: React.FC = () => {
               className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium text-slate-700"
             >
               <option value="All">All Vendors</option>
-              {vendors.map(v => (
+              {uniqueVendors.map(v => (
                 <option key={v.id} value={v.id}>
                   {v.name}
                 </option>

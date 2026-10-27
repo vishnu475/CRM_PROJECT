@@ -8,6 +8,7 @@ import {
   Check,
   X,
   FileCheck,
+  FileText,
   Radio,
   Sparkles,
   Monitor,
@@ -36,6 +37,7 @@ import { AttendanceCalendarView } from '../components/AttendanceCalendarView';
 import { OvertimeManagerView } from '../components/OvertimeManagerView';
 import { AttendanceKiosk } from '../components/AttendanceKiosk';
 import { LiveAttendanceFeed } from '../components/LiveAttendanceFeed';
+import { AttendanceTestReportsTab } from '../components/AttendanceTestReportsTab';
 import { AttendanceLogStatus, DetailedAttendanceRecord } from '../types';
 import { useAttendance } from '../hooks/useAttendance';
 
@@ -60,9 +62,9 @@ export const AttendancePage: React.FC = () => {
   }, [reloadAttendanceFromDB]);
 
   const { activeSubSection, setActiveSubSection } = useApp();
-  const validAttendanceTabs = ['daily', 'live', 'regularizations', 'calendar', 'overtime'];
-  const mainTab = (validAttendanceTabs.includes(activeSubSection) ? activeSubSection : 'daily') as 'daily' | 'live' | 'regularizations' | 'calendar' | 'overtime';
-  const setMainTab = (tab: 'daily' | 'live' | 'regularizations' | 'calendar' | 'overtime') => setActiveSubSection(tab);
+  const validAttendanceTabs = ['daily', 'live', 'regularizations', 'calendar', 'overtime', 'test-reports'];
+  const mainTab = (validAttendanceTabs.includes(activeSubSection) ? activeSubSection : 'daily') as 'daily' | 'live' | 'regularizations' | 'calendar' | 'overtime' | 'test-reports';
+  const setMainTab = (tab: 'daily' | 'live' | 'regularizations' | 'calendar' | 'overtime' | 'test-reports') => setActiveSubSection(tab);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
@@ -331,6 +333,14 @@ export const AttendancePage: React.FC = () => {
             >
               <CheckSquare size={14} /> Assign Task
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMainTab('test-reports')}
+              className={mainTab === 'test-reports' ? 'bg-blue-600 text-white font-bold border-blue-600 shadow-sm' : 'border-blue-200 text-blue-700 hover:bg-blue-50 font-bold'}
+            >
+              <FileText size={14} /> Test Document
+            </Button>
           </div>
         </div>
       </div>
@@ -441,7 +451,18 @@ export const AttendancePage: React.FC = () => {
             >
               Overtime (OT) View
             </button>
+            <button
+              onClick={() => setMainTab('test-reports')}
+              className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                mainTab === 'test-reports' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <FileText size={14} /> Test Document &amp; QA Reports
+            </button>
           </div>
+
+          {/* TAB: TEST DOCUMENT & QA REPORTS */}
+          {mainTab === 'test-reports' && <AttendanceTestReportsTab />}
 
           {/* TAB: CALENDAR */}
           {mainTab === 'calendar' && <AttendanceCalendarView records={detailedRecords} />}

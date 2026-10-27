@@ -111,11 +111,61 @@ router.get('/:id', async (req, res) => {
         [id]
       );
       if (hrmsRes.rows.length > 0) {
-        return res.json({ success: true, data: hrmsRes.rows[0] });
+        const project = hrmsRes.rows[0];
+        const employeeId = req.query.employeeId || req.headers['x-employee-id'] || null;
+        if (employeeId && employeeId !== 'ALL' && employeeId !== 'ADMIN-001') {
+          const isAssigned = await hrmsPool.query(
+            `SELECT 1 FROM project_groups g
+             WHERE (g.project_id = $1 OR g.project_id = $2 OR g.id = $1) AND (
+               g.team_head_id = $3 OR g.team_head_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1)
+               OR EXISTS (
+                 SELECT 1 FROM group_members gm 
+                 WHERE gm.group_id = g.id 
+                   AND (gm.employee_id = $3 OR gm.employee_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1))
+               )
+               OR EXISTS (
+                 SELECT 1 FROM project_allocations pa
+                 WHERE (pa.project_id = $1 OR pa.project_id = $2 OR pa.project_id = g.id)
+                   AND (pa.employee_id = $3 OR pa.employee_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1))
+                   AND pa.allocation_status = 'ACTIVE'
+               )
+             ) LIMIT 1`,
+            [project.id, project.code, employeeId]
+          );
+          if (isAssigned.rows.length === 0) {
+            return res.status(403).json({ success: false, message: 'Access Denied: You do not have an active assignment to this project.' });
+          }
+        }
+        return res.json({ success: true, data: project });
       }
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
-    res.json({ success: true, data: result.rows[0] });
+    const project = result.rows[0];
+    const employeeId = req.query.employeeId || req.headers['x-employee-id'] || null;
+    if (employeeId && employeeId !== 'ALL' && employeeId !== 'ADMIN-001') {
+      const isAssigned = await hrmsPool.query(
+        `SELECT 1 FROM project_groups g
+         WHERE (g.project_id = $1 OR g.project_id = $2 OR g.id = $1) AND (
+           g.team_head_id = $3 OR g.team_head_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1)
+           OR EXISTS (
+             SELECT 1 FROM group_members gm 
+             WHERE gm.group_id = g.id 
+               AND (gm.employee_id = $3 OR gm.employee_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1))
+           )
+           OR EXISTS (
+             SELECT 1 FROM project_allocations pa
+             WHERE (pa.project_id = $1 OR pa.project_id = $2 OR pa.project_id = g.id)
+               AND (pa.employee_id = $3 OR pa.employee_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1))
+               AND pa.allocation_status = 'ACTIVE'
+           )
+         ) LIMIT 1`,
+        [project.id, project.code, employeeId]
+      );
+      if (isAssigned.rows.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access Denied: You do not have an active assignment to this project.' });
+      }
+    }
+    res.json({ success: true, data: project });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -141,6 +191,32 @@ router.get('/:id/workspace', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
     const project = projRes.rows[0];
+
+    // Authorization check: Employee must have active assignment to this project
+    const employeeId = req.query.employeeId || req.headers['x-employee-id'] || null;
+    if (employeeId && employeeId !== 'ALL' && employeeId !== 'ADMIN-001') {
+      const isAssigned = await hrmsPool.query(
+        `SELECT 1 FROM project_groups g
+         WHERE (g.project_id = $1 OR g.project_id = $2 OR g.id = $1) AND (
+           g.team_head_id = $3 OR g.team_head_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1)
+           OR EXISTS (
+             SELECT 1 FROM group_members gm 
+             WHERE gm.group_id = g.id 
+               AND (gm.employee_id = $3 OR gm.employee_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1))
+           )
+           OR EXISTS (
+             SELECT 1 FROM project_allocations pa
+             WHERE (pa.project_id = $1 OR pa.project_id = $2 OR pa.project_id = g.id)
+               AND (pa.employee_id = $3 OR pa.employee_id = (SELECT emp_code FROM employees WHERE id = $3 LIMIT 1))
+               AND pa.allocation_status = 'ACTIVE'
+           )
+         ) LIMIT 1`,
+        [project.id, project.code, employeeId]
+      );
+      if (isAssigned.rows.length === 0) {
+        return res.status(403).json({ success: false, message: 'Access Denied: You do not have an active assignment to this project.' });
+      }
+    }
 
     // 2. Fetch Groups & Members
     const groupsRes = await hrmsPool.query(
@@ -667,24 +743,67 @@ const updateHandler = async (req, res) => {
 router.put('/:id', updateHandler);
 router.patch('/:id', updateHandler);
 
-// DELETE /api/projects/:id — Delete project
+// DELETE /api/projects/:id — Permanently delete project and all its groups, tasks, members, and modules from database
 router.delete('/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    // If project was linked to a lead, reset the lead's project flags
+    // 1. Find the project in CRM or HRMS to get both ID and Code
+    const pCrm = await crmPool.query('SELECT id, code, name FROM projects WHERE id = $1 OR code = $1', [id]);
+    const pHrms = await hrmsPool.query('SELECT id, code, name FROM projects WHERE id = $1 OR code = $1', [id]);
+    const project = pCrm.rows[0] || pHrms.rows[0];
+
+    const projId = project?.id || id;
+    const projCode = project?.code || id;
+
+    // 2. Disconnect and reset any leads linked to this project
     await crmPool.query(
-      `UPDATE leads SET project_id = NULL, is_project_created = false, project_created_at = NULL WHERE project_id = $1`,
-      [id]
+      `UPDATE leads SET project_id = NULL, is_project_created = false, project_created_at = NULL WHERE project_id = $1 OR project_id = $2`,
+      [projId, projCode]
     ).catch(() => {});
 
-    const result = await crmPool.query('DELETE FROM projects WHERE id = $1 RETURNING *', [id]);
-    await hrmsPool.query('DELETE FROM projects WHERE id = $1', [id]).catch(() => {});
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Project not found' });
+    // 3. Find and cascade delete all groups and their related data for this project
+    const groupsRes = await hrmsPool.query(
+      `SELECT id FROM project_groups WHERE project_id = $1 OR project_id = $2`,
+      [projId, projCode]
+    ).catch(() => ({ rows: [] }));
+    const groupIds = groupsRes.rows.map(r => r.id);
+
+    if (groupIds.length > 0) {
+      await hrmsPool.query(`DELETE FROM group_members WHERE group_id = ANY($1::text[])`, [groupIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM task_member_assignments WHERE group_id = ANY($1::text[])`, [groupIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM employee_assigned_modules WHERE team_id = ANY($1::text[])`, [groupIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM team_chat_messages WHERE group_id = ANY($1::text[])`, [groupIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM project_groups WHERE id = ANY($1::text[])`, [groupIds]).catch(() => {});
     }
-    res.json({ success: true, message: 'Project deleted successfully', data: result.rows[0] });
+
+    // 4. Cascade delete all tasks and task attachments, comments, activities for this project
+    const tasksRes = await hrmsPool.query(
+      `SELECT id FROM tasks WHERE project_id = $1 OR project_id = $2`,
+      [projId, projCode]
+    ).catch(() => ({ rows: [] }));
+    const taskIds = tasksRes.rows.map(r => r.id);
+
+    if (taskIds.length > 0) {
+      await hrmsPool.query(`DELETE FROM task_attachments WHERE task_id = ANY($1::text[])`, [taskIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM task_comments WHERE task_id = ANY($1::text[])`, [taskIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM task_activities WHERE task_id = ANY($1::text[])`, [taskIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM task_member_assignments WHERE task_id = ANY($1::text[])`, [taskIds]).catch(() => {});
+      await hrmsPool.query(`DELETE FROM tasks WHERE id = ANY($1::text[])`, [taskIds]).catch(() => {});
+    }
+
+    // 5. Permanently delete project record from both CRM and HRMS databases
+    const resCrm = await crmPool.query('DELETE FROM projects WHERE id = $1 OR code = $1 RETURNING *', [id]);
+    const resHrms = await hrmsPool.query('DELETE FROM projects WHERE id = $1 OR code = $1 RETURNING *', [id]);
+
+    const deleted = resCrm.rows[0] || resHrms.rows[0] || project || { id };
+
+    res.json({
+      success: true,
+      message: `Project "${deleted.name || id}" and all associated groups, members, and tasks permanently deleted from database`,
+      data: deleted
+    });
   } catch (err) {
+    console.error('Error permanently deleting project:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

@@ -31,7 +31,9 @@ import {
   SlidersHorizontal,
   Activity,
   GripVertical,
-  RotateCcw
+  RotateCcw,
+  FlaskConical,
+  X
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { ModuleId } from '../../types';
@@ -62,6 +64,8 @@ const DEFAULT_NAV_ITEMS: NavItem[] = [
   { id: 'inventory', label: 'Inventory', icon: Boxes },
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'tasks', label: 'Tasks', icon: CheckSquare },
+  { id: 'testing', label: 'Testing / QA', icon: FlaskConical },
+  { id: 'timesheet', label: 'Timesheet', icon: Clock },
   { id: 'helpdesk', label: 'Helpdesk', icon: Headphones },
   { id: 'documents', label: 'Documents', icon: Folder },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
@@ -220,36 +224,62 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside
-      className={`bg-white border-r border-slate-200 flex flex-col transition-all duration-300 z-20 select-none ${
-        isSidebarCollapsed ? 'w-20' : 'w-64'
-      }`}
-    >
-      {/* Brand Header */}
-      <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200">
-        <div 
-          onClick={() => {
-            window.history.pushState({}, '', '/');
-            window.dispatchEvent(new Event('popstate'));
-          }}
-          className="flex items-center space-x-3 overflow-hidden cursor-pointer"
-          title="Go to Home Page"
-        >
-          <div className="w-9 h-9 rounded-xl bg-[#1e3a8a] flex items-center justify-center text-white shadow-sm shrink-0">
-            <Zap size={20} className="fill-white/20" />
-          </div>
-          {!isSidebarCollapsed && (
-            <div>
-              <h1 className="font-extrabold text-sm tracking-wide text-[#0f172a] flex items-center space-x-1">
-                <span>ERP SUITE</span>
-              </h1>
-              <p className="text-[10px] text-slate-500 font-medium tracking-tight truncate">
-                Business Management Platform
-              </p>
+    <>
+      {/* Mobile Drawer Backdrop Overlay (BUG-113) */}
+      {!isSidebarCollapsed && (
+        <div
+          onClick={() => setIsSidebarCollapsed(true)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 lg:hidden transition-opacity duration-300"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`bg-white border-r border-slate-200 flex flex-col transition-all duration-300 select-none 
+          fixed inset-y-0 left-0 z-50 lg:static lg:z-20
+          ${
+            isSidebarCollapsed
+              ? '-translate-x-full lg:translate-x-0 lg:w-20'
+              : 'translate-x-0 w-72 lg:w-64 shadow-2xl lg:shadow-none'
+          }
+        `}
+      >
+        {/* Brand Header */}
+        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200">
+          <div 
+            onClick={() => {
+              window.history.pushState({}, '', '/');
+              window.dispatchEvent(new Event('popstate'));
+              if (window.innerWidth < 1024) setIsSidebarCollapsed(true);
+            }}
+            className="flex items-center space-x-3 overflow-hidden cursor-pointer"
+            title="Go to Home Page"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#1e3a8a] flex items-center justify-center text-white shadow-sm shrink-0">
+              <Zap size={20} className="fill-white/20" />
             </div>
-          )}
+            {!isSidebarCollapsed && (
+              <div>
+                <h1 className="font-extrabold text-sm tracking-wide text-[#0f172a] flex items-center space-x-1">
+                  <span>ERP SUITE</span>
+                </h1>
+                <p className="text-[10px] text-slate-500 font-medium tracking-tight truncate">
+                  Business Management Platform
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile close button (BUG-113) */}
+          <button
+            onClick={() => setIsSidebarCollapsed(true)}
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg lg:hidden"
+            title="Close Navigation"
+            aria-label="Close navigation"
+          >
+            <X size={18} />
+          </button>
         </div>
-      </div>
 
       {/* Navigation Links with Drag & Drop */}
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
@@ -278,6 +308,9 @@ export const Sidebar: React.FC = () => {
             >
               <button
                 onClick={() => {
+                  if (window.innerWidth < 1024) {
+                    setIsSidebarCollapsed(true);
+                  }
                   if (isTasks) {
                     // If already on tasks, keep current subsection; otherwise default to all-tasks
                     const sub = (isActive && activeSubSection) ? activeSubSection : 'all-tasks';
@@ -357,7 +390,12 @@ export const Sidebar: React.FC = () => {
                     return (
                       <button
                         key={subItem.id}
-                        onClick={() => setActiveModule('tasks', subItem.id)}
+                        onClick={() => {
+                          if (window.innerWidth < 1024) {
+                            setIsSidebarCollapsed(true);
+                          }
+                          setActiveModule('tasks', subItem.id);
+                        }}
                         className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
                           isSubActive
                             ? 'bg-blue-50 text-blue-600 font-bold'
@@ -421,7 +459,12 @@ export const Sidebar: React.FC = () => {
           <div className="flex items-center gap-1">
             {!isSidebarCollapsed && (
               <button
-                onClick={() => setActiveModule('settings')}
+                onClick={() => {
+                  if (window.innerWidth < 1024) {
+                    setIsSidebarCollapsed(true);
+                  }
+                  setActiveModule('settings');
+                }}
                 className="p-1.5 text-slate-400 hover:text-[#2563eb] hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200 hover:shadow-sm cursor-pointer"
                 title="System Settings"
               >
@@ -440,5 +483,6 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
     </aside>
+  </>
   );
 };

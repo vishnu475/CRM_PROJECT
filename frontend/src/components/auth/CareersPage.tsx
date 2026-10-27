@@ -147,6 +147,19 @@ export const CareersPage: React.FC<CareersPageProps> = ({ onNavigate }) => {
     return initialJobs;
   });
 
+  // Ensure public careers marketing page renders in crisp light branding
+  useEffect(() => {
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
+    return () => {
+      const saved = localStorage.getItem('crm_theme') || 'dark';
+      if (saved === 'dark') {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      }
+    };
+  }, []);
+
   // Fetch jobs from backend PostgreSQL and sync
   useEffect(() => {
     const fetchDBJobs = async () => {
@@ -356,7 +369,7 @@ export const CareersPage: React.FC<CareersPageProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="min-h-screen bg-white text-slate-600 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden">
+    <div className="careers-page min-h-screen bg-white text-slate-600 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden">
       
       {/* Navbar */}
       <nav className="fixed top-0 w-full z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">

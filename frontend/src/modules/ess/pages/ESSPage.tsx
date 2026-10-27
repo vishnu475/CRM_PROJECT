@@ -94,6 +94,11 @@ import { Badge } from '../../../components/common/Badge';
 import { EmployeeAttendanceView } from '../components/EmployeeAttendanceView';
 import { DocumentPreviewModal } from '../../../components/common/DocumentPreviewModal';
 import { MyTasksView } from '../../tasks/components/MyTasksView';
+import { MyProjectAllocationsView } from '../../tasks/components/MyProjectAllocationsView';
+import { TestingPage } from '../../testing';
+import { TestingDocumentsView } from '../../testing/components/TestingDocumentsView';
+import { TimesheetPage } from '../../timesheets';
+import { FlaskConical } from 'lucide-react';
 
 export const ESSPage: React.FC = () => {
   const {
@@ -546,8 +551,15 @@ export const ESSPage: React.FC = () => {
     } catch (e: any) { alert(e.message); }
   };
 
+  const empJoiningDateRaw = dashData?.profile?.joiningDate || profileData?.personal?.joiningDate || (userProfile as any)?.joiningDate || (userProfile as any)?.joining_date;
+  const empJoiningDateStr = empJoiningDateRaw ? String(empJoiningDateRaw).split('T')[0] : '';
+
   const handleApplyLeave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (empJoiningDateStr && leaveStart < empJoiningDateStr) {
+      alert(`Cannot apply leave for a date (${leaveStart}) prior to employee joining date (${empJoiningDateStr}).`);
+      return;
+    }
     try {
       const res = await fetch('/api/v1/employee/me/leave', {
         method: 'POST',
@@ -983,8 +995,9 @@ export const ESSPage: React.FC = () => {
     { id: 'performance', label: 'Performance', icon: TrendingUp },
     { id: 'expenses', label: 'Expenses', icon: Receipt },
     { id: 'loans', label: 'Loans & EMI', icon: CreditCard },
-    { id: 'transfers', label: 'Transfers', icon: Building },
     { id: 'tasks', label: 'Tasks', icon: CheckCircle },
+    { id: 'testing', label: 'QA & Testing', icon: FlaskConical },
+    { id: 'testing-documents', label: 'Testing Documents', icon: FileText },
     { id: 'hr-requests', label: 'HR Requests', icon: HelpCircle },
     { id: 'documents', label: 'Documents', icon: Folder },
     { id: 'timesheets', label: 'Timesheets', icon: FileText },
@@ -993,7 +1006,7 @@ export const ESSPage: React.FC = () => {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8faff] text-slate-900 selection:bg-blue-100 selection:text-blue-900 select-none">
+    <div className="flex h-screen overflow-hidden bg-[#f8faff] dark:bg-[#090D16] text-slate-900 dark:text-slate-100 selection:bg-blue-100 selection:text-blue-900 select-none">
       
       {/* 1. ADMIN-MATCHING SIDEBAR STRUCTURE */}
       <aside
@@ -1118,22 +1131,22 @@ export const ESSPage: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
         {/* Glassmorphic Top Header */}
-        <header className="h-16 bg-white/90 backdrop-blur-xl border-b border-slate-200 px-6 flex items-center justify-between shrink-0 z-10">
+        <header className="h-16 bg-white dark:bg-[#0B0F19] backdrop-blur-xl border-b border-slate-200 dark:border-slate-800/80 px-6 flex items-center justify-between shrink-0 z-10 transition-colors duration-200">
           {/* Search Bar */}
           <div className="flex items-center relative w-72 md:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={15} />
             <input
               type="text"
               placeholder="Search documents, requests, payslips..."
-              className="w-full pl-9 pr-10 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white transition-all shadow-2xs"
+              className="w-full pl-9 pr-10 py-1.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all shadow-2xs"
             />
-            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 bg-slate-200/60 px-1.5 py-0.5 rounded border border-slate-300/40">⌘K</kbd>
+            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300/40 dark:border-slate-700">⌘K</kbd>
           </div>
 
           {/* Right Control Actions */}
-          <div className="flex items-center space-x-3 text-xs font-bold text-slate-700">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 shadow-2xs">
-              <User size={14} className="text-blue-600 shrink-0" />
+          <div className="flex items-center space-x-3 text-xs font-bold text-slate-700 dark:text-slate-300">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 shadow-2xs">
+              <User size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
               <select
                 value={currentEmpId}
                 onChange={(e) => {
@@ -1150,15 +1163,28 @@ export const ESSPage: React.FC = () => {
                     });
                   }
                 }}
-                className="bg-transparent text-xs font-bold text-slate-800 outline-none cursor-pointer pr-1"
+                className="bg-transparent text-xs font-bold text-slate-800 dark:text-slate-200 outline-none cursor-pointer pr-1"
               >
                 {employees.map(em => (
-                  <option key={em.id} value={em.empCode || em.id}>
+                  <option key={em.id} value={em.empCode || em.id} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
                     {em.name} ({em.empCode || em.id})
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Dark Mode Toggle */}
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-slate-700 hover:text-amber-600 text-slate-700 dark:text-slate-300 rounded-lg transition-all border border-slate-200 dark:border-slate-700 cursor-pointer flex items-center justify-center"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {theme === 'dark' ? (
+                <Sun size={15} className="text-amber-400 fill-amber-400/20" />
+              ) : (
+                <Moon size={15} className="text-slate-600" />
+              )}
+            </button>
 
             <button
               onClick={() => {
@@ -1167,7 +1193,7 @@ export const ESSPage: React.FC = () => {
                 window.history.pushState({}, '', '/login');
                 window.dispatchEvent(new Event('popstate'));
               }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 rounded-xl cursor-pointer shadow-2xs font-extrabold transition-all"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-xl cursor-pointer shadow-2xs font-extrabold transition-all"
             >
               <LogOut size={14} />
               <span>Sign Out</span>
@@ -1175,12 +1201,12 @@ export const ESSPage: React.FC = () => {
 
             <button
               onClick={handleOpenNotifications}
-              className="relative p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              className="relative p-2 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
               title="Notifications Center"
             >
               <Bell size={18} />
               {unreadNotifCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center border-2 border-white shadow-2xs animate-pulse">
+                <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-2xs animate-pulse">
                   {unreadNotifCount}
                 </span>
               )}
@@ -1245,99 +1271,99 @@ export const ESSPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 
                 {/* KPI 1: NET SALARY */}
-                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-lg hover:border-emerald-200 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
+                <div className="bg-white dark:bg-slate-900/90 p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-lg hover:border-emerald-200 dark:hover:border-emerald-800/80 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
                   <div className="flex items-center justify-between">
-                    <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-2xs border border-emerald-100">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-2xs border border-emerald-100 dark:border-emerald-800/60">
                       <Banknote size={22} />
                     </div>
-                    <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                    <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800/60">
                       {kpis.salaryPaymentStatus || 'Processing'}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">NET SALARY (AUG 2025)</span>
-                    <p className="text-2xl font-black text-slate-900 mt-0.5">₹{Number(kpis.latestNetSalary || 0).toLocaleString()}</p>
+                    <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">₹{Number(kpis.latestNetSalary || 0).toLocaleString()}</p>
                     <p className="text-[10px] text-slate-400 font-medium mt-1">From PostgreSQL Payroll</p>
                   </div>
                 </div>
 
                 {/* KPI 2: ATTENDANCE */}
-                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-lg hover:border-blue-200 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
+                <div className="bg-white dark:bg-slate-900/90 p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-lg hover:border-blue-200 dark:hover:border-blue-800/80 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
                   <div className="flex items-center justify-between">
-                    <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-2xs border border-blue-100">
+                    <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-2xs border border-blue-100 dark:border-blue-800/60">
                       <Clock size={22} />
                     </div>
-                    <span className="text-[10px] font-black text-blue-600 font-mono bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+                    <span className="text-[10px] font-black text-blue-600 dark:text-blue-300 font-mono bg-blue-50 dark:bg-blue-950/50 px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800/60">
                       {kpis.attendancePercentage || 0}%
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">ATTENDANCE (AUG)</span>
-                    <p className="text-2xl font-black text-slate-900 mt-0.5">{kpis.presentDays || 0} / {kpis.workingDays || 26}</p>
+                    <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{kpis.presentDays || 0} / {kpis.workingDays || 26}</p>
                     <p className="text-[10px] text-slate-400 font-medium mt-1">Days Present</p>
                   </div>
-                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full" style={{ width: `${kpis.attendancePercentage || 0}%` }}></div>
                   </div>
                 </div>
 
                 {/* KPI 3: LEAVE BALANCE */}
-                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-lg hover:border-purple-200 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
+                <div className="bg-white dark:bg-slate-900/90 p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800/80 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
                   <div className="flex items-center justify-between">
-                    <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shadow-2xs border border-purple-100">
+                    <div className="w-11 h-11 rounded-2xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shadow-2xs border border-purple-100 dark:border-purple-800/60">
                       <CalendarDays size={22} />
                     </div>
                   </div>
                   <div>
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">LEAVE BALANCE</span>
-                    <p className="text-2xl font-black text-slate-900 mt-0.5">{kpis.leaveBalance} Days</p>
+                    <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{kpis.leaveBalance} Days</p>
                     <p className="text-[10px] text-slate-400 font-medium mt-1">Available Annual Paid Leaves</p>
                   </div>
                 </div>
 
                 {/* KPI 4: PENDING REQUESTS */}
-                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-lg hover:border-amber-200 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
+                <div className="bg-white dark:bg-slate-900/90 p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-lg hover:border-amber-200 dark:hover:border-amber-800/80 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
                   <div className="flex items-center justify-between">
-                    <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-2xs border border-amber-100">
+                    <div className="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-2xs border border-amber-100 dark:border-amber-800/60">
                       <AlertCircle size={22} />
                     </div>
-                    <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                    <span className="text-[10px] font-black text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-full border border-amber-200 dark:border-amber-800/60">
                       Awaiting Action
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">PENDING REQUESTS</span>
-                    <p className="text-2xl font-black text-slate-900 mt-0.5">{kpis.pendingRequests}</p>
+                    <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{kpis.pendingRequests}</p>
                     <p className="text-[10px] text-slate-400 font-medium mt-1">Awaiting Manager Sign-off</p>
                   </div>
                 </div>
 
                 {/* KPI 5: PERFORMANCE RATING */}
-                <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs hover:shadow-lg hover:border-teal-200 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
+                <div className="bg-white dark:bg-slate-900/90 p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-lg hover:border-teal-200 dark:hover:border-teal-800/80 transition-all duration-300 space-y-3 transform hover:-translate-y-1">
                   <div className="flex items-center justify-between">
-                    <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shadow-2xs border border-teal-100">
+                    <div className="w-11 h-11 rounded-2xl bg-teal-50 dark:bg-teal-950/40 text-teal-600 dark:text-teal-400 flex items-center justify-center shadow-2xs border border-teal-100 dark:border-teal-800/60">
                       <TrendingUp size={22} />
                     </div>
                   </div>
                   <div>
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">PERFORMANCE RATING</span>
-                    <p className="text-2xl font-black text-slate-900 mt-0.5">{kpis.performanceRating ? `${kpis.performanceRating} / 5.0` : 'Not Reviewed'}</p>
-                    <p className="text-[10px] text-teal-600 font-medium mt-1">Latest Evaluation Score</p>
+                    <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{kpis.performanceRating ? `${kpis.performanceRating} / 5.0` : 'Not Reviewed'}</p>
+                    <p className="text-[10px] text-teal-600 dark:text-teal-400 font-medium mt-1">Latest Evaluation Score</p>
                   </div>
                 </div>
               </div>
 
               {/* 6 FLOATING QUICK ACTION PILLS */}
               <div className="space-y-3">
-                <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Quick Actions</h3>
+                <h3 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">Quick Actions</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                   {[
-                    { label: 'Apply Leave', target: 'leave', icon: CalendarDays, bg: 'bg-blue-50/80 hover:bg-blue-100 text-blue-600 border-blue-200/60' },
-                    { label: 'Regularize Time', target: 'attendance', icon: Clock, bg: 'bg-purple-50/80 hover:bg-purple-100 text-purple-600 border-purple-200/60' },
-                    { label: 'Submit Expense', target: 'expenses', icon: Receipt, bg: 'bg-emerald-50/80 hover:bg-emerald-100 text-emerald-600 border-emerald-200/60' },
-                    { label: 'View Payslip', target: 'payroll', icon: Banknote, bg: 'bg-indigo-50/80 hover:bg-indigo-100 text-indigo-600 border-indigo-200/60' },
-                    { label: 'My Tasks', target: 'tasks', icon: CheckSquare, bg: 'bg-amber-50/80 hover:bg-amber-100 text-amber-600 border-amber-200/60' },
-                    { label: 'Request Transfer', target: 'transfers', icon: Building, bg: 'bg-rose-50/80 hover:bg-rose-100 text-rose-600 border-rose-200/60' },
+                    { label: 'Apply Leave', target: 'leave', icon: CalendarDays, bg: 'bg-blue-50/80 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 border-blue-200/60 dark:border-blue-800/60' },
+                    { label: 'Regularize Time', target: 'attendance', icon: Clock, bg: 'bg-purple-50/80 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-600 dark:text-purple-400 border-purple-200/60 dark:border-purple-800/60' },
+                    { label: 'Submit Expense', target: 'expenses', icon: Receipt, bg: 'bg-emerald-50/80 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-800/60' },
+                    { label: 'View Payslip', target: 'payroll', icon: Banknote, bg: 'bg-indigo-50/80 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border-indigo-200/60 dark:border-indigo-800/60' },
+                    { label: 'My Tasks', target: 'tasks', icon: CheckSquare, bg: 'bg-amber-50/80 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 border-amber-200/60 dark:border-amber-800/60' },
+                    { label: 'Request Transfer', target: 'transfers', icon: Building, bg: 'bg-rose-50/80 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 border-rose-200/60 dark:border-rose-800/60' },
                   ].map((act, idx) => {
                     const Icon = act.icon;
                     return (
@@ -1346,10 +1372,10 @@ export const ESSPage: React.FC = () => {
                         onClick={() => handleNavClick(act.target)}
                         className={`p-4 rounded-3xl border transition-all duration-200 hover:scale-[1.03] flex items-center gap-3 cursor-pointer shadow-2xs ${act.bg}`}
                       >
-                        <div className="w-9 h-9 rounded-2xl bg-white flex items-center justify-center shadow-xs shrink-0">
+                        <div className="w-9 h-9 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center shadow-xs shrink-0 border border-slate-200/60 dark:border-slate-700/60">
                           <Icon size={18} />
                         </div>
-                        <span className="text-xs font-bold text-slate-900 text-left leading-tight">{act.label}</span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-100 text-left leading-tight">{act.label}</span>
                       </button>
                     );
                   })}
@@ -1361,14 +1387,14 @@ export const ESSPage: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">My Assigned Project Teams</h3>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                      <h3 className="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">My Assigned Project Teams</h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60">
                         {projectGroupsData.length} Assigned Team{projectGroupsData.length === 1 ? '' : 's'}
                       </span>
                     </div>
                     <button
                       onClick={() => handleNavClick('tasks')}
-                      className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <span>Open Complete Workspace & Tasks</span>
                       <ChevronRight size={13} />
@@ -1382,45 +1408,45 @@ export const ESSPage: React.FC = () => {
                       return (
                         <div
                           key={grp.id}
-                          className="bg-white rounded-3xl border border-slate-200/90 hover:border-purple-300 shadow-sm hover:shadow-md transition-all p-5 flex flex-col justify-between gap-4 group"
+                          className="bg-white dark:bg-slate-900/90 rounded-3xl border border-slate-200/90 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-500/60 shadow-sm hover:shadow-md transition-all p-5 flex flex-col justify-between gap-4 group"
                         >
                           {/* Header & Badges */}
                           <div className="space-y-2.5">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200/80">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 text-[11px] font-bold border border-blue-200/80 dark:border-blue-800/60">
                                 <Folder size={12} />
                                 <span className="truncate max-w-[150px]">{grp.project_name || 'CMS Project'}</span>
                               </span>
-                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
                                 {grp.members?.length || grp.member_count || 4} Members
                               </span>
                             </div>
 
                             <div>
-                              <h4 className="font-bold text-sm text-purple-800 group-hover:text-purple-900 transition">
+                              <h4 className="font-bold text-sm text-purple-800 dark:text-purple-300 group-hover:text-purple-900 dark:group-hover:text-purple-200 transition">
                                 {grp.name}
                               </h4>
-                              <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">
                                 {grp.description || `Core cross-functional delivery group for ${grp.project_name || 'CMS Project'}`}
                               </p>
                             </div>
                           </div>
 
                           {/* Designated Lead Box */}
-                          <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200 flex items-center justify-between">
+                          <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50/50 dark:from-amber-950/40 dark:to-orange-950/30 border border-amber-200 dark:border-amber-900/60 flex items-center justify-between">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div className="w-8 h-8 rounded-full bg-amber-500 text-white font-bold text-xs flex items-center justify-center shadow-2xs shrink-0">
                                 {(grp.team_head_name || 'V').charAt(0)}
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1">
-                                  <Award size={11} className="text-amber-600 shrink-0" />
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900">DESIGNATED LEAD</span>
+                                  <Award size={11} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900 dark:text-amber-300">DESIGNATED LEAD</span>
                                 </div>
-                                <p className="text-xs font-bold text-slate-900 truncate">
+                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
                                   {grp.team_head_name || 'Vishnu Vardhan'}
                                 </p>
-                                <p className="text-[10px] font-mono text-slate-500">
+                                <p className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
                                   {grp.team_head_id || 'EMP-005'}
                                 </p>
                               </div>
@@ -1428,17 +1454,17 @@ export const ESSPage: React.FC = () => {
                           </div>
 
                           {/* Overall Progress Bar */}
-                          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5">
+                          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-700/60 space-y-1.5">
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-semibold text-slate-600 flex items-center gap-1">
-                                <TrendingUp size={12} className="text-purple-600" />
+                              <span className="font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                                <TrendingUp size={12} className="text-purple-600 dark:text-purple-400" />
                                 <span>Overall Progress:</span>
                               </span>
-                              <span className="font-bold text-purple-700">
+                              <span className="font-bold text-purple-700 dark:text-purple-300">
                                 {overallP}%
                               </span>
                             </div>
-                            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full transition-all duration-500"
                                 style={{ width: `${Math.min(100, Math.max(0, overallP))}%` }}
@@ -1451,8 +1477,8 @@ export const ESSPage: React.FC = () => {
                           </div>
 
                           {/* Team Roster Preview */}
-                          <div className="space-y-1.5 pt-1 border-t border-slate-100">
-                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                          <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                               <span>Team Roster:</span>
                               <button
                                 onClick={() => handleNavClick('tasks')}
@@ -1658,12 +1684,29 @@ export const ESSPage: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="font-bold text-slate-700 block mb-1">Start Date</label>
-                    <input type="date" value={leaveStart} onChange={e => setLeaveStart(e.target.value)} required className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" />
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Start Date
+                      {empJoiningDateStr && <span className="ml-1 text-[10px] text-slate-400 font-normal">(Min: {empJoiningDateStr})</span>}
+                    </label>
+                    <input
+                      type="date"
+                      value={leaveStart}
+                      min={empJoiningDateStr || undefined}
+                      onChange={e => setLeaveStart(e.target.value)}
+                      required
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
                   </div>
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">End Date</label>
-                    <input type="date" value={leaveEnd} onChange={e => setLeaveEnd(e.target.value)} required className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" />
+                    <input
+                      type="date"
+                      value={leaveEnd}
+                      min={leaveStart || empJoiningDateStr || undefined}
+                      onChange={e => setLeaveEnd(e.target.value)}
+                      required
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
                   </div>
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Reason</label>
@@ -3101,6 +3144,16 @@ export const ESSPage: React.FC = () => {
           {/* VIEW: PROJECT → TEAM → EMPLOYEE → MODULE → TASK → PROGRESS HIERARCHY */}
           {subSection === 'tasks' && (
             <MyTasksView employeeId={currentEmpId} />
+          )}
+          {subSection === 'testing' && (
+            <TestingPage />
+          )}
+          {subSection === 'testing-documents' && (
+            <TestingDocumentsView
+              employeeId={currentEmpId}
+              title="My Testing Documents"
+              subtitle="Quality gate verified reports for modules developed or tested by you"
+            />
           )}
 
           {/* VIEW: EMPLOYEE PERFORMANCE (DYNAMIC DERIVATION) */}
@@ -4685,47 +4738,9 @@ export const ESSPage: React.FC = () => {
             );
           })()}
 
-          {/* VIEW: TIMESHEETS */}
+          {/* VIEW: TIMESHEETS (STANDALONE MODULE) */}
           {subSection === 'timesheets' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-                <h3 className="text-sm font-extrabold text-slate-900">Submit Daily Timesheet</h3>
-                <form onSubmit={handleTimesheetSubmit} className="space-y-3 text-xs">
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Project Name</label>
-                    <input type="text" value={tsProject} onChange={e => setTsProject(e.target.value)} required className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Task Name</label>
-                    <input type="text" value={tsTask} onChange={e => setTsTask(e.target.value)} required className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Hours Spent</label>
-                    <input type="number" value={tsHours} onChange={e => setTsHours(e.target.value)} required className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" />
-                  </div>
-                  <div>
-                    <label className="font-bold text-slate-700 block mb-1">Description</label>
-                    <textarea value={tsDesc} onChange={e => setTsDesc(e.target.value)} required rows={3} placeholder="Work done..." className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" />
-                  </div>
-                  <Button variant="primary" size="sm" type="submit" className="w-full">Submit Timesheet</Button>
-                </form>
-              </div>
-
-              <div className="lg:col-span-2 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
-                <h3 className="text-sm font-extrabold text-slate-900">My Submitted Timesheets</h3>
-                <div className="space-y-3">
-                  {timesheetsData.map((ts: any, idx: number) => (
-                    <div key={idx} className="p-4 bg-slate-50/60 border border-slate-200/80 rounded-2xl text-xs space-y-1">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-slate-900">{ts.project_name || ts.projectName} - {ts.task_name || ts.taskName}</span>
-                        <span className="font-mono font-bold text-blue-600">{ts.hours_spent || ts.hoursSpent} hrs</span>
-                      </div>
-                      <p className="text-slate-500">{ts.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <TimesheetPage />
           )}
 
           {/* VIEW: NOTIFICATIONS */}

@@ -1,5 +1,4 @@
-import React from 'react';
-import { UserCheck, ShieldAlert, Sparkles, TrendingUp, CheckCircle2, DollarSign, PieChart } from 'lucide-react';
+import { UserCheck, ShieldAlert, Sparkles, TrendingUp, CheckCircle2, PieChart } from 'lucide-react';
 
 interface ConfirmedEmployeePayrollCardProps {
   confirmedCount: number;

@@ -26,7 +26,10 @@ export type ModuleId =
   | 'automation'
   | 'administration'
   | 'settings'
-  | 'employee';
+  | 'employee'
+  | 'testing'
+  | 'timesheet'
+  | 'timesheets';
 
 export type FlowCategory =
   | 'main'
@@ -776,6 +779,11 @@ export interface HelpdeskTicket {
   status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
   assignedAgent: string;
   createdAt: string;
+  category?: string;
+  description?: string;
+  createdBy?: string;
+  contactEmail?: string;
+  contactPhone?: string;
 }
 
 export interface DocumentFile {
@@ -894,3 +902,199 @@ export interface Note {
   updatedAt: string;
   visibility: 'Public' | 'Private';
 }
+
+// ─── Testing / QA Management Types ─────────────────────────
+export type TestingStatus =
+  | 'NOT_READY'
+  | 'READY_FOR_TESTING'
+  | 'TESTING_IN_PROGRESS'
+  | 'BUGS_FOUND'
+  | 'FIX_IN_PROGRESS'
+  | 'READY_FOR_RETEST'
+  | 'RETESTING'
+  | 'TESTING_PASSED'
+  | 'TESTING_FAILED'
+  | 'APPROVED';
+
+export type TestCaseStatus = 'NOT_EXECUTED' | 'PASSED' | 'FAILED' | 'BLOCKED';
+
+export type BugSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+export type BugPriority = 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
+
+export type BugStatus =
+  | 'OPEN'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'FIXED'
+  | 'READY_FOR_RETEST'
+  | 'RETESTING'
+  | 'REOPENED'
+  | 'CLOSED'
+  | 'WONT_FIX'
+  | 'DUPLICATE';
+
+export interface ModuleTestingOverview {
+  module_id: string;
+  module_name: string;
+  module_code: string;
+  category: string;
+  developer_employee_id: string;
+  developer_employee_name: string;
+  tester_employee_id: string;
+  tester_employee_name: string;
+  total_tasks: number;
+  completed_tasks: number;
+  pending_tasks: number;
+  completion_percentage: string | number;
+  testing_status: TestingStatus;
+  testing_request_id?: string;
+  submitted_date?: string;
+  last_tested_date?: string;
+  bugs_found: number;
+  critical_bugs: number;
+  high_bugs: number;
+  medium_bugs: number;
+  low_bugs: number;
+  open_bugs: number;
+  total_test_cases: number;
+  passed_test_cases: number;
+  failed_test_cases: number;
+}
+
+export interface TestCase {
+  id: string;
+  module_id: string;
+  module_name: string;
+  testing_request_id?: string;
+  feature: string;
+  test_scenario: string;
+  test_steps: string;
+  test_data?: string;
+  expected_result: string;
+  actual_result?: string;
+  status: TestCaseStatus;
+  tester_id?: string;
+  tester_name?: string;
+  execution_date?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Bug {
+  id: string;
+  bug_id: string;
+  module_id: string;
+  module_name: string;
+  testing_request_id?: string;
+  test_case_id?: string;
+  feature?: string;
+  related_task_id?: string;
+  developer_employee_id: string;
+  developer_employee_name: string;
+  tester_employee_id: string;
+  tester_employee_name: string;
+  title: string;
+  description: string;
+  steps_to_reproduce?: string;
+  expected_result?: string;
+  actual_result?: string;
+  severity: BugSeverity;
+  priority: BugPriority;
+  environment: string;
+  browser: string;
+  device: string;
+  screenshot_url?: string;
+  video_url?: string;
+  attachment_url?: string;
+  status: BugStatus;
+  assigned_developer_id?: string;
+  assigned_developer_name?: string;
+  fixed_date?: string;
+  retest_date?: string;
+  closed_date?: string;
+  developer_notes?: string;
+  retest_notes?: string;
+  created_at: string;
+  updated_at: string;
+  comment_count?: number;
+  comments?: BugComment[];
+  statusHistory?: BugStatusHistory[];
+}
+
+export interface BugComment {
+  id: string;
+  bug_id: string;
+  user_id: string;
+  user_name: string;
+  user_role: string;
+  comment: string;
+  created_at: string;
+}
+
+export interface BugStatusHistory {
+  id: string;
+  bug_id: string;
+  changed_by_id: string;
+  changed_by_name: string;
+  changed_by_role: string;
+  old_status?: string;
+  new_status: string;
+  comment?: string;
+  created_at: string;
+}
+
+export interface TestingReportData {
+  module: {
+    id: string;
+    code: string;
+    name: string;
+    category: string;
+    status: string;
+  };
+  testingRequest?: any;
+  reportSummary?: {
+    id: string;
+    testing_start_date?: string;
+    testing_end_date?: string;
+    total_test_cases: number;
+    passed_test_cases: number;
+    failed_test_cases: number;
+    blocked_test_cases: number;
+    total_bugs: number;
+    critical_bugs: number;
+    high_bugs: number;
+    medium_bugs: number;
+    low_bugs: number;
+    open_bugs: number;
+    fixed_bugs: number;
+    retested_bugs: number;
+    closed_bugs: number;
+    final_testing_status: string;
+    summary_notes?: string;
+    created_at: string;
+  };
+  tasks: any[];
+  testCases: TestCase[];
+  bugs: Bug[];
+}
+
+export interface TestingDashboardMetrics {
+  kpis: {
+    ready_for_testing: string | number;
+    testing_in_progress: string | number;
+    testing_passed: string | number;
+    testing_failed: string | number;
+    open_bugs: string | number;
+    critical_bugs: string | number;
+    high_priority_bugs: string | number;
+    bugs_awaiting_retest: string | number;
+    closed_bugs: string | number;
+  };
+  bugsByModule: { module_name: string; count: string | number; critical: string | number; high: string | number }[];
+  bugsBySeverity: { severity: string; count: string | number }[];
+  bugsByDeveloper: { developer_employee_name: string; total_bugs: string | number; resolved_bugs: string | number; open_bugs: string | number }[];
+  bugsByTester: { tester_employee_name: string; reported_bugs: string | number }[];
+  testingStatusDistribution: { status: string; count: string | number }[];
+  averageResolutionHours: number;
+}
+

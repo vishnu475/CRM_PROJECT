@@ -347,6 +347,66 @@ export const taskApiService = {
     const json = await res.json();
     if (!json.success) throw new Error(json.message || 'Failed to update module progress');
     return json;
+  },
+
+  // -- ALLOCATION METHODS ----------------------------------------------------
+
+  async getEmployeeAllocations(employeeId: string): Promise<any[]> {
+    const res = await fetch(`/api/allocations/employee/${employeeId}`);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to fetch employee allocations');
+    return json.data || [];
+  },
+
+  async getProjectAllocations(projectId: string): Promise<any[]> {
+    const res = await fetch(`/api/allocations/project/${projectId}`);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to fetch project allocations');
+    return json.data || [];
+  },
+
+  async getAllocationById(allocationId: string): Promise<any> {
+    const res = await fetch(`/api/allocations/${allocationId}`);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to fetch allocation');
+    return json.data;
+  },
+
+  async getAllocationTasks(allocationId: string): Promise<any[]> {
+    const res = await fetch(`/api/allocations/${allocationId}/tasks`);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to fetch allocation tasks');
+    return json.data || [];
+  },
+
+  async submitAllocationForTesting(allocationId: string, note?: string): Promise<any> {
+    const res = await fetch(`/api/allocations/${allocationId}/submit-for-testing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: note || '' })
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to submit for testing');
+    return json.data;
+  },
+
+  async createAllocation(payload: {
+    projectId: string;
+    projectName?: string;
+    employeeId: string;
+    employeeName?: string;
+    moduleId: string;
+    moduleName?: string;
+    role?: string;
+    notes?: string;
+  }): Promise<any> {
+    const res = await fetch('/api/allocations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Failed to create allocation');
+    return json.data;
   }
 };
-

@@ -40,15 +40,25 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <pre className="bg-slate-950 p-4 rounded-xl text-xs font-mono text-rose-300 max-w-xl overflow-auto text-left border border-slate-800 shadow-inner">
             {this.state.error?.toString()}
           </pre>
-          <button
-            onClick={() => {
-              localStorage.clear();
-              window.location.href = '/';
-            }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-md transition-all"
-          >
-            Reset App State & Reload
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                window.location.reload();
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer"
+            >
+              Reload Page
+            </button>
+            <button
+              onClick={() => {
+                localStorage.clear();
+                window.location.href = '/';
+              }}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer"
+            >
+              Reset App State & Reload
+            </button>
+          </div>
         </div>
       );
     }

@@ -302,11 +302,8 @@ export class ESSService {
       (!todayRecord.check_out || todayRecord.check_out === '-')
     );
 
-    // Generate complete daily records list for the month from maxDay down to Day 1
+    // Generate complete daily records list for the full month
     const daysInMonth = new Date(y, m, 0).getDate();
-    const isCurrentMonthView = m === (now.getMonth() + 1) && y === now.getFullYear();
-    const currentDayNum = now.getDate();
-    const maxDay = isCurrentMonthView ? currentDayNum : daysInMonth;
 
     const fullMonthRecords = [];
     let presentCount = 0;
@@ -315,10 +312,11 @@ export class ESSService {
     let weeklyOffCount = 0;
     let totalOT = 0;
 
-    for (let d = maxDay; d >= 1; d--) {
+    for (let d = daysInMonth; d >= 1; d--) {
       const dayStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayDate = new Date(y, m - 1, d);
       const isSunday = dayDate.getDay() === 0;
+      const isFuture = dayStr > todayStr;
 
       // Check if existing record exists in PostgreSQL
       const existing = recordsRes.rows.find(r => safeDateStr(r.date) === dayStr);
@@ -347,6 +345,8 @@ export class ESSService {
 
       if (isBeforeJoining) {
         status = 'Not Joined';
+      } else if (isFuture) {
+        status = isSunday ? 'Weekly Off' : 'Upcoming';
       } else if (existing) {
         checkIn = existing.check_in || '-';
         checkOut = existing.check_out || '-';
@@ -407,7 +407,8 @@ export class ESSService {
         designation: emp.designation || 'Staff Member',
         department: emp.department || 'General',
         reportingManager: emp.reporting_manager_name || 'Priya Sharma',
-        shift: 'General Shift (10:00 AM - 05:00 PM)'
+        shift: 'General Shift (10:00 AM - 05:00 PM)',
+        joiningDate: emp.joining_date ? safeDateStr(emp.joining_date) : null
       },
       today: {
         date: todayStr,
@@ -1074,14 +1075,42 @@ export class ESSService {
     const emp = await this.resolveEmployee(employeeId);
     const empCode = emp.emp_code || emp.id;
     const { projectName, taskName, date, hoursSpent, description } = data;
-    const tsId = `TS-${empCode}-${Date.now().toString().slice(-6)}`;
+    const resolvedDate = date || new Date().toISOString().split('T')[0];
+    const tsId = `TS-${empCode}-${resolvedDate}`;
+    const hoursNum = Number(hoursSpent) || 8.0;
+    const mins = Math.round(hoursNum * 60);
 
     const res = await pool.query(
       `INSERT INTO timesheets
-         (id, employee_id, employee_name, project_name, task_name, task_description, date, hours_spent, hours, description, status)
-       VALUES ($1, $2, $3, $4, $5, $8, $6, $7, $7, $8, 'Submitted')
+         (id, employee_id, employee_name, project_name, task_name, task_description, date, hours_spent, hours, total_hours, total_minutes, expected_hours, description, status, submitted_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $8, $6, $7, $7, $7, $9, 8.0, $8, 'SUBMITTED', NOW(), NOW(), NOW())
+       ON CONFLICT (employee_id, date) DO UPDATE SET
+         project_name = EXCLUDED.project_name,
+         task_name = EXCLUDED.task_name,
+         task_description = EXCLUDED.task_description,
+         hours_spent = EXCLUDED.hours_spent,
+         hours = EXCLUDED.hours,
+         total_hours = EXCLUDED.total_hours,
+         total_minutes = EXCLUDED.total_minutes,
+         status = 'SUBMITTED',
+         submitted_at = NOW(),
+         updated_at = NOW()
        RETURNING *`,
-      [tsId, empCode, emp.name, projectName, taskName, date, hoursSpent, description]
+      [tsId, empCode, emp.name, projectName || 'General Work', taskName || 'Development Task', resolvedDate, hoursNum, description || taskName || 'Work deliverable', mins]
+    );
+
+    // Also insert or update work entry
+    const entryId = `TSE-${empCode}-${resolvedDate}-1`;
+    await pool.query(
+      `INSERT INTO timesheet_entries
+         (id, timesheet_id, start_time, end_time, duration_minutes, work_title, work_description, created_at, updated_at)
+       VALUES ($1, $2, '09:00', '17:00', $3, $4, $5, NOW(), NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         duration_minutes = EXCLUDED.duration_minutes,
+         work_title = EXCLUDED.work_title,
+         work_description = EXCLUDED.work_description,
+         updated_at = NOW()`,
+      [entryId, tsId, mins, projectName || taskName || 'Work Deliverable', description || 'Completed work deliverable']
     );
 
     await this.createAdminNotification({

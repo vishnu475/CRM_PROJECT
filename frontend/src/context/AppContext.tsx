@@ -222,6 +222,8 @@ interface AppContextType {
   ) => Promise<{ success: boolean; projectId?: string; message?: string }>;
   tasks: Task[];
   helpdeskTickets: HelpdeskTicket[];
+  addHelpdeskTicket: (ticket: Omit<HelpdeskTicket, 'id' | 'ticketNo' | 'createdAt'>) => HelpdeskTicket;
+  updateHelpdeskTicketStatus: (id: string, status: HelpdeskTicket['status']) => void;
   documents: DocumentFile[];
   addDocument: (doc: Omit<DocumentFile, 'id' | 'updatedAt'>) => void;
   notifications: NotificationItem[];
@@ -229,12 +231,12 @@ interface AppContextType {
 }
 
 const initialUserProfile: UserProfile = {
-  id: 'EMP-005',
-  empCode: 'EMP-005',
-  name: 'Vishnu Vardhan',
-  email: 'vishnu.vardhan@democompany.com',
+  id: 'ADMIN-001',
+  empCode: 'ADMIN-001',
+  name: 'Executive Administrator',
+  email: 'admin@company.com',
   role: 'Executive',
-  roleTitle: 'Lead Backend Architect',
+  roleTitle: 'System Administrator',
   avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   company: 'Demo Company Pvt. Ltd.',
   branch: 'Headquarters (HQ)',
@@ -439,15 +441,9 @@ const initialJobCandidates: JobCandidate[] = [];
 
 
 
-const initialProjects: Project[] = [
-  { id: 'PRJ-101', code: 'PRJ-101', name: 'ERP Suite Enterprise Rollout', client: 'Globex Corporation', budget: 5000000, spent: 2100000, progress: 68, status: 'In Progress' },
-  { id: 'PRJ-102', code: 'PRJ-102', name: 'HRMS Cloud Migration', client: 'Initech LLC', budget: 1800000, spent: 450000, progress: 35, status: 'In Progress' },
-];
+const initialProjects: Project[] = [];
 
-const initialTasks: Task[] = [
-  { id: 'TSK-01', title: 'Setup Chart of Accounts double entry rules', project: 'ERP Suite Enterprise Rollout', assignee: 'James Smith', priority: 'High', status: 'In Progress', dueDate: '2025-05-25' },
-  { id: 'TSK-02', title: 'Finalize Attendance to Payroll synchronization', project: 'HRMS Cloud Migration', assignee: 'Emma Watson', priority: 'Medium', status: 'To Do', dueDate: '2025-05-28' },
-];
+const initialTasks: Task[] = [];
 
 const initialHelpdeskTickets: HelpdeskTicket[] = [
   { id: 'TCK-201', ticketNo: 'HD-8091', subject: 'Invoice PDF download alignment query', customerName: 'Globex Corporation', priority: 'Medium', status: 'Open', assignedAgent: 'Support Desk', createdAt: '1 hour ago' },
@@ -532,8 +528,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [companyName, setCompanyName] = useState<string>('Demo Company Pvt. Ltd.');
   const [branchName, setBranchName] = useState<string>('Headquarters (HQ)');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 1024;
+    }
+    return false;
+  });
+  const [theme, setThemeState] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('crm_theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    return 'dark';
+  });
+
+  const setTheme = useCallback((newTheme: 'dark' | 'light') => {
+    localStorage.setItem('crm_theme', newTheme);
+    setThemeState(newTheme);
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+  }, [theme]);
   const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(() => {
     return localStorage.getItem('crm_auth') === 'true';
   });
@@ -612,11 +639,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: e.onboarding_stage ? 
               (e.onboarding_stage.charAt(0).toUpperCase() + e.onboarding_stage.slice(1).toLowerCase()) : 
               (e.status ? (e.status.charAt(0).toUpperCase() + e.status.slice(1).toLowerCase()) : 'Joined'),
-            salary: parseFloat(e.salary) || 50000,
-            basicSalary: parseFloat(e.basic_salary) || 30000,
-            allowances: parseFloat(e.allowances) || 20000,
+            annualSalary: parseFloat(e.annual_salary || e.annual_ctc) || (parseFloat(e.salary) >= 100000 ? parseFloat(e.salary) : Math.round(parseFloat(e.salary || 50000) * 12)),
+            annualCtc: parseFloat(e.annual_ctc || e.annual_salary) || (parseFloat(e.salary) >= 100000 ? parseFloat(e.salary) : Math.round(parseFloat(e.salary || 50000) * 12)),
+            salary: parseFloat(e.salary) > 0 ? (parseFloat(e.salary) >= 100000 ? Math.round((parseFloat(e.salary) / 12) * 100) / 100 : parseFloat(e.salary)) : 50000,
+            basicSalary: parseFloat(e.basic_salary) || Math.round((parseFloat(e.salary) || 50000) * 0.6),
+            allowances: parseFloat(e.allowances) || Math.round((parseFloat(e.salary) || 50000) * 0.4),
             manager: e.reporting_manager_name || 'HR Manager',
             reportingManagerName: e.reporting_manager_name || 'HR Manager',
+            panNumber: e.pan_number || '',
+            uanNumber: e.uan_number || '',
+            bankAccount: e.bank_account || '',
+            ifscCode: e.ifsc_code || '',
             pin: e.plain_pin || '1234'
           })));
         }
@@ -1104,7 +1137,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 20. Load Vendors from CRM PostgreSQL
         const vndRes = await VendorsAPI.getAll();
         if (vndRes.success && Array.isArray(vndRes.data)) {
-          setVendors(vndRes.data.map(mapVendor));
+          // Deduplicate vendors by lowercase trimmed name (BUG-110)
+          const seenVendorNames = new Set<string>();
+          const dedupedVendors: Vendor[] = [];
+          for (const raw of vndRes.data) {
+            const mapped = mapVendor(raw);
+            const norm = (mapped.name || '').trim().toLowerCase();
+            if (norm && !seenVendorNames.has(norm)) {
+              seenVendorNames.add(norm);
+              dedupedVendors.push(mapped);
+            }
+          }
+          setVendors(dedupedVendors);
         }
 
         // 21. Load Purchase Orders from CRM PostgreSQL
@@ -1115,7 +1159,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // 22. Load Projects from CRM PostgreSQL
         const projectsRes = await ProjectsAPI.getAll();
-        if (projectsRes.success && Array.isArray(projectsRes.data) && projectsRes.data.length > 0) {
+        if (projectsRes.success && Array.isArray(projectsRes.data)) {
           setProjects(projectsRes.data.map((r: any) => ({
             id: r.id,
             code: r.code || r.id,
@@ -1422,7 +1466,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [tasks] = useState<Task[]>(initialTasks);
-  const [helpdeskTickets] = useState<HelpdeskTicket[]>(initialHelpdeskTickets);
+  const [helpdeskTickets, setHelpdeskTickets] = useState<HelpdeskTicket[]>(() => {
+    const saved = localStorage.getItem('crm_helpdesk_tickets');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (_) {}
+    }
+    return initialHelpdeskTickets;
+  });
+
+  const addHelpdeskTicket = (ticket: Omit<HelpdeskTicket, 'id' | 'ticketNo' | 'createdAt'>) => {
+    const newId = `TCK-${Date.now().toString().slice(-4)}`;
+    const newTicketNo = `HD-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newTicket: HelpdeskTicket = {
+      ...ticket,
+      id: newId,
+      ticketNo: newTicketNo,
+      createdAt: 'Just now',
+    };
+    setHelpdeskTickets(prev => {
+      const updated = [newTicket, ...prev];
+      localStorage.setItem('crm_helpdesk_tickets', JSON.stringify(updated));
+      return updated;
+    });
+    return newTicket;
+  };
+
+  const updateHelpdeskTicketStatus = (id: string, status: HelpdeskTicket['status']) => {
+    setHelpdeskTickets(prev => {
+      const updated = prev.map(t => t.id === id ? { ...t, status } : t);
+      localStorage.setItem('crm_helpdesk_tickets', JSON.stringify(updated));
+      return updated;
+    });
+  };
   const [documents, setDocuments] = useState<DocumentFile[]>(initialDocuments);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
 
@@ -1903,13 +1981,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const deleteProject = useCallback(async (id: string): Promise<boolean> => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
     try {
       const res = await ProjectsAPI.delete(id);
-      return Boolean(res.success);
-    } catch (err) {
-      console.warn('⚠️ [Projects] deleteProject failed:', err);
-      return false;
+      if (res && res.success) {
+        setProjects((prev) => prev.filter((p) => p.id !== id && p.code !== id));
+        return true;
+      }
+      throw new Error(res?.message || 'Failed to delete project from database');
+    } catch (err: any) {
+      console.error('❌ [Projects] deleteProject failed:', err);
+      throw err;
     }
   }, []);
 
@@ -3139,6 +3220,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createProjectFromLead,
         tasks,
         helpdeskTickets,
+        addHelpdeskTicket,
+        updateHelpdeskTicketStatus,
         documents,
         addDocument,
         notifications,
