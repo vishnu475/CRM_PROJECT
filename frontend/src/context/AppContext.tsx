@@ -1868,23 +1868,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newProject;
   }, []);
 
-  const deleteProject = useCallback(async (id: string): Promise<boolean> => {
-    try {
-      const res = await ProjectsAPI.delete(id);
-      if (res && res.success) {
-        setProjects((prev) => prev.filter((p) => p.id !== id && p.code !== id));
-        return true;
-      }
-      throw new Error(res?.message || 'Failed to delete project from database');
-    } catch (err: any) {
-      console.error('❌ [Projects] deleteProject failed:', err);
-      throw err;
-    }
-    return { success: true };
-  }, []);
-
   const deleteProject = useCallback(async (projectId: string) => {
-    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    setProjects((prev) => prev.filter((p) => p.id !== projectId && p.code !== projectId));
     try {
       const res = await ProjectsAPI.delete(projectId);
       if (res.success) {
