@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import {
   LeadsAPI,
   CustomersAPI,
+  CRMNotesAPI,
   ContactsAPI,
   OpportunitiesAPI,
   CRMActivitiesAPI,
@@ -140,7 +141,9 @@ interface AppContextType {
   updateFollowUp: (id: string, updates: Partial<FollowUp>) => void;
   deleteFollowUp: (id: string) => Promise<void> | void;
   notes: Note[];
-  addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  addNote: (note: Partial<Note>) => Promise<void> | void;
+  updateNote: (id: string, updates: Partial<Note>) => Promise<void> | void;
+  deleteNote: (id: string) => Promise<void> | void;
   products: Product[];
   addProduct: (product: any) => Promise<Product | null>;
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
@@ -204,7 +207,8 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   addProject: (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => Promise<Project | null>;
-  deleteProject: (id: string) => Promise<boolean>;
+  updateProject: (projectId: string, updatedFields: Partial<Project>) => Promise<{ success: boolean; data?: any }>;
+  deleteProject: (projectId: string) => Promise<{ success: boolean }>;
   createProjectFromLead: (
     leadId: string,
     customData?: {
@@ -1017,6 +1021,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })));
         }
 
+        // 15c. Load Notes from CRM PostgreSQL
+        try {
+          const notesRes = await CRMNotesAPI.getAll();
+          if (notesRes.success && Array.isArray(notesRes.data)) {
+            setNotes(notesRes.data.map((r: any) => ({
+              id: r.id,
+              title: r.title || 'Untitled Note',
+              type: r.type || 'General',
+              content: r.content || '',
+              relatedType: r.related_type || r.entity_type || '',
+              related_type: r.related_type || r.entity_type || '',
+              relatedId: r.related_id || r.entity_id || '',
+              related_id: r.related_id || r.entity_id || '',
+              relatedRecord: r.related_id || r.entity_id || '',
+              createdBy: r.created_by || r.author || 'Sarah Jenkins',
+              created_by: r.created_by || r.author || 'Sarah Jenkins',
+              author: r.author || r.created_by || 'Sarah Jenkins',
+              createdAt: r.created_at || undefined,
+              created_at: r.created_at || undefined,
+              updatedAt: r.updated_at || undefined,
+              updated_at: r.updated_at || undefined,
+            })));
+          }
+        } catch (err) {
+          console.warn('⚠️ [CRM] Failed to load notes:', err);
+        }
+
         // 15b. Load Follow-ups from CRM PostgreSQL
         const followUpsRes = await CRMFollowUpsAPI.getAll();
         if (followUpsRes.success && Array.isArray(followUpsRes.data)) {
@@ -1032,6 +1063,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             activityId: r.activity_id || undefined,
             activityType: r.activity_type || 'Call',
             dueDate: r.due_date || '',
+            due_date: r.due_date || '',
+            dueTime: r.due_time || '10:00',
+            due_time: r.due_time || '10:00',
             owner: r.owner || r.assigned_to || '',
             assignedTo: r.assigned_to || r.owner || '',
             priority: r.priority || 'Medium',
@@ -1069,6 +1103,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
             acceptedDate: r.accepted_date ? (typeof r.accepted_date === 'string' ? r.accepted_date.split('T')[0] : new Date(r.accepted_date).toISOString().split('T')[0]) : '',
             revisionNumber: parseInt(r.revision_number) || 1,
+            revisionGroupId: r.revision_group_id || r.id,
             terms: r.terms || '',
             notes: r.notes || '',
             owner: r.owner || '',
@@ -1177,6 +1212,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             spent: parseFloat(r.spent) || 0,
             progress: parseInt(r.progress) || 0,
             status: r.status || 'Not Started',
+            priority: r.priority || 'Medium',
+            weightage: r.weightage !== undefined ? parseFloat(r.weightage) : 100,
+            repositoryUrl: r.repository_url || '',
+            requirementDocuments: Array.isArray(r.requirement_documents) ? r.requirement_documents : [],
+            projectLinks: Array.isArray(r.project_links) ? r.project_links : [],
+            activeTasksCount: parseInt(r.active_tasks_count) || 0,
+            totalTasksCount: parseInt(r.total_tasks_count) || 0,
+            assignedMembersCount: parseInt(r.assigned_members_count) || 0,
+            assignedEmployees: Array.isArray(r.assigned_employees) ? r.assigned_employees : [],
             createdAt: r.created_at || '',
             updatedAt: r.updated_at || '',
           })));
@@ -1679,244 +1723,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    const timestamp = Date.now();
-    const isoTimestamp = new Date().toISOString();
-    const today = isoTimestamp.split('T')[0];
-
-    // 1. Check for Duplicate / Existing Customer
-    let customerId = '';
-    let customerName = '';
-    let isExistingCustomerReused = false;
-    let newCustomerState: Customer | null = null;
-    let newCustomerPayload: any = null;
-
-    if (customData?.useExistingCustomerId) {
-      const existing = customers.find((c) => c.id === customData.useExistingCustomerId);
-      if (existing) {
-        customerId = existing.id;
-        customerName = existing.customerName;
-        isExistingCustomerReused = true;
-      }
-    }
-
-    if (!customerId && !customData?.forceNewCustomer) {
-      const match = findMatchingCustomer(lead, customers, customData);
-      if (match.hasDuplicate && match.matchingCustomer) {
-        customerId = match.matchingCustomer.id;
-        customerName = match.matchingCustomer.customerName;
-        isExistingCustomerReused = true;
-      }
-    }
-
-    if (!customerId) {
-      // Create new customer
-      customerId = `CUST-${timestamp}`;
-      customerName = customData?.customerName?.trim() || (lead.company?.trim() || lead.name.trim());
-      const customerType = customData?.customerType || (lead.company ? 'Company' : 'Individual');
-      const industry = customData?.industry || lead.industry || '';
-      const website = customData?.website || lead.website || '';
-      const contactPersonName = customData?.contactName?.trim() || (lead.decisionMaker || lead.contactPerson || lead.name).trim();
-      const designation = customData?.contactDesignation?.trim() || lead.designation || 'Primary Contact';
-      const contactEmail = customData?.contactEmail?.trim() || lead.email || '';
-      const contactPhone = customData?.contactPhone?.trim() || lead.phone || '';
-
-      newCustomerPayload = {
-        id: customerId,
-        customerCode: customerId,
-        customerName,
-        customerType,
-        industry,
-        ownerId: lead.assignedTo || '',
-        status: 'Active' as const,
-        creditLimit: 0,
-        contactName: contactPersonName,
-        contactEmail,
-        contactPhone,
-        billingCity: (lead as any).city || (lead as any).address || '',
-        billingCountry: (lead as any).country || '',
-        convertedFromLeadId: lead.id,
-      };
-
-      newCustomerState = {
-        id: customerId,
-        customerCode: customerId,
-        customerName,
-        customerType,
-        industry,
-        ownerId: lead.assignedTo || '',
-        status: 'Active',
-        primaryContact: {
-          name: contactPersonName,
-          email: contactEmail,
-          phone: contactPhone,
-          alternatePhone: lead.alternatePhone,
-        },
-        billingAddress: {
-          city: (lead as any).city || (lead as any).address || '',
-          country: (lead as any).country || '',
-        },
-        creditLimit: 0,
-        convertedFromLeadId: lead.id,
-        createdAt: isoTimestamp,
-        updatedAt: isoTimestamp,
-      };
-    }
-
-    // 2. Prepare Contact Data (Check for existing Contact on the Customer)
-    let contactId = '';
-    let isExistingContactReused = false;
-    let newContactState: Contact | null = null;
-    let newContactPayload: any = null;
-
-    const contactPersonName = customData?.contactName?.trim() || (lead.decisionMaker || lead.contactPerson || lead.name).trim();
-    const designation = customData?.contactDesignation?.trim() || lead.designation || 'Primary Contact';
-    const contactEmail = customData?.contactEmail?.trim() || lead.email || '';
-    const contactPhone = customData?.contactPhone?.trim() || lead.phone || '';
-
-    const matchedContact = findMatchingContact(lead, contacts, customerId, customData);
-    if (matchedContact) {
-      contactId = matchedContact.id;
-      isExistingContactReused = true;
-    } else {
-      contactId = `CON-${timestamp}`;
-      newContactPayload = {
-        id: contactId,
-        name: contactPersonName,
-        email: contactEmail,
-        phone: contactPhone,
-        company: customerName,
-        customerId,
-        leadId: lead.id,
-        title: designation,
-      };
-
-      newContactState = {
-        id: contactId,
-        name: contactPersonName,
-        customerId,
-        customerName,
-        designation,
-        email: contactEmail,
-        phone: contactPhone,
-        owner: lead.assignedTo || '',
-        lastInteraction: lead.wonDate || today,
-        status: 'Active',
-      };
-    }
-
-    // 3. Prepare Opportunity Data (Check for existing Opportunity on Customer to avoid duplicates on retry)
-    const defaultOppSummary = lead.requirement ? (lead.requirement.length > 40 ? `${lead.requirement.slice(0, 37)}...` : lead.requirement) : 'Deal';
-    const oppName = customData?.opportunityName?.trim() || (lead.company ? `${lead.company} - ${defaultOppSummary}` : `${lead.name} Deal`);
-    const oppValue = customData?.opportunityValue !== undefined && !isNaN(customData.opportunityValue)
-      ? customData.opportunityValue
-      : (lead.finalAgreedAmount || lead.value || lead.budget || 0);
-    const oppExpectedClose = customData?.expectedCloseDate || lead.wonDate || lead.expectedCloseDate || today;
-
-    let opportunityId = '';
-    let newOpportunityState: Opportunity | null = null;
-    let newOpportunityPayload: any = null;
-
-    const existingOpp = opportunities.find(
-      (o) => o.customerId === customerId && (o.id === lead.convertedToOpportunityId || o.name === oppName)
-    );
-
-    if (existingOpp) {
-      opportunityId = existingOpp.id;
-    } else {
-      opportunityId = `OPP-${timestamp}`;
-      newOpportunityPayload = {
-        id: opportunityId,
-        name: oppName,
-        customerId,
-        customerName,
-        value: oppValue,
-        probability: 100,
-        expectedClose: oppExpectedClose,
-        owner: lead.assignedTo || '',
-        stage: 'Won',
-      };
-
-      newOpportunityState = {
-        id: opportunityId,
-        name: oppName,
-        customerId,
-        customerName,
-        value: oppValue,
-        probability: 100,
-        expectedClose: oppExpectedClose,
-        owner: lead.assignedTo || '',
-        stage: 'Won',
-      };
-    }
-
-    // 4. Prepare Lead updates
-    const leadUpdates: Partial<Lead> = {
-      convertedToCustomerId: customerId,
-      convertedToContactId: contactId,
-      convertedToOpportunityId: opportunityId,
-      isConverted: true,
-      convertedAt: isoTimestamp,
-    };
-
     try {
-      // Step A: Create Customer in PostgreSQL if not reused
-      if (!isExistingCustomerReused && newCustomerPayload) {
-        const custRes = await CustomersAPI.create(newCustomerPayload);
-        if (!custRes.success) {
-          throw new Error(custRes.message || 'Failed to create Customer record');
-        }
+      const res = await LeadsAPI.convert(leadId, customData);
+      if (!res.success) {
+        return {
+          success: false,
+          message: res.message || 'Lead conversion failed on server.',
+        };
       }
 
-      // Step B: Create Contact in PostgreSQL if not reused, or link existing contact to customer
-      if (!isExistingContactReused && newContactPayload) {
-        const contRes = await ContactsAPI.create(newContactPayload);
-        if (!contRes.success) {
-          console.warn('⚠️ Contact creation failed during conversion, proceeding with customer:', contRes.message);
-        }
-      } else if (isExistingContactReused && matchedContact) {
-        setContacts((prev) =>
-          prev.map((c) =>
-            c.id === matchedContact.id
-              ? { ...c, customerId, customerName }
-              : c
-          )
-        );
-        try {
-          await ContactsAPI.update(matchedContact.id, {
-            customerId,
-            company: customerName,
-          });
-        } catch (cErr) {
-          console.warn('⚠️ Existing contact customer link update failed:', cErr);
-        }
+      const { customerId, contactId, opportunityId, isExistingCustomerReused, isExistingContactReused, data } = res as any;
+
+      // Update React state with server-confirmed records
+      if (data?.customer) {
+        const mappedCust: Customer = {
+          id: data.customer.id,
+          customerCode: data.customer.customer_code || data.customer.id,
+          customerName: data.customer.customer_name,
+          customerType: data.customer.customer_type || 'Company',
+          industry: data.customer.industry || 'General',
+          ownerId: data.customer.owner_id || '',
+          status: data.customer.status || 'Active',
+          primaryContact: {
+            name: data.customer.contact_name || '',
+            email: data.customer.contact_email || '',
+            phone: data.customer.contact_phone || '',
+          },
+          billingAddress: {
+            city: data.customer.billing_city || '',
+            country: data.customer.billing_country || '',
+          },
+          creditLimit: parseFloat(data.customer.credit_limit) || 0,
+          convertedFromLeadId: data.customer.converted_from_lead_id || leadId,
+          createdAt: data.customer.created_at || new Date().toISOString(),
+          updatedAt: data.customer.updated_at || new Date().toISOString(),
+        };
+        setCustomers((prev) => [mappedCust, ...prev.filter(c => c.id !== mappedCust.id)]);
       }
 
-      // Step C: Create Opportunity in PostgreSQL if not existing
-      if (newOpportunityPayload) {
-        const oppRes = await OpportunitiesAPI.create(newOpportunityPayload);
-        if (!oppRes.success) {
-          console.warn('⚠️ Opportunity creation failed during conversion, proceeding with customer:', oppRes.message);
-        }
+      if (data?.contact) {
+        const mappedCont: Contact = {
+          id: data.contact.id,
+          name: data.contact.name,
+          customerId: data.contact.customer_id,
+          customerName: data.contact.company || data.customer?.customer_name || '',
+          designation: data.contact.title || 'Primary Contact',
+          email: data.contact.email || '',
+          phone: data.contact.phone || '',
+          owner: lead.assignedTo || '',
+          lastInteraction: lead.wonDate || new Date().toISOString().split('T')[0],
+          status: 'Active',
+        };
+        setContacts((prev) => [mappedCont, ...prev.filter(c => c.id !== mappedCont.id)]);
       }
 
-      // Step D: Update Lead in PostgreSQL
-      const leadRes = await LeadsAPI.update(leadId, leadUpdates);
-      if (!leadRes.success) {
-        console.warn('⚠️ Lead conversion stamp update failed in backend:', leadRes.message);
+      if (data?.opportunity) {
+        const mappedOpp: Opportunity = {
+          id: data.opportunity.id,
+          name: data.opportunity.name,
+          customerId: data.opportunity.customer_id,
+          customerName: data.opportunity.customer_name,
+          value: parseFloat(data.opportunity.value) || 0,
+          probability: data.opportunity.probability !== undefined ? data.opportunity.probability : 100,
+          expectedClose: data.opportunity.expected_close || new Date().toISOString().split('T')[0],
+          owner: data.opportunity.owner || '',
+          stage: data.opportunity.stage || 'Won',
+        };
+        setOpportunities((prev) => [mappedOpp, ...prev.filter(o => o.id !== mappedOpp.id)]);
       }
 
-      // Step E: Update React states
-      if (newCustomerState) {
-        setCustomers((prev) => [newCustomerState!, ...prev]);
-      }
-      if (newContactState) {
-        setContacts((prev) => [newContactState!, ...prev]);
-      }
-      if (newOpportunityState) {
-        setOpportunities((prev) => [newOpportunityState!, ...prev]);
-      }
       setLeads((prev) =>
-        prev.map((l) => (l.id === leadId ? { ...l, ...leadUpdates } : l))
+        prev.map((l) =>
+          l.id === leadId
+            ? {
+                ...l,
+                isConverted: true,
+                convertedAt: data?.lead?.converted_at || new Date().toISOString(),
+                convertedToCustomerId: customerId,
+                convertedToContactId: contactId,
+                convertedToOpportunityId: opportunityId,
+              }
+            : l
+        )
       );
 
       return {
@@ -1934,7 +1822,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         message: err.message || 'An unexpected error occurred during lead conversion.',
       };
     }
-  }, [leads, customers, contacts, opportunities]);
+  }, [leads]);
 
   const addProject = useCallback(async (projectData: Omit<Project, 'id' | 'code'> & { id?: string; code?: string }) => {
     const projectId = projectData.id || `PRJ-${Date.now().toString().slice(-4)}`;
@@ -1992,8 +1880,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('❌ [Projects] deleteProject failed:', err);
       throw err;
     }
+    return { success: true };
   }, []);
 
+  const deleteProject = useCallback(async (projectId: string) => {
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    try {
+      const res = await ProjectsAPI.delete(projectId);
+      if (res.success) {
+        return { success: true };
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Failed to delete project on backend:', err.message);
+    }
+    return { success: true };
+  }, []);
 
   const createProjectFromLead = useCallback(async (
     leadId: string,
@@ -2438,10 +2339,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activityId: fu.activityId,
         activityType: fu.activityType,
         dueDate: fu.dueDate,
+        dueTime: fu.dueTime,
         owner: fu.owner || fu.assignedTo,
         assignedTo: fu.assignedTo || fu.owner,
         priority: fu.priority,
-        status: fu.status,
+        status: fu.status || 'Pending',
         reminder: fu.reminder,
       });
     } catch (err) {
@@ -2465,6 +2367,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         activityId: updates.activityId,
         activityType: updates.activityType,
         dueDate: updates.dueDate,
+        dueTime: updates.dueTime,
         owner: updates.owner || updates.assignedTo,
         assignedTo: updates.assignedTo || updates.owner,
         priority: updates.priority,
@@ -2541,7 +2444,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const addQuotation = useCallback(async (quotation: Omit<Quotation, 'id'>): Promise<Quotation | null> => {
-    const tempId = `QT-${Date.now()}`;
+    const tempId = "QT-" + Date.now();
     const newQuote: Quotation = { id: tempId, ...quotation };
     setQuotations((prev) => [newQuote, ...prev]);
     try {
@@ -2551,8 +2454,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...newQuote,
           id: res.data.id,
           quoteNumber: res.data.quote_number || newQuote.quoteNumber,
+          revisionNumber: res.data.revision_number ? Number(res.data.revision_number) : newQuote.revisionNumber,
+          revisionGroupId: res.data.revision_group_id || newQuote.revisionGroupId,
+          status: res.data.status || newQuote.status,
         };
-        setQuotations((prev) => prev.map((q) => (q.id === tempId ? savedQuote : q)));
+
+        const reFetch = await QuotationsAPI.getAll();
+        if (reFetch.success && Array.isArray(reFetch.data)) {
+          setQuotations(reFetch.data.map((r: any) => ({
+            id: r.id,
+            quoteNumber: r.quote_number || r.id,
+            customerId: r.customer_id || '',
+            leadId: r.lead_id || '',
+            opportunityId: r.opportunity_id || '',
+            contactId: r.contact_id || '',
+            customerName: r.customer_name || '',
+            date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+            validUntil: r.valid_until ? (typeof r.valid_until === 'string' ? r.valid_until.split('T')[0] : new Date(r.valid_until).toISOString().split('T')[0]) : '',
+            amount: parseFloat(r.amount) || 0,
+            subtotal: parseFloat(r.subtotal) || 0,
+            taxAmount: parseFloat(r.tax_amount) || 0,
+            discountAmount: parseFloat(r.discount_amount) || 0,
+            status: r.status || 'Draft',
+            sentDate: r.sent_date ? (typeof r.sent_date === 'string' ? r.sent_date.split('T')[0] : new Date(r.sent_date).toISOString().split('T')[0]) : '',
+            acceptedDate: r.accepted_date ? (typeof r.accepted_date === 'string' ? r.accepted_date.split('T')[0] : new Date(r.accepted_date).toISOString().split('T')[0]) : '',
+            revisionNumber: parseInt(r.revision_number) || 1,
+            revisionGroupId: r.revision_group_id || r.id,
+            terms: r.terms || '',
+            notes: r.notes || '',
+            owner: r.owner || '',
+            salesOrderId: r.sales_order_id || '',
+            salesOrderNumber: r.sales_order_number || '',
+            itemsCount: parseInt(r.items_count) || 1,
+          })));
+        } else {
+          setQuotations((prev) => prev.map((q) => (q.id === tempId ? savedQuote : q)));
+        }
         return savedQuote;
       }
     } catch (err) { console.warn('⚠️ [CRM] addQuotation failed:', err); }
@@ -2560,15 +2497,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const updateQuotation = useCallback(async (id: string, updates: Partial<Quotation>) => {
-    setQuotations((prev) =>
-      prev.map((q) => (q.id === id ? { ...q, ...updates } : q))
-    );
     try {
-      await QuotationsAPI.update(id, updates);
-    } catch (err) {
-      console.warn('⚠️ [CRM] updateQuotation failed:', err);
+      const res = await QuotationsAPI.update(id, updates);
+      if (!res.success) {
+        alert(res.message || 'Failed to update quotation.');
+        throw new Error(res.message || 'Failed to update quotation.');
+      }
+
+      const updatedQuote = res.data || updates;
+
+      setQuotations((prev) =>
+        prev.map((q) => (q.id === id ? { ...q, ...updatedQuote } : q))
+      );
+
+      const targetQuote = quotations.find((q) => q.id === id);
+      const leadId = updatedQuote.leadId || targetQuote?.leadId || (targetQuote as any)?.lead_id;
+      const oppId = updatedQuote.opportunityId || targetQuote?.opportunityId;
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      if (updates.status === 'Accepted') {
+        if (oppId) {
+          setOpportunities((prev) =>
+            prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Won', probability: 100 } : opp))
+          );
+        }
+        if (leadId) {
+          setLeads((prev) =>
+            prev.map((ld) => {
+              if (ld.id === leadId) {
+                return {
+                  ...ld,
+                  stage: 'Won',
+                  finalAgreedAmount: ld.finalAgreedAmount || updates.amount || targetQuote?.amount || 0,
+                  wonDate: ld.wonDate || todayStr,
+                };
+              }
+              return ld;
+            })
+          );
+        }
+      } else if (updates.status === 'Rejected') {
+        if (oppId) {
+          setOpportunities((prev) =>
+            prev.map((opp) => (opp.id === oppId ? { ...opp, stage: 'Lost', probability: 0 } : opp))
+          );
+        }
+        if (leadId) {
+          const lReason = (updates as any).lostReason || 'Quotation Rejected by Customer';
+          const lNotes = (updates as any).lostNotes || 'Quotation Rejected in Sales module';
+          setLeads((prev) =>
+            prev.map((ld) => {
+              if (ld.id === leadId) {
+                return {
+                  ...ld,
+                  stage: 'Lost',
+                  lostDate: ld.lostDate || todayStr,
+                  lostReason: lReason,
+                  lostNotes: lNotes,
+                };
+              }
+              return ld;
+            })
+          );
+        }
+      }
+    } catch (err: any) {
+      console.error('⚠️ [CRM] updateQuotation failed:', err.message);
+      throw err;
     }
-  }, []);
+  }, [quotations]);
 
   const deleteQuotation = useCallback(async (id: string) => {
     setQuotations((prev) => prev.filter((q) => q.id !== id));
@@ -2855,15 +2852,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  const addNote = (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const addNote = useCallback(async (note: Partial<Note>) => {
+    const tempId = note.id || `NOTE-${Date.now()}`;
     const newNote: Note = {
-      ...note,
-      id: `NOTE-${Date.now()}`,
-      createdAt: 'Just now',
-      updatedAt: 'Just now',
+      id: tempId,
+      title: note.title || 'Untitled Note',
+      type: note.type || 'General',
+      content: note.content || '',
+      relatedType: note.relatedType || note.related_type || note.entityType || note.entity_type || '',
+      related_type: note.relatedType || note.related_type || note.entityType || note.entity_type || '',
+      relatedId: note.relatedId || note.related_id || note.entityId || note.entity_id || note.relatedRecord || '',
+      related_id: note.relatedId || note.related_id || note.entityId || note.entity_id || note.relatedRecord || '',
+      relatedRecord: note.relatedRecord || note.relatedId || note.related_id || '',
+      createdBy: note.createdBy || note.created_by || note.author || userProfile?.name || 'Sarah Jenkins',
+      created_by: note.createdBy || note.created_by || note.author || userProfile?.name || 'Sarah Jenkins',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    setNotes((prev) => [newNote, ...prev]);
-  };
+
+    setNotes((prev) => [newNote, ...prev]); // Optimistic
+    try {
+      const res = await CRMNotesAPI.create({
+        id: tempId,
+        title: newNote.title,
+        type: newNote.type,
+        content: newNote.content,
+        relatedType: newNote.relatedType,
+        relatedId: newNote.relatedId,
+        createdBy: newNote.createdBy,
+      });
+      if (res && res.data) {
+        setNotes((prev) => prev.map(n => n.id === tempId ? {
+          ...n,
+          id: res.data.id || tempId,
+          createdAt: res.data.created_at || n.createdAt,
+          updatedAt: res.data.updated_at || n.updatedAt,
+        } : n));
+      }
+    } catch (err) {
+      console.warn('⚠️ [CRM] addNote failed:', err);
+      throw err;
+    }
+  }, [userProfile]);
+
+  const updateNote = useCallback(async (id: string, updates: Partial<Note>) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: new Date().toISOString() } : n))
+    );
+    try {
+      await CRMNotesAPI.update(id, {
+        title: updates.title,
+        type: updates.type,
+        content: updates.content,
+        relatedType: updates.relatedType || updates.related_type,
+        relatedId: updates.relatedId || updates.related_id,
+        createdBy: updates.createdBy || updates.created_by,
+      });
+    } catch (err) {
+      console.warn('⚠️ [CRM] updateNote failed:', err);
+      throw err;
+    }
+  }, []);
+
+  const deleteNote = useCallback(async (id: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== id)); // Optimistic
+    try {
+      await CRMNotesAPI.delete(id);
+    } catch (err) {
+      console.warn('⚠️ [CRM] deleteNote failed:', err);
+      throw err;
+    }
+  }, []);
 
   const addDocument = (doc: Omit<DocumentFile, 'id' | 'updatedAt'>) => {
     const now = new Date().toISOString().split('T')[0];
@@ -3154,6 +3213,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteFollowUp,
         notes,
         addNote,
+        updateNote,
+        deleteNote,
         products,
         addProduct,
         updateProduct,
@@ -3216,6 +3277,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         projects,
         setProjects,
         addProject,
+        updateProject,
         deleteProject,
         createProjectFromLead,
         tasks,

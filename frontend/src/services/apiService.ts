@@ -207,6 +207,7 @@ export const LeadsAPI = {
   create:  (data: any)  => request('POST', '/leads', data),
   update:  (id: string, data: any) => request('PATCH', `/leads/${id}`, data),
   delete:  (id: string) => request('DELETE', `/leads/${id}`),
+  convert: (id: string, customData?: any) => request('POST', `/leads/${id}/convert`, customData),
   uploadAttachment: (payload: { fileName: string; fileData: string; fileSize?: number; fileType?: string }) =>
     request('POST', '/leads/upload-attachment', payload),
   deleteAttachment: (filename: string) =>
@@ -291,6 +292,24 @@ export const CRMFollowUpsAPI = {
   create: (data: any)  => request('POST', '/crm/followups', data),
   update: (id: string, data: any) => request('PATCH', `/crm/followups/${id}`, data),
   delete: (id: string) => request('DELETE', `/crm/followups/${id}`),
+};
+
+// ────────────────────────────────────────────────────────────
+// CRM — NOTES
+// ────────────────────────────────────────────────────────────
+export const CRMNotesAPI = {
+  getAll: (filters?: { relatedType?: string; relatedId?: string; type?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.relatedType) params.set('relatedType', filters.relatedType);
+    if (filters?.relatedId) params.set('relatedId', filters.relatedId);
+    if (filters?.type) params.set('type', filters.type);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/crm/notes${query}`);
+  },
+  getById: (id: string) => request('GET', `/crm/notes/${id}`),
+  create: (data: any) => request('POST', '/crm/notes', data),
+  update: (id: string, data: any) => request('PATCH', `/crm/notes/${id}`, data),
+  delete: (id: string) => request('DELETE', `/crm/notes/${id}`),
 };
 
 // ────────────────────────────────────────────────────────────

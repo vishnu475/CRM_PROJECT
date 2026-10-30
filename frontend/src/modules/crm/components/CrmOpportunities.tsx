@@ -1,11 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { CrmView, Opportunity } from '../../../types';
-import { formatINR, getLeadStageColor } from '../utils/crmUtils';
+import { formatINR } from '../utils/crmUtils';
 import { 
-  Plus, TrendingUp, Building2, Calendar, User, Search, Filter,
-  ChevronRight, ChevronLeft, MoreVertical, Edit2, CheckCircle2,
-  DollarSign, ArrowUpDown, X, Kanban
+  Plus, TrendingUp, Building2, Calendar, Search, Filter,
+  ChevronRight, ChevronLeft, MoreVertical, AlertCircle
 } from 'lucide-react';
 
 interface CrmOpportunitiesProps {
@@ -16,9 +15,9 @@ interface CrmOpportunitiesProps {
 
 const STAGES: { id: Opportunity['stage']; label: string; badgeBg: string }[] = [
   { id: 'New', label: 'New', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { id: 'Qualified', label: 'Qualified', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { id: 'Proposal', label: 'Proposal', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { id: 'Negotiation', label: 'Negotiation', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { id: 'Qualified', label: 'Qualified', badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  { id: 'Proposal', label: 'Proposal', badgeBg: 'bg-purple-50 text-purple-700 border-purple-200' },
+  { id: 'Negotiation', label: 'Negotiation', badgeBg: 'bg-amber-50 text-amber-700 border-amber-200' },
   { id: 'Won', label: 'Won', badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   { id: 'Lost', label: 'Lost', badgeBg: 'bg-rose-50 text-rose-700 border-rose-200' },
 ];
@@ -83,7 +82,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
     return counts;
   }, [opportunities]);
 
-  // Summary Metrics calculations (from real data)
+  // Summary Metrics calculations (Four required KPI cards)
   const metrics = useMemo(() => {
     const openOpps = opportunities.filter(o => o.stage !== 'Won' && o.stage !== 'Lost');
     const openCount = openOpps.length;
@@ -116,7 +115,8 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
         const matchesName = (o.name || '').toLowerCase().includes(term);
         const matchesCustomer = (o.customerName || '').toLowerCase().includes(term);
         const matchesOwner = (o.owner || '').toLowerCase().includes(term);
-        if (!matchesName && !matchesCustomer && !matchesOwner) return false;
+        const matchesId = (o.id || '').toLowerCase().includes(term);
+        if (!matchesName && !matchesCustomer && !matchesOwner && !matchesId) return false;
       }
 
       // Advanced filters
@@ -204,6 +204,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
   };
 
   const handleViewDetails = (id: string) => {
+    if (!id) return;
     if (onOpportunitySelect) {
       onOpportunitySelect(id);
     } else if (onViewChange) {
@@ -211,114 +212,107 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
     }
   };
 
-  const getStageBadge = (stage: Opportunity['stage']) => {
-    return getLeadStageColor(stage);
-  };
-
   const clearAllFilters = () => {
-    setSearchTerm('');
-    setActiveTab('All');
     setFilterOwner('All');
     setFilterCustomer('All');
     setFilterMinValue('');
     setFilterMaxValue('');
+    setSearchTerm('');
+    setActiveTab('All');
     setCurrentPage(1);
   };
 
+  const getStageBadge = (stage: Opportunity['stage']) => {
+    switch (stage) {
+      case 'New': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'Qualified': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'Proposal': return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'Negotiation': return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'Won': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'Lost': return 'bg-rose-50 text-rose-700 border-rose-200';
+      default: return 'bg-slate-50 text-slate-700 border-slate-200';
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full space-y-6">
-      {/* 1. PAGE HEADER */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-8">
+      {/* HEADER ROW */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center text-xs text-slate-500 mb-1 font-medium">
-            <span 
-              className="cursor-pointer hover:text-indigo-600 transition-colors" 
-              onClick={() => onViewChange && onViewChange('overview')}
-            >
-              CRM
-            </span> 
+          <div className="flex items-center text-xs text-slate-400 mb-1 font-medium">
+            <span className="cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => onViewChange && onViewChange('overview')}>CRM</span> 
             <ChevronRight size={12} className="mx-1" /> 
-            <span className="text-[#0f172a] font-semibold">Opportunities</span>
+            <span className="text-[#0f172a] font-semibold cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => onViewChange && onViewChange('opportunities')}>Opportunities</span>
           </div>
-          <h1 className="text-2xl font-bold text-[#0f172a] flex items-center gap-2">
-            Opportunities
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Track and manage potential sales deals through the sales pipeline.
+          <h1 className="text-xl font-bold text-[#0f172a]">Opportunities</h1>
+          <p className="text-xs text-slate-500">
+            Manage and track potential sales deals through your sales pipeline.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center space-x-3">
           <button 
-            onClick={handleOpenAddModal} 
-            className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 transition-colors flex items-center gap-2 whitespace-nowrap"
+            onClick={handleOpenAddModal}
+            className="flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
           >
-            <Plus size={16} /> Add Opportunity
+            <Plus size={16} /> <span>Add Opportunity</span>
           </button>
         </div>
       </div>
 
-      {/* 2. SUMMARY METRIC CARDS */}
+      {/* 1. TOP SUMMARY CARDS (MINIMAL & CLEAN FOUR KPI CARDS) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Open Opportunities</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-[#0f172a]">{metrics.openCount}</p>
-            <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-              In Pipeline
-            </span>
+        {/* OPEN DEALS */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">OPEN DEALS</p>
+            <p className="text-2xl font-bold text-[#0f172a] mt-2">{metrics.openCount}</p>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Active deals excluding Won/Lost</p>
+          <p className="text-[11px] text-slate-400 mt-2">Active deals</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Pipeline Value</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-[#0f172a]">{formatINR(metrics.pipelineValue)}</p>
-            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-              Gross Value
-            </span>
+        {/* PIPELINE VALUE */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">PIPELINE VALUE</p>
+            <p className="text-2xl font-bold text-[#0f172a] mt-2">{formatINR(metrics.pipelineValue)}</p>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Unweighted potential deal revenue</p>
+          <p className="text-[11px] text-slate-400 mt-2">Total open value</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Weighted Pipeline</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-emerald-600">{formatINR(Math.round(metrics.weightedPipeline))}</p>
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-              Probability Adj.
-            </span>
+        {/* WEIGHTED PIPELINE */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">WEIGHTED PIPELINE</p>
+            <p className="text-2xl font-bold text-[#0f172a] mt-2">{formatINR(metrics.weightedPipeline)}</p>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Calculated by Win Probability %</p>
+          <p className="text-[11px] text-slate-400 mt-2">Forecasted value</p>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Won Value</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-[#0f172a]">{formatINR(metrics.wonValue)}</p>
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-              Closed Deals
-            </span>
+        {/* WON VALUE */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">WON VALUE</p>
+            <p className="text-2xl font-bold text-[#0f172a] mt-2">{formatINR(metrics.wonValue)}</p>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Successfully completed contracts</p>
+          <p className="text-[11px] text-slate-400 mt-2">Closed revenue</p>
         </div>
       </div>
 
-      {/* 3. MAIN WORKSPACE CONTAINER */}
+      {/* 2. MAIN WORKSPACE CONTAINER */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
         
         {/* TABS & SEARCH ROW */}
         <div className="border-b border-slate-200 p-4 sm:p-0">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             
-            {/* 3. STAGE FILTER TABS */}
+            {/* STAGE FILTER TABS */}
             <div className="flex overflow-x-auto no-scrollbar sm:px-4">
               {(['All', 'New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
-                  className={`flex items-center px-4 py-4 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
+                  className={`flex items-center px-4 py-4 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
                     activeTab === tab 
                       ? 'border-indigo-600 text-indigo-600' 
                       : 'border-transparent text-slate-500 hover:text-[#0f172a] hover:border-slate-300'
@@ -334,7 +328,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
               ))}
             </div>
 
-            {/* 4. SEARCH & FILTER CONTROLS */}
+            {/* SEARCH & FILTER CONTROLS */}
             <div className="flex items-center gap-2 sm:pr-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -349,7 +343,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
 
               <button 
                 onClick={() => setShowFilters(!showFilters)}
-                className={`p-2 border rounded-lg flex items-center justify-center transition-colors ${
+                className={`p-2 border rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
                   showFilters || filterOwner !== 'All' || filterCustomer !== 'All' || filterMinValue || filterMaxValue
                     ? 'border-indigo-500 bg-indigo-50 text-indigo-600'
                     : 'border-slate-300 text-slate-600 hover:bg-slate-50'
@@ -361,7 +355,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
             </div>
           </div>
 
-          {/* 5. ADVANCED FILTERS PANEL */}
+          {/* ADVANCED FILTERS PANEL */}
           {showFilters && (
             <div className="bg-slate-50/80 p-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs animate-in slide-in-from-top-2 duration-150">
               <div>
@@ -416,7 +410,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                 </div>
                 <button 
                   onClick={clearAllFilters}
-                  className="px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg font-semibold"
+                  className="px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg font-semibold cursor-pointer"
                 >
                   Reset
                 </button>
@@ -425,17 +419,16 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
           )}
         </div>
 
-        {/* 6. OPPORTUNITY TABLE */}
-        <div className="flex-1 overflow-auto">
+        {/* 3. OPPORTUNITY TABLE (EXACTLY 7 COLUMNS: Opportunity, Customer / Company, Deal Value, Expected Close, Owner, Stage, Actions) */}
+        <div className="flex-1 overflow-x-auto">
           {paginatedOpportunities.length > 0 ? (
-            <div className="min-w-[1000px]">
+            <div className="min-w-[900px]">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 sticky top-0 z-10">
                   <tr>
                     <th className="p-4 font-semibold">Opportunity</th>
                     <th className="p-4 font-semibold">Customer / Company</th>
-                    <th className="p-4 font-semibold text-right">Value</th>
-                    <th className="p-4 font-semibold text-center">Probability</th>
+                    <th className="p-4 font-semibold text-right">Deal Value</th>
                     <th className="p-4 font-semibold">Expected Close</th>
                     <th className="p-4 font-semibold">Owner</th>
                     <th className="p-4 font-semibold text-center">Stage</th>
@@ -445,7 +438,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {paginatedOpportunities.map(opp => (
                     <tr key={opp.id} className="hover:bg-slate-50 transition-colors group">
-                      {/* Opportunity Name */}
+                      {/* 1. Opportunity Name & ID */}
                       <td className="p-4">
                         <div 
                           className="font-bold text-[#0f172a] cursor-pointer hover:text-indigo-600 transition-colors"
@@ -456,7 +449,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                         <div className="text-xs text-slate-400 font-mono mt-0.5">{opp.id}</div>
                       </td>
 
-                      {/* Customer */}
+                      {/* 2. Customer / Company */}
                       <td className="p-4">
                         <div 
                           className="font-medium text-[#0f172a] flex items-center cursor-pointer hover:text-indigo-600 transition-colors"
@@ -471,21 +464,14 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                         </div>
                       </td>
 
-                      {/* Value */}
+                      {/* 3. Deal Value */}
                       <td className="p-4 text-right">
                         <div className="font-extrabold text-[#0f172a]">
                           {formatINR(opp.value || 0)}
                         </div>
                       </td>
 
-                      {/* Probability */}
-                      <td className="p-4 text-center">
-                        <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
-                          {opp.probability || 50}%
-                        </span>
-                      </td>
-
-                      {/* Expected Close */}
+                      {/* 4. Expected Close */}
                       <td className="p-4">
                         <div className="text-xs font-medium text-slate-700 flex items-center">
                           <Calendar size={12} className="mr-1.5 text-slate-400" />
@@ -493,7 +479,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                         </div>
                       </td>
 
-                      {/* Owner */}
+                      {/* 5. Owner */}
                       <td className="p-4">
                         <div className="flex items-center">
                           <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold mr-2">
@@ -503,36 +489,36 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                         </div>
                       </td>
 
-                      {/* 7. DISPLAY-ONLY STAGE BADGE (NO DROPDOWN, NO SELECT, NO CHEVRON) */}
+                      {/* 6. Compact Stage Badge */}
                       <td className="p-4 text-center">
                         <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${getStageBadge(opp.stage)} cursor-default`}>
                           {opp.stage}
                         </span>
                       </td>
 
-                      {/* Actions Menu */}
+                      {/* 7. Actions Menu */}
                       <td className="p-4">
                         <div className="flex justify-center items-center relative group/menu">
-                          <button className="p-1.5 text-slate-400 hover:text-[#0f172a] hover:bg-slate-100 rounded-lg transition-colors">
+                          <button className="p-1.5 text-slate-400 hover:text-[#0f172a] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
                             <MoreVertical size={16} />
                           </button>
                           <div className="absolute right-6 top-0 w-36 bg-white rounded-lg shadow-lg border border-slate-200 py-1 hidden group-hover/menu:block z-20">
                             <button 
-                              onClick={() => handleViewDetails(opp.id)} 
-                              className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                              onClick={(e) => { e.stopPropagation(); handleViewDetails(opp.id); }} 
+                              className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium cursor-pointer"
                             >
                               View Details
                             </button>
                             <button 
                               onClick={() => handleOpenEditModal(opp)} 
-                              className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium"
+                              className="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 font-medium cursor-pointer"
                             >
                               Edit Deal
                             </button>
                             <div className="h-px bg-slate-200 my-1" />
                             <button 
                               onClick={() => handleDeleteOpp(opp.id)} 
-                              className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-medium"
+                              className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-medium cursor-pointer"
                             >
                               Delete
                             </button>
@@ -545,32 +531,32 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
               </table>
             </div>
           ) : (
-            /* 20. EMPTY STATE */
+            /* EMPTY STATE */
             <div className="flex flex-col items-center justify-center h-full p-12 text-center">
               <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
-                {searchTerm ? <Search className="text-slate-400" size={24} /> : <TrendingUp className="text-slate-400" size={24} />}
+                <TrendingUp className="text-slate-400" size={24} />
               </div>
               <h3 className="text-lg font-bold text-[#0f172a] mb-1">
                 {searchTerm || activeTab !== 'All' ? 'No opportunities found' : 'No opportunities yet'}
               </h3>
-              <p className="text-slate-500 text-xs max-w-sm mb-6">
+              <p className="text-xs text-slate-500 mb-6 max-w-sm">
                 {searchTerm || activeTab !== 'All' 
-                  ? 'No sales opportunities matched your search or filters. Try adjusting your criteria.' 
-                  : 'Create your first sales deal to start tracking potential deals across the pipeline.'}
+                  ? 'Try changing your search term or clearing filters to see matching opportunities.' 
+                  : 'Start tracking sales deals by adding your first opportunity.'}
               </p>
-              {searchTerm || activeTab !== 'All' || filterOwner !== 'All' || filterCustomer !== 'All' ? (
-                <button 
-                  onClick={clearAllFilters} 
-                  className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-semibold text-xs rounded-lg hover:bg-slate-50 shadow-xs"
+              {searchTerm || activeTab !== 'All' ? (
+                <button
+                  onClick={clearAllFilters}
+                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-semibold text-xs rounded-lg shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   Clear Filters
                 </button>
               ) : (
-                <button 
-                  onClick={handleOpenAddModal} 
-                  className="px-4 py-2 bg-indigo-600 text-white font-semibold text-xs rounded-lg hover:bg-indigo-500 flex items-center gap-1.5 shadow-xs"
+                <button
+                  onClick={handleOpenAddModal}
+                  className="px-4 py-2 bg-indigo-600 text-white font-semibold text-xs rounded-lg shadow-md hover:bg-indigo-500 transition-colors cursor-pointer flex items-center gap-1.5"
                 >
-                  <Plus size={15} /> Add Opportunity
+                  <Plus size={14} /> Add Opportunity
                 </button>
               )}
             </div>
@@ -603,7 +589,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
               <button 
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="p-1.5 border border-slate-300 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+                className="p-1.5 border border-slate-300 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white cursor-pointer"
               >
                 <ChevronLeft size={15} />
               </button>
@@ -613,7 +599,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
               <button 
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages || totalPages === 0}
-                className="p-1.5 border border-slate-300 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white"
+                className="p-1.5 border border-slate-300 rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white cursor-pointer"
               >
                 <ChevronRight size={15} />
               </button>
@@ -622,7 +608,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
         )}
       </div>
 
-      {/* ADD / EDIT OPPORTUNITY MODAL */}
+      {/* ADD / EDIT OPPORTUNITY MODAL (PRESERVED PROBABILITY FOR FORECASTING & FORM CREATION) */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4 animate-in zoom-in-95 duration-150">
@@ -630,7 +616,7 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
               <h3 className="text-base font-bold text-[#0f172a]">
                 {editingOpp ? 'Edit Opportunity' : 'Create New Opportunity'}
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleSaveOpportunity} className="space-y-3.5 text-xs">
@@ -721,13 +707,13 @@ export const CrmOpportunities: React.FC<CrmOpportunitiesProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl font-semibold text-xs hover:bg-slate-50"
+                  className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl font-semibold text-xs hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-xs shadow-sm"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-xs shadow-sm cursor-pointer"
                 >
                   {editingOpp ? 'Save Changes' : 'Create Opportunity'}
                 </button>

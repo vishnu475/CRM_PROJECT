@@ -1,3 +1,4 @@
+import { sendEmail } from '../services/emailService.js';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -217,7 +218,406 @@ function sanitizeTags(tagsInput) {
   return cleanTags;
 }
 
+// POST /api/leads/:id/convert — Convert Won lead to Customer, Contact, and Opportunity
+router.post('/:id/convert', async (req, res) => {
+  const { id } = req.params;
+  const customData = req.body || {};
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch lead
+    const leadRes = await client.query('SELECT * FROM leads WHERE id = $1', [id]);
+    if (leadRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Lead not found.' });
+    }
+
+    const lead = leadRes.rows[0];
+
+    // 2. Duplicate conversion check (Rule 5)
+    if (lead.is_converted) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'This lead has already been converted to a Customer, Contact, and Opportunity.',
+        customerId: lead.converted_to_customer_id,
+        contactId: lead.converted_to_contact_id,
+        opportunityId: lead.converted_to_opportunity_id,
+      });
+    }
+
+    // 3. Stage check: Must be Won (Rule 1 & 2)
+    if (lead.stage !== 'Won') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: `Lead cannot be converted from stage "${lead.stage}". Conversion is only available when the Lead is Won.`
+      });
+    }
+
+    const timestamp = Date.now();
+
+    // 4. Handle Customer Record (Rule 3 & 4)
+    let customerId = '';
+    let customerName = '';
+    let isExistingCustomerReused = false;
+
+    if (customData.useExistingCustomerId) {
+      const existingCust = await client.query('SELECT * FROM customers WHERE id = $1', [customData.useExistingCustomerId]);
+      if (existingCust.rows.length > 0) {
+        customerId = existingCust.rows[0].id;
+        customerName = existingCust.rows[0].customer_name;
+        isExistingCustomerReused = true;
+      }
+    }
+
+    if (!customerId) {
+      const existingByLead = await client.query('SELECT * FROM customers WHERE converted_from_lead_id = $1', [id]);
+      if (existingByLead.rows.length > 0) {
+        customerId = existingByLead.rows[0].id;
+        customerName = existingByLead.rows[0].customer_name;
+        isExistingCustomerReused = true;
+      }
+    }
+
+    if (!customerId) {
+      customerName = (customData.customerName || '').trim() || (lead.company || '').trim() || (lead.name || '').trim();
+      if (!customerName) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Customer name is required for lead conversion.' });
+      }
+
+      customerId = `CUST-${timestamp}`;
+      const customerType = customData.customerType || (lead.company ? 'Company' : 'Individual');
+      const industry = customData.industry || lead.industry || 'General';
+      const ownerId = lead.assigned_to || lead.assigned_to_employee_id || '';
+      const contactPersonName = (customData.contactName || '').trim() || (lead.decision_maker || lead.contact_person || lead.name || '').trim();
+      const contactEmail = (customData.contactEmail || '').trim() || lead.email || '';
+      const contactPhone = (customData.contactPhone || '').trim() || lead.phone || '';
+      const billingCity = lead.city || lead.address || '';
+      const billingCountry = lead.country || '';
+
+      await client.query(`
+        INSERT INTO customers (
+          id, customer_code, customer_name, customer_type, industry, owner_id, status,
+          credit_limit, contact_name, contact_email, contact_phone, billing_city, billing_country,
+          converted_from_lead_id, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        customerId, customerId, customerName, customerType, industry, ownerId, 'Active',
+        0, contactPersonName, contactEmail, contactPhone, billingCity, billingCountry, id
+      ]);
+    }
+
+    // 5. Handle Contact Record
+    let contactId = '';
+    let isExistingContactReused = false;
+
+    const contactPersonName = (customData.contactName || '').trim() || (lead.decision_maker || lead.contact_person || lead.name || '').trim();
+    const contactEmail = (customData.contactEmail || '').trim() || lead.email || '';
+    const contactPhone = (customData.contactPhone || '').trim() || lead.phone || '';
+    const designation = (customData.contactDesignation || '').trim() || lead.designation || 'Primary Contact';
+
+    const existingContact = await client.query(
+      'SELECT * FROM contacts WHERE customer_id = $1 AND lead_id = $2',
+      [customerId, id]
+    );
+
+    if (existingContact.rows.length > 0) {
+      contactId = existingContact.rows[0].id;
+      isExistingContactReused = true;
+    } else {
+      contactId = `CON-${timestamp}`;
+      await client.query(`
+        INSERT INTO contacts (
+          id, name, email, phone, company, customer_id, lead_id, title, contact_role, alternate_phone, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        contactId, contactPersonName, contactEmail, contactPhone, customerName, customerId, id,
+        designation, lead.contact_role || 'Decision Maker', lead.alternate_phone || null
+      ]);
+    }
+
+    // 6. Handle Opportunity Record
+    let opportunityId = '';
+    const defaultOppSummary = lead.requirement ? (lead.requirement.length > 40 ? `${lead.requirement.slice(0, 37)}...` : lead.requirement) : 'Deal';
+    const oppName = (customData.opportunityName || '').trim() || (lead.company ? `${lead.company} - ${defaultOppSummary}` : `${lead.name} Deal`);
+    const oppValue = customData.opportunityValue !== undefined && !isNaN(customData.opportunityValue)
+      ? parseFloat(customData.opportunityValue)
+      : (parseFloat(lead.final_agreed_amount) || parseFloat(lead.value) || parseFloat(lead.budget) || 0);
+    const oppExpectedClose = customData.expectedCloseDate || lead.won_date || lead.expected_close_date || new Date().toISOString().split('T')[0];
+
+    const existingOpp = await client.query(
+      'SELECT * FROM opportunities WHERE customer_id = $1 AND name = $2',
+      [customerId, oppName]
+    );
+
+    if (existingOpp.rows.length > 0) {
+      opportunityId = existingOpp.rows[0].id;
+    } else {
+      opportunityId = `OPP-${timestamp}`;
+      await client.query(`
+        INSERT INTO opportunities (
+          id, name, customer_id, customer_name, value, probability, expected_close, owner, stage, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        opportunityId, oppName, customerId, customerName, oppValue, 100, oppExpectedClose,
+        lead.assigned_to || '', 'Won'
+      ]);
+    }
+
+    // 7. Update Lead conversion references and flag (Rule 6 & 7)
+    await client.query(`
+      UPDATE leads SET
+        is_converted = TRUE,
+        converted_at = CURRENT_TIMESTAMP,
+        converted_to_customer_id = $2,
+        converted_to_contact_id = $3,
+        converted_to_opportunity_id = $4,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [id, customerId, contactId, opportunityId]);
+
+    await client.query('COMMIT');
+
+    const createdCust = (await pool.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
+    const createdCont = (await pool.query('SELECT * FROM contacts WHERE id = $1', [contactId])).rows[0];
+    const createdOpp = (await pool.query('SELECT * FROM opportunities WHERE id = $1', [opportunityId])).rows[0];
+    const updatedLead = (await pool.query('SELECT * FROM leads WHERE id = $1', [id])).rows[0];
+
+    res.json({
+      success: true,
+      message: 'Lead converted successfully.',
+      customerId,
+      contactId,
+      opportunityId,
+      isExistingCustomerReused,
+      isExistingContactReused,
+      data: {
+        lead: updatedLead,
+        customer: createdCust,
+        contact: createdCont,
+        opportunity: createdOpp
+      }
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Lead conversion endpoint error:', err);
+    res.status(400).json({ success: false, message: err.message || 'Lead conversion failed.' });
+  } finally {
+    client.release();
+  }
+});
+
 // POST /api/leads — Create new lead in CRM database
+
+// POST /api/leads/:leadId/proposal/send - Send proposal email to lead
+router.post('/:leadId/proposal/send', async (req, res) => {
+  const { leadId } = req.params;
+  try {
+    // 1. Read lead using leadId
+    const leadRes = await pool.query('SELECT * FROM leads WHERE id = $1', [leadId]);
+    if (leadRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Lead not found' });
+    }
+    const lead = leadRes.rows[0];
+
+    // 2. Read recipient email from lead.email
+    const recipientEmail = lead.email ? lead.email.trim() : '';
+    if (!recipientEmail) {
+      return res.status(400).json({ success: false, message: 'Lead does not have an email address.' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(recipientEmail)) {
+      return res.status(400).json({ success: false, message: 'Lead email address is invalid.' });
+    }
+
+    // 3. Receive proposal info from body
+    const {
+      proposalAmount,
+      proposalDate,
+      paymentTerms,
+      revisionNotes,
+      projectRequirements,
+      sentDate,
+    } = req.body;
+
+    // 4. Validation
+    const numericAmount = parseFloat(proposalAmount);
+    if (proposalAmount === undefined || proposalAmount === null || isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Proposal amount must be a positive number.' });
+    }
+
+    if (!proposalDate || isNaN(new Date(proposalDate).getTime())) {
+      return res.status(400).json({ success: false, message: 'Proposal date must be a valid date.' });
+    }
+
+    // Helper for HTML escaping
+    const sanitizeHtml = (str) => {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    };
+
+    const leadNameClean = sanitizeHtml(lead.name || 'Valued Customer');
+    const companyNameClean = lead.company ? sanitizeHtml(lead.company) : '';
+    const termsClean = paymentTerms ? sanitizeHtml(paymentTerms) : 'Standard payment terms apply.';
+    const reqsClean = projectRequirements || lead.requirement ? sanitizeHtml(projectRequirements || lead.requirement) : 'As per discussions';
+    const notesClean = revisionNotes ? sanitizeHtml(revisionNotes) : '';
+    const formattedAmount = `₹${numericAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const formattedDate = new Date(proposalDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    // Subject format: Proposal – {company or lead name} – {project/requirement}
+    const companyOrName = lead.company ? lead.company.trim() : lead.name.trim();
+    const reqSnippet = (projectRequirements || lead.requirement || 'Commercial Proposal').trim();
+    const subject = `Proposal – ${companyOrName} – ${reqSnippet}`;
+
+    const textBody = `
+Dear ${lead.name},
+
+Please find our proposal details below:
+
+Company: ${lead.company || 'N/A'}
+Proposal Amount: ${formattedAmount}
+Proposal Date: ${formattedDate}
+Payment Terms: ${paymentTerms || 'Standard terms'}
+Project Requirements: ${projectRequirements || lead.requirement || 'As discussed'}
+${revisionNotes ? `Revision Notes: ${revisionNotes}
+` : ''}
+Thank you for your interest. Please feel free to reach out if you have any questions.
+
+Best regards,
+Sales Team
+`.trim();
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333333; margin: 0; padding: 20px; background-color: #f8fafc; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .header { border-bottom: 2px solid #4f46e5; padding-bottom: 15px; margin-bottom: 20px; }
+    .header h2 { color: #1e1b4b; margin: 0; font-size: 20px; }
+    .section { margin-bottom: 20px; }
+    .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .table td { padding: 10px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+    .table td.label { font-weight: bold; color: #475569; width: 40%; }
+    .amount { font-size: 18px; font-weight: bold; color: #047857; }
+    .footer { margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>Commercial Proposal</h2>
+    </div>
+    <div class="section">
+      <p>Dear <strong>${leadNameClean}</strong>,</p>
+      <p>We are pleased to present our commercial proposal for your review.</p>
+    </div>
+    <div class="section">
+      <table class="table">
+        ${companyNameClean ? `<tr><td class="label">Company Name</td><td>${companyNameClean}</td></tr>` : ''}
+        <tr><td class="label">Proposal Amount</td><td class="amount">${formattedAmount}</td></tr>
+        <tr><td class="label">Proposal Date</td><td>${formattedDate}</td></tr>
+        <tr><td class="label">Payment Terms</td><td>${termsClean}</td></tr>
+        <tr><td class="label">Project Requirements</td><td>${reqsClean}</td></tr>
+        ${notesClean ? `<tr><td class="label">Revision Notes</td><td>${notesClean}</td></tr>` : ''}
+      </table>
+    </div>
+    <div class="section">
+      <p>Please review the proposal details above. Should you have any questions or require modifications, do not hesitate to contact us.</p>
+    </div>
+    <div class="footer">
+      <p>Best regards,<br><strong>Sales Team</strong></p>
+    </div>
+  </div>
+</body>
+</html>
+`.trim();
+
+    // 5. Send email using sendEmail service
+    const emailResult = await sendEmail({
+      to: recipientEmail,
+      subject,
+      text: textBody,
+      html: htmlBody,
+    });
+
+    if (!emailResult.success) {
+      // Failed to send email! DO NOT update lead stage or proposal status!
+      console.error(`[Proposal Email Failed] Lead ID: ${leadId}, Recipient: ${recipientEmail}, Reason: ${emailResult.message}`);
+      return res.status(500).json({
+        success: false,
+        message: 'Proposal could not be sent. Please check the email configuration and try again.',
+        error: emailResult.message,
+      });
+    }
+
+    // 6. Email sent successfully -> update lead
+    const effectiveSentDate = sentDate || new Date().toISOString().split('T')[0];
+    const newStage = lead.stage;
+
+    const updateRes = await pool.query(
+      `UPDATE leads SET
+        proposal_amount = $2,
+        proposal_date = $3,
+        proposal_status = 'Sent',
+        proposal_sent_date = $4,
+        stage = $5,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 RETURNING *`,
+      [leadId, numericAmount, proposalDate, effectiveSentDate, newStage]
+    );
+
+    const updatedLead = updateRes.rows[0];
+
+    // 7. Log Activity in activities table
+    try {
+      const actId = `ACT-${Date.now()}`;
+      await pool.query(
+        `INSERT INTO activities (id, title, type, purpose, related_to, customer_id, status, outcome, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
+        [
+          actId,
+          `Proposal – ${companyOrName}`,
+          'Email',
+          'Proposal',
+          `Lead: ${lead.name} (${leadId})`,
+          leadId,
+          'Completed',
+          `Proposal sent to ${recipientEmail}`,
+        ]
+      );
+    } catch (actErr) {
+      console.error('Failed to log email activity:', actErr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Proposal sent successfully to ${recipientEmail}`,
+      data: updatedLead,
+    });
+  } catch (err) {
+    console.error('Send proposal email endpoint error:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error while sending proposal email.',
+    });
+  }
+});
+
+
 router.post('/', async (req, res) => {
   const { 
     id, name, company, email, phone, value, stage, score, source, assignedTo, assignedToEmployeeId,
@@ -586,11 +986,191 @@ router.post('/', async (req, res) => {
   }
 });
 
+
+const MEANINGLESS_PLACEHOLDERS = new Set([
+  'yes', 'ok', 'test', 'abc', '123', 'none', 'n/a', 'na', 'no', 'null', 'undefined', 'xyz'
+]);
+
+function validateQualificationBackend(lead) {
+  const errors = [];
+
+  // 1. Requirement
+  const req = (lead.requirement || '').trim();
+  if (!req || req.length < 10 || req.length > 5000 || MEANINGLESS_PLACEHOLDERS.has(req.toLowerCase())) {
+    errors.push('Enter meaningful customer requirements.');
+  }
+
+  // 2. Budget
+  const budgetStr = String(lead.budget !== undefined && lead.budget !== null && lead.budget !== '' ? lead.budget : (lead.value || '')).trim();
+  const budgetNum = Number(budgetStr);
+  if (!budgetStr || !/^[0-9]+(\.[0-9]+)?$/.test(budgetStr) || isNaN(budgetNum) || budgetNum <= 0) {
+    errors.push('Enter a valid budget greater than ₹0.');
+  }
+
+  // 3. Decision Maker
+  const dm = (lead.decisionMaker || lead.contactPerson || '').trim();
+  if (!dm || dm.length < 2 || dm.length > 100 || /^[0-9]+$/.test(dm) || !/^[a-zA-Z\s'\-\.]+$/.test(dm)) {
+    errors.push('Enter the name of the customer decision maker.');
+  }
+
+  // 4. Expected Close Date
+  const dateStr = (lead.expectedCloseDate || lead.expected_close_date || '').trim();
+  if (!dateStr) {
+    errors.push('Select today or a future expected close date.');
+  } else {
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime())) {
+      errors.push('Select today or a future expected close date.');
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const parts = dateStr.split('-');
+      let inputDate;
+      if (parts.length === 3) {
+        inputDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      } else {
+        inputDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+      }
+      if (inputDate.getTime() < today.getTime()) {
+        errors.push('Select today or a future expected close date.');
+      }
+    }
+  }
+
+  return errors;
+}
+
 // PUT & PATCH /api/leads/:id — Update lead stage or details
 const updateHandler = async (req, res) => {
   const { id } = req.params;
   const fields = { ...req.body };
   try {
+    const existingRes = await pool.query('SELECT * FROM leads WHERE id = $1', [id]);
+    if (existingRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
+    const existing = existingRes.rows[0];
+
+    // Stage validation rules
+    if ('stage' in fields && fields.stage !== undefined && fields.stage !== null) {
+      const targetStage = fields.stage;
+      const currentStage = existing.stage;
+
+      if (currentStage !== targetStage) {
+        // Once Lost or Won, ordinary stage updates are blocked
+        if (currentStage === 'Lost') {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot move lead from "Lost" to "${targetStage}". Deals marked as Lost cannot be transitioned to active stages.`
+          });
+        }
+        if (currentStage === 'Won') {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot move lead from "Won" to "${targetStage}". Deals marked as Won are closed and finalized.`
+          });
+        }
+
+        // Direct manual transition to Won is blocked
+        if (targetStage === 'Won') {
+          return res.status(400).json({
+            success: false,
+            message: 'Lead stage cannot be manually changed to Won. Won is an outcome reached when the linked quotation in Sales is accepted.'
+          });
+        }
+
+        // Moving lead to Lost requires Lost Reason & Notes
+        if (targetStage === 'Lost') {
+          const lostReason = (fields.lostReason !== undefined ? fields.lostReason : existing.lost_reason || '').trim();
+          if (!lostReason) {
+            return res.status(400).json({
+              success: false,
+              message: 'Please provide a valid Lost Reason before marking this lead as Lost.'
+            });
+          }
+          if (lostReason.toLowerCase() === 'other') {
+            const otherDetails = (fields.lostReasonDetails !== undefined ? fields.lostReasonDetails : existing.lost_reason_details || '').trim();
+            const lostNotes = (fields.lostNotes !== undefined ? fields.lostNotes : existing.lost_notes || '').trim();
+            if (!otherDetails && !lostNotes) {
+              return res.status(400).json({
+                success: false,
+                message: 'Please provide a custom explanation when selecting "Other" as the Lost Reason.'
+              });
+            }
+          }
+          const lostNotes = (fields.lostNotes !== undefined ? fields.lostNotes : existing.lost_notes || '').trim();
+          if (!lostNotes) {
+            return res.status(400).json({
+              success: false,
+              message: 'Please provide Lost Notes/Comments explaining why this deal was lost.'
+            });
+          }
+        }
+        // Reject obsolete/unsupported stages
+        else if (!['New', 'Contacted', 'Qualified', 'Won', 'Lost'].includes(targetStage)) {
+          return res.status(400).json({
+            success: false,
+            message: `"${targetStage}" is not a valid CRM lead stage.`
+          });
+        }
+        // Active stage transitions (New -> Contacted -> Qualified)
+        else {
+          const stageOrder = ['New', 'Contacted', 'Qualified'];
+          const currentIndex = stageOrder.indexOf(currentStage);
+          const targetIndex = stageOrder.indexOf(targetStage);
+
+          if (currentIndex !== -1 && targetIndex !== -1) {
+            if (targetIndex < currentIndex) {
+              return res.status(400).json({
+                success: false,
+                message: `Backward stage transition from "${currentStage}" to "${targetStage}" is not allowed.`
+              });
+            }
+            if (targetIndex > currentIndex + 1) {
+              return res.status(400).json({
+                success: false,
+                message: `Stage skipping is not allowed. Lead must move from "${currentStage}" to "${stageOrder[currentIndex + 1]}" first.`
+              });
+            }
+          }
+
+          // New -> Contacted requires completed Call, Email, or Meeting activity
+          if (currentStage === 'New' && targetStage === 'Contacted') {
+            const actRes = await pool.query(
+              `SELECT id FROM activities 
+               WHERE (related_to = $1 OR related_to = $2 OR related_to LIKE $3)
+                 AND type IN ('Call', 'Email', 'Meeting')
+                 AND status = 'Completed'
+               LIMIT 1`,
+              [id, existing.name, `%${existing.name}%`]
+            );
+            if (actRes.rows.length === 0) {
+              return res.status(400).json({
+                success: false,
+                message: 'Please record a completed call, email, or meeting before moving this lead to Contacted.'
+              });
+            }
+          }
+
+          // Contacted -> Qualified requires 4 qualification fields
+          if (currentStage === 'Contacted' && targetStage === 'Qualified') {
+            const merged = {
+              requirement: fields.requirement !== undefined ? fields.requirement : existing.requirement,
+              budget: fields.budget !== undefined ? fields.budget : (fields.value !== undefined ? fields.value : existing.budget || existing.value),
+              value: fields.value !== undefined ? fields.value : (fields.budget !== undefined ? fields.budget : existing.value || existing.budget),
+              decisionMaker: fields.decisionMaker !== undefined ? fields.decisionMaker : (fields.contactPerson !== undefined ? fields.contactPerson : existing.decision_maker || existing.contact_person),
+              expectedCloseDate: fields.expectedCloseDate !== undefined ? fields.expectedCloseDate : existing.expected_close_date,
+            };
+
+            const valErrors = validateQualificationBackend(merged);
+            if (valErrors.length > 0) {
+              return res.status(400).json({
+                success: false,
+                message: 'Qualification validation failed: ' + valErrors.join(' ')
+              });
+            }
+          }
+        }
+      }
+    }
     // If assignedTo or assignedToEmployeeId is being updated
     if ('assignedTo' in fields || 'assignedToEmployeeId' in fields) {
       const targetEmpId = fields.assignedToEmployeeId || fields.assignedTo;

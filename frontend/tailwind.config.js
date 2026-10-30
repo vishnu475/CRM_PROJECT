@@ -22,6 +22,26 @@ export default {
           600: '#4F46E5',
           700: '#4338CA',
         }
+      },
+      backdropBlur: {
+        xs: '2px',
+      },
+      boxShadow: {
+        xs: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        zoomIn95: {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+      },
+      animation: {
+        'fade-in': 'fadeIn 150ms cubic-bezier(0.16, 1, 0.3, 1)',
+        'zoom-in-95': 'zoomIn95 150ms cubic-bezier(0.16, 1, 0.3, 1)',
       }
     },
   },

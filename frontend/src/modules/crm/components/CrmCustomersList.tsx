@@ -1,12 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CrmView, Customer } from '../../../types';
 import { useApp } from '../../../context/AppContext';
-import { formatINR } from '../utils/crmUtils';
 import { fetchAllEmployeesFromDB } from '../../../services/employeePersistence';
 import { 
-  Search, Filter, Plus, MoreVertical, Building2, AlertTriangle, 
-  CheckCircle2, DollarSign, X, ChevronLeft, ChevronRight, User, 
-  Mail, XCircle, ChevronDown, Trash2
+  Search, Plus, MoreVertical, Building2, AlertTriangle, 
+  CheckCircle2, X, ChevronLeft, ChevronRight, XCircle, 
+  Trash2, ChevronDown
 } from 'lucide-react';
 
 interface CrmCustomersListProps {
@@ -15,37 +14,21 @@ interface CrmCustomersListProps {
 }
 
 export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange, onCustomerSelect }) => {
-  const { customers, salesOrders, invoices, updateCustomer, deleteCustomer } = useApp();
+  const { customers, deleteCustomer } = useApp();
   
   // State
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'All' | 'Active' | 'At Risk' | 'Inactive'>('All');
-  const [industryFilter, setIndustryFilter] = useState<string>('All');
   const [ownerFilter, setOwnerFilter] = useState<string>('All');
-  const [locationFilter, setLocationFilter] = useState<string>('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
 
   // Customer Deletion State
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
-  const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleDeleteCustomer = async (cust: Customer) => {
-    if (!cust) return;
-    setIsDeletingCustomer(true);
-    try {
-      await deleteCustomer(cust.id);
-      setCustomerToDelete(null);
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete customer from database');
-    } finally {
-      setIsDeletingCustomer(false);
-    }
-  };
-
-
-  // Live Employee Map for resolving Owner names from HRMS
+  // Employee Name Mapping
   const [employeeMap, setEmployeeMap] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -59,39 +42,10 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
     });
   }, []);
 
-  // Filter out archived customers unless explicitly viewed
+  // Filter out archived customers
   const nonArchivedCustomers = useMemo(() => customers.filter(c => c.status !== 'Archived'), [customers]);
 
-  // Map of Customer Commercial Value (Total Confirmed Sales / Invoices)
-  const customerSalesMap = useMemo(() => {
-    const map = new Map<string, number>();
-    customers.forEach(cust => {
-      const custOrders = salesOrders.filter(
-        so => (so.customerId === cust.id || (so.customerName && so.customerName.toLowerCase() === cust.customerName.toLowerCase())) &&
-              so.status !== 'Cancelled'
-      );
-      const ordersTotal = custOrders.reduce((sum, so) => sum + (Number(so.totalAmount) || 0), 0);
-
-      const custInvoices = invoices.filter(
-        inv => (inv.customerId === cust.id || (inv.customerName && inv.customerName.toLowerCase() === cust.customerName.toLowerCase())) &&
-               inv.status !== 'Cancelled'
-      );
-      const invoiceTotal = custInvoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
-
-      const sales = ordersTotal > 0 ? ordersTotal : invoiceTotal;
-      map.set(cust.id, sales);
-    });
-    return map;
-  }, [customers, salesOrders, invoices]);
-
-  // Overall commercial summary metrics
-  const totalSalesOverall = useMemo(() => {
-    let sum = 0;
-    customerSalesMap.forEach((val) => { sum += val; });
-    return sum;
-  }, [customerSalesMap]);
-
-  // Derived counts for tabs
+  // Derived counts for status tabs
   const counts = useMemo(() => ({
     All: nonArchivedCustomers.length,
     Active: nonArchivedCustomers.filter(c => c.status === 'Active').length,
@@ -111,23 +65,6 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
     return ownerId;
   };
 
-  // Helper to format Location
-  const getLocationDisplay = (cust: Customer) => {
-    const city = cust.billingAddress?.city || cust.shippingAddress?.city;
-    const country = cust.billingAddress?.country || cust.shippingAddress?.country;
-    if (city && country) return `${city}, ${country}`;
-    if (city) return city;
-    if (country) return country;
-    return 'Not provided';
-  };
-
-  // Unique filter lists
-  const availableIndustries = useMemo(() => {
-    const set = new Set<string>();
-    nonArchivedCustomers.forEach(c => { if (c.industry && c.industry !== 'N/A') set.add(c.industry); });
-    return Array.from(set).sort();
-  }, [nonArchivedCustomers]);
-
   const availableOwners = useMemo(() => {
     const set = new Set<string>();
     nonArchivedCustomers.forEach(c => { 
@@ -137,54 +74,33 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
     return Array.from(set).sort();
   }, [nonArchivedCustomers, employeeMap]);
 
-  const availableLocations = useMemo(() => {
-    const set = new Set<string>();
-    nonArchivedCustomers.forEach(c => {
-      const loc = getLocationDisplay(c);
-      if (loc && loc !== 'Not provided') set.add(loc);
-    });
-    return Array.from(set).sort();
-  }, [nonArchivedCustomers]);
-
   // Filtered and Searched list
   const filteredCustomers = useMemo(() => {
     return nonArchivedCustomers.filter(c => {
       // Tab status filter
       if (activeTab !== 'All' && c.status !== activeTab) return false;
       
-      // Industry filter
-      if (industryFilter !== 'All' && c.industry !== industryFilter) return false;
-
       // Owner filter
       if (ownerFilter !== 'All') {
         const ownerName = getOwnerDisplayName(c.ownerId);
         if (ownerName !== ownerFilter) return false;
       }
 
-      // Location filter
-      if (locationFilter !== 'All') {
-        const loc = getLocationDisplay(c);
-        if (loc !== locationFilter) return false;
-      }
-
-      // Search filter across customer name, code, contact, email, location, industry
+      // Search filter across customer name, code, primary contact name, email
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         const matchesName = c.customerName?.toLowerCase().includes(term);
         const matchesCode = c.customerCode?.toLowerCase().includes(term);
         const matchesContactName = c.primaryContact?.name?.toLowerCase().includes(term);
         const matchesContactEmail = c.primaryContact?.email?.toLowerCase().includes(term);
-        const matchesCity = c.billingAddress?.city?.toLowerCase().includes(term);
-        const matchesCountry = c.billingAddress?.country?.toLowerCase().includes(term);
-        const matchesIndustry = c.industry?.toLowerCase().includes(term);
 
-        if (!matchesName && !matchesCode && !matchesContactName && !matchesContactEmail && !matchesCity && !matchesCountry && !matchesIndustry) {
+        if (!matchesName && !matchesCode && !matchesContactName && !matchesContactEmail) {
           return false;
         }
       }
       return true;
     });
-  }, [nonArchivedCustomers, activeTab, industryFilter, ownerFilter, locationFilter, searchTerm, employeeMap]);
+  }, [nonArchivedCustomers, activeTab, ownerFilter, searchTerm, employeeMap]);
 
   // Pagination
   const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
@@ -193,17 +109,28 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
     return filteredCustomers.slice(start, start + itemsPerPage);
   }, [filteredCustomers, currentPage, itemsPerPage]);
 
-  const hasActiveFilters = industryFilter !== 'All' || ownerFilter !== 'All' || locationFilter !== 'All' || searchTerm !== '';
+  const hasActiveFilters = ownerFilter !== 'All' || searchTerm !== '';
 
   const resetFilters = () => {
-    setIndustryFilter('All');
     setOwnerFilter('All');
-    setLocationFilter('All');
     setSearchTerm('');
     setCurrentPage(1);
   };
 
-  const getStatusBadgeStyle = (status: string) => {
+  const handleDeleteConfirm = async () => {
+    if (!customerToDelete) return;
+    try {
+      setIsDeleting(true);
+      await deleteCustomer(customerToDelete.id);
+      setCustomerToDelete(null);
+    } catch (err) {
+      console.error('Failed to delete customer:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const getStatusBadgeStyle = (status?: string) => {
     switch (status) {
       case 'Active':
         return 'bg-emerald-50 text-emerald-700 border-emerald-200';
@@ -212,28 +139,30 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
       case 'Inactive':
         return 'bg-slate-100 text-slate-600 border-slate-200';
       default:
-        return 'bg-slate-100 text-slate-500 border-slate-200';
+        return 'bg-slate-100 text-slate-600 border-slate-200';
     }
   };
 
   return (
-    <div className="flex flex-col h-full space-y-6">
+    <div className="space-y-4 max-w-[1600px] mx-auto pb-8">
       {/* 1. PAGE HEADER */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[#0f172a]">Customers</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage customer profiles, relationships and commercial activity.</p>
+          <h1 className="text-xl font-bold text-[#0f172a]">Customers</h1>
+          <p className="text-xs text-slate-500">
+            Manage your established customers and relationships.
+          </p>
         </div>
-        <button 
-          onClick={() => onViewChange('add-customer')} 
-          className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 transition-colors flex items-center gap-2 whitespace-nowrap"
+        <button
+          onClick={() => onViewChange('add-customer')}
+          className="px-4 py-2 bg-indigo-600 text-white font-semibold text-sm rounded-lg shadow-sm hover:bg-indigo-500 transition-colors flex items-center gap-2 whitespace-nowrap self-start sm:self-auto"
         >
           <Plus size={16} /> New Customer
         </button>
       </div>
 
-      {/* 2. BUSINESS SUMMARY CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      {/* 2. SUMMARY CARDS (EXACTLY FOUR CARDS) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Total Customers */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
           <div className="flex items-center justify-between">
@@ -243,7 +172,7 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
             </div>
           </div>
           <div className="text-2xl font-bold text-[#0f172a] mt-2">{counts.All}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Total customer records</p>
+          <p className="text-[11px] text-slate-400 mt-1">Total customer accounts</p>
         </div>
 
         {/* Active Customers */}
@@ -281,29 +210,15 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
           <div className="text-2xl font-bold text-slate-600 mt-2">{counts.Inactive}</div>
           <p className="text-[11px] text-slate-400 mt-1">Inactive customer accounts</p>
         </div>
-
-        {/* Total Customer Value */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs col-span-2 md:col-span-1">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wider">Total Value</span>
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-              <DollarSign size={16} />
-            </div>
-          </div>
-          <div className="text-xl font-bold text-indigo-900 mt-2 truncate" title={formatINR(totalSalesOverall)}>
-            {formatINR(totalSalesOverall)}
-          </div>
-          <p className="text-[11px] text-indigo-600/80 mt-1">Total commercial value</p>
-        </div>
       </div>
 
       {/* 3. MAIN CONTENT CARD */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
         
-        {/* TABS & SEARCH & INLINE FILTERS */}
+        {/* TABS & SEARCH & OWNER FILTER */}
         <div className="border-b border-slate-200 p-4 space-y-4">
           
-          {/* Status Filter Tabs */}
+          {/* Status Filter Tabs (ONLY All, Active, At Risk, Inactive) */}
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3 overflow-x-auto no-scrollbar">
             {(['All', 'Active', 'At Risk', 'Inactive'] as const).map(tab => (
               <button
@@ -327,17 +242,17 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
             ))}
           </div>
 
-          {/* Search & Compact Inline Filters */}
+          {/* Search & Owner Filter */}
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
             {/* Search Input */}
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
                 type="text"
-                placeholder="Search customers..."
+                placeholder="Search customers by name, code, contact..."
                 value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                className="pl-10 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white w-full transition-all"
+                className="pl-10 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 focus:bg-white w-full transition-all"
               />
               {searchTerm && (
                 <button 
@@ -349,24 +264,8 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
               )}
             </div>
 
-            {/* Compact Filter Dropdowns */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Industry Filter */}
-              <div className="relative">
-                <select
-                  value={industryFilter}
-                  onChange={(e) => { setIndustryFilter(e.target.value); setCurrentPage(1); }}
-                  className="appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                >
-                  <option value="All">Industry: All</option>
-                  {availableIndustries.map(ind => (
-                    <option key={ind} value={ind}>{ind}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
-
-              {/* Owner Filter */}
+            {/* Owner Filter Dropdown */}
+            <div className="flex items-center gap-2">
               <div className="relative">
                 <select
                   value={ownerFilter}
@@ -381,65 +280,45 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
 
-              {/* Location Filter */}
-              <div className="relative">
-                <select
-                  value={locationFilter}
-                  onChange={(e) => { setLocationFilter(e.target.value); setCurrentPage(1); }}
-                  className="appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer"
-                >
-                  <option value="All">Location: All</option>
-                  {availableLocations.map(loc => (
-                    <option key={loc} value={loc}>{loc}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
-
               {hasActiveFilters && (
                 <button
                   onClick={resetFilters}
                   className="px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-rose-200"
                 >
-                  Clear Filters
+                  Clear
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* CUSTOMER TABLE (NO CHECKBOXES, STRICT SPEC COLUMNS) */}
+        {/* 5. CUSTOMER TABLE (EXACTLY 5 COLUMNS: Customer, Primary Contact, Owner, Status, Actions) */}
         <div className="flex-1 overflow-auto">
           {paginatedCustomers.length > 0 ? (
-            <div className="min-w-[1000px]">
+            <div className="min-w-[800px]">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 sticky top-0 z-10 font-semibold tracking-wider">
                   <tr>
-                    <th className="p-4">CUSTOMER / COMPANY</th>
-                    <th className="p-4">INDUSTRY</th>
-                    <th className="p-4">PRIMARY CONTACT</th>
-                    <th className="p-4">LOCATION</th>
-                    <th className="p-4 text-right">CUSTOMER VALUE</th>
-                    <th className="p-4">OWNER</th>
-                    <th className="p-4 text-center">STATUS</th>
-                    <th className="p-4 text-center w-16">ACTIONS</th>
+                    <th className="p-3.5 pl-4">CUSTOMER</th>
+                    <th className="p-3.5">PRIMARY CONTACT</th>
+                    <th className="p-3.5">OWNER</th>
+                    <th className="p-3.5 text-center">STATUS</th>
+                    <th className="p-3.5 text-center w-20 pr-4">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {paginatedCustomers.map(customer => {
-                    const sales = customerSalesMap.get(customer.id) || 0;
                     const primaryContact = customer.primaryContact && customer.primaryContact.name && customer.primaryContact.name !== 'New Contact' 
                       ? customer.primaryContact 
                       : null;
-                    const locationStr = getLocationDisplay(customer);
                     const ownerName = getOwnerDisplayName(customer.ownerId);
                     const isMenuOpen = activeActionMenuId === customer.id;
 
                     return (
                       <tr key={customer.id} className="hover:bg-slate-50/80 transition-colors">
                         
-                        {/* 1. CUSTOMER / COMPANY */}
-                        <td className="p-4">
+                        {/* 1. CUSTOMER */}
+                        <td className="p-3.5 pl-4">
                           <div 
                             className="font-bold text-[#0f172a] text-sm cursor-pointer hover:text-indigo-600 transition-colors"
                             onClick={() => onCustomerSelect && onCustomerSelect(customer.id)}
@@ -451,19 +330,8 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
                           </div>
                         </td>
 
-                        {/* 2. INDUSTRY */}
-                        <td className="p-4">
-                          {customer.industry && customer.industry !== 'N/A' ? (
-                            <span className="inline-block px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 border border-slate-200 text-slate-700">
-                              {customer.industry}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400 font-normal">—</span>
-                          )}
-                        </td>
-
-                        {/* 3. PRIMARY CONTACT */}
-                        <td className="p-4">
+                        {/* 2. PRIMARY CONTACT */}
+                        <td className="p-3.5">
                           {primaryContact ? (
                             <div>
                               <div className="font-semibold text-slate-800 text-xs">{primaryContact.name}</div>
@@ -476,22 +344,8 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
                           )}
                         </td>
 
-                        {/* 4. LOCATION */}
-                        <td className="p-4 text-xs text-slate-700">
-                          {locationStr !== 'Not provided' ? (
-                            <span>{locationStr}</span>
-                          ) : (
-                            <span className="text-slate-400 font-normal">Not provided</span>
-                          )}
-                        </td>
-
-                        {/* 5. CUSTOMER VALUE */}
-                        <td className="p-4 text-right font-extrabold text-[#0f172a] text-sm">
-                          {sales > 0 ? formatINR(sales) : <span className="text-xs text-slate-400 font-normal">Not available</span>}
-                        </td>
-
-                        {/* 6. OWNER */}
-                        <td className="p-4 text-xs font-medium text-slate-800">
+                        {/* 3. OWNER */}
+                        <td className="p-3.5 text-xs font-medium text-slate-800">
                           {ownerName !== 'Unassigned' ? (
                             <span>{ownerName}</span>
                           ) : (
@@ -499,15 +353,15 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
                           )}
                         </td>
 
-                        {/* 7. STATUS */}
-                        <td className="p-4 text-center">
+                        {/* 4. STATUS */}
+                        <td className="p-3.5 text-center">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusBadgeStyle(customer.status)} select-none inline-block`}>
-                            {customer.status}
+                            {customer.status || 'Active'}
                           </span>
                         </td>
 
-                        {/* 8. ACTIONS */}
-                        <td className="p-4 text-center relative">
+                        {/* 5. ACTIONS */}
+                        <td className="p-3.5 text-center pr-4 relative">
                           <div className="relative inline-block text-left">
                             <button 
                               onClick={() => setActiveActionMenuId(isMenuOpen ? null : customer.id)}
@@ -655,38 +509,38 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
         )}
       </div>
 
-      {/* Confirmation Modal for Customer Deletion */}
+      {/* DELETE CONFIRMATION MODAL */}
       {customerToDelete && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
-                <Trash2 size={20} />
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center shrink-0">
+                <AlertTriangle size={20} />
               </div>
-              <div className="space-y-1">
-                <h3 className="font-bold text-slate-900 text-sm">Delete Customer Permanently?</h3>
-                <p className="text-slate-500 text-xs leading-relaxed">
-                  Are you sure you want to permanently delete customer <strong className="text-slate-800">{customerToDelete.customerName}</strong> ({customerToDelete.customerCode || customerToDelete.id}) from the database?
-                  This action cannot be undone.
-                </p>
+              <div>
+                <h3 className="text-base font-bold text-[#0f172a]">Delete Customer</h3>
+                <p className="text-xs text-slate-500">This action cannot be undone.</p>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            
+            <p className="text-sm text-slate-600 mb-6">
+              Are you sure you want to delete <span className="font-bold text-[#0f172a]">{customerToDelete.customerName}</span> ({customerToDelete.customerCode || customerToDelete.id})? All associated customer data will be removed.
+            </p>
+
+            <div className="flex justify-end gap-3">
               <button
-                type="button"
-                disabled={isDeletingCustomer}
                 onClick={() => setCustomerToDelete(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer text-xs"
+                disabled={isDeleting}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                disabled={isDeletingCustomer}
-                onClick={() => handleDeleteCustomer(customerToDelete)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center gap-1.5 text-xs"
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-rose-600 text-white rounded-lg text-sm font-semibold hover:bg-rose-700 transition-colors disabled:opacity-50 flex items-center gap-2"
               >
-                {isDeletingCustomer ? 'Deleting...' : 'Yes, Delete from Database'}
+                {isDeleting ? 'Deleting...' : 'Delete Customer'}
               </button>
             </div>
           </div>
@@ -695,4 +549,3 @@ export const CrmCustomersList: React.FC<CrmCustomersListProps> = ({ onViewChange
     </div>
   );
 };
-

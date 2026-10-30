@@ -91,7 +91,7 @@ export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customer
   }, [followUps, customer, customerId]);
 
   const customerNotes = useMemo(() => {
-    return notes.filter(n => n.relatedRecord === customerId || (customer?.customerName && (n.relatedRecord === customer.customerName || n.relatedRecord.includes(customer.customerName))));
+    return notes.filter(n => n.relatedId === customerId || n.related_id === customerId || n.relatedRecord === customerId || (customer?.customerName && (n.relatedRecord === customer.customerName || (n.relatedRecord && n.relatedRecord.includes(customer.customerName)))) || (n.relatedType === 'Customer' && n.relatedId === customerId));
   }, [notes, customerId, customer]);
 
   // Derived Key Metrics
@@ -160,9 +160,14 @@ export const CrmCustomerDetails: React.FC<CrmCustomerDetailsProps> = ({ customer
     if (!newNoteText.trim()) return;
     addNote({
       title: `Note for ${customer.customerName}`,
+      type: 'General',
       content: newNoteText.trim(),
+      relatedType: 'Customer',
+      related_type: 'Customer',
+      relatedId: customerId,
+      related_id: customerId,
       relatedRecord: customer.customerName,
-      createdBy: 'Lokesh',
+      createdBy: 'Sarah Jenkins',
       visibility: 'Public'
     });
     setNewNoteText('');

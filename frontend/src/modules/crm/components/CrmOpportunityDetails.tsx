@@ -45,7 +45,33 @@ export const CrmOpportunityDetails: React.FC<CrmOpportunityDetailsProps> = ({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isUpdatingStage, setIsUpdatingStage] = useState(false);
 
-  const opportunity = opportunities.find(o => o.id === opportunityId);
+  const effectiveId = opportunityId || (typeof window !== 'undefined' ? localStorage.getItem('crm_selected_opp_id') : null);
+
+  const opportunity = useMemo(() => {
+    if (!effectiveId) return null;
+    return opportunities.find(o => String(o.id).trim() === String(effectiveId).trim());
+  }, [opportunities, effectiveId]);
+
+  const [isDataLoaded, setIsDataLoaded] = useState(opportunities.length > 0);
+
+  React.useEffect(() => {
+    if (opportunities.length > 0) {
+      setIsDataLoaded(true);
+    } else {
+      const timer = setTimeout(() => setIsDataLoaded(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [opportunities]);
+
+  React.useEffect(() => {
+    if (opportunity) {
+      setEditName(opportunity.name || '');
+      setEditValue(opportunity.value?.toString() || '0');
+      setEditProbability(opportunity.probability?.toString() || '50');
+      setEditExpectedClose(opportunity.expectedClose || '');
+      setEditOwner(opportunity.owner || '');
+    }
+  }, [opportunity]);
 
   // Edit form state
   const [editName, setEditName] = useState(opportunity?.name || '');
@@ -89,9 +115,18 @@ export const CrmOpportunityDetails: React.FC<CrmOpportunityDetailsProps> = ({
     );
   }, [quotations, opportunity]);
 
+  if (!opportunity && !isDataLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-slate-200 min-h-[300px]">
+        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+        <p className="text-xs text-slate-500 font-medium">Loading opportunity details...</p>
+      </div>
+    );
+  }
+
   if (!opportunity) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-slate-200">
+      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-xl border border-slate-200 min-h-[300px]">
         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
           <TrendingUp className="text-slate-400" size={24} />
         </div>
