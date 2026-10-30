@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { Project } from '../../../types';
 import { 
   FolderKanban, Search, Filter, Calendar, User, DollarSign, 
   CheckCircle2, Clock, FileText, X, ArrowRight, Building2, 
-  Sparkles, ShieldCheck, ChevronRight, Trash2, Layers, Users
+  Sparkles, ShieldCheck, ChevronRight, Trash2, Layers, Users,
+  AlertCircle, Tag, CheckSquare, GitBranch, Edit3, Download
 } from 'lucide-react';
 import { TestingDocumentsView } from '../../testing/components/TestingDocumentsView';
 import { ProjectAllocationPanel } from './ProjectAllocationPanel';
+
+interface ProjectsDeliveryViewProps {
+  onNavigateToTasks?: (projectId?: string) => void;
+}
+
+export const ProjectsDeliveryView: React.FC<ProjectsDeliveryViewProps> = ({ onNavigateToTasks }) => {
+  const { projects = [], employees = [], customers = [], contacts = [], leads = [], opportunities = [], updateProject, deleteProject } = useApp() || {};
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
