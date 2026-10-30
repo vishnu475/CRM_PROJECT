@@ -129,14 +129,27 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
           </button>
         </form>
 
-        <div className="mt-6 text-center text-sm text-slate-400">
-          Already have an account?{' '}
-          <button 
-            onClick={() => onNavigate('login')}
-            className="text-indigo-400 font-bold hover:text-indigo-300 transition-colors"
+        <div className="mt-6 text-center text-sm text-slate-400 flex items-center justify-center gap-1.5 flex-wrap">
+          <a
+            href="/login"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('login');
+            }}
+            className="text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+          >
+            Already have an account?
+          </a>
+          <a 
+            href="/login"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate('login');
+            }}
+            className="text-indigo-400 font-bold hover:text-indigo-300 transition-colors cursor-pointer"
           >
             Sign in
-          </button>
+          </a>
         </div>
       </div>
     </div>

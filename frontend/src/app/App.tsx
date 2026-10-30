@@ -30,7 +30,7 @@ const MainLayout: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8faff] text-slate-900 selection:bg-blue-100 selection:text-blue-900">
+    <div className="flex h-screen overflow-hidden bg-[#f8faff] dark:bg-[#0B0F19] text-slate-900 dark:text-slate-100 selection:bg-blue-100 selection:text-blue-900">
       {/* Navigation Sidebar */}
       <Sidebar />
 
@@ -40,7 +40,7 @@ const MainLayout: React.FC = () => {
         <Header />
 
         {/* View Surface */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
           {activeModule === 'dashboard' ? (
             <RoleDashboardContainer />
           ) : (
@@ -72,20 +72,22 @@ const AuthWrapper: React.FC = () => {
     setPath(targetPath);
   };
 
+  const normalizedPath = (path.endsWith('/') && path.length > 1) ? path.slice(0, -1) : path;
+
   // 1. Root & Public Marketing Pages (Landing / Home Page)
-  if (path === '/' || path === '' || path === '/landing' || path === '/home') {
+  if (normalizedPath === '/' || normalizedPath === '' || normalizedPath === '/landing' || normalizedPath === '/home') {
     return <LandingPage onNavigate={handleNavigate} />;
   }
 
-  if (path === '/login') {
+  if (normalizedPath === '/login' || normalizedPath === '/signin') {
     return <LoginPage onNavigate={handleNavigate} />;
   }
 
-  if (path === '/register') {
+  if (normalizedPath === '/register' || normalizedPath === '/signup') {
     return <RegisterPage onNavigate={handleNavigate} />;
   }
 
-  if (path === '/careers') {
+  if (normalizedPath === '/careers') {
     return <CareersPage onNavigate={handleNavigate} />;
   }
 

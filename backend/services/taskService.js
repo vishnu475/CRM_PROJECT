@@ -99,7 +99,7 @@ export class TaskService {
     
     // Check HRMS DB projects table
     let res = await pool.query(
-      `SELECT * FROM projects WHERE id = $1 OR project_id = $1 OR code = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
+      `SELECT * FROM projects WHERE id = $1 OR code = $1 OR project_id = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
       [queryTerm]
     );
     if (res.rows.length > 0) {
@@ -272,8 +272,8 @@ export class TaskService {
       )
       LEFT JOIN projects p ON (
         t.project_id = p.id 
-        OR t.project_id = p.project_id
         OR t.project_id = p.code
+        OR (p.project_id IS NOT NULL AND t.project_id = p.project_id)
       )
       WHERE 1=1
     `;
@@ -481,8 +481,8 @@ export class TaskService {
       )
       LEFT JOIN projects p ON (
         t.project_id = p.id 
-        OR t.project_id = p.project_id
         OR t.project_id = p.code
+        OR (p.project_id IS NOT NULL AND t.project_id = p.project_id)
       )
       WHERE t.id = $1`,
       [taskId]

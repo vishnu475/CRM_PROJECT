@@ -18,6 +18,7 @@ const ProjectsDeliveryView   = React.lazy(() => import('../../modules/projects/c
 const ReportsPage            = React.lazy(() => import('../../modules/reports/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const DocumentsPage          = React.lazy(() => import('../../modules/documents').then(m => ({ default: m.DocumentsPage })));
 const EmployeeWorkReportPage = React.lazy(() => import('../../modules/ess/pages/EmployeeWorkReportPage').then(m => ({ default: m.EmployeeWorkReportPage })));
+const HelpdeskPage           = React.lazy(() => import('../../modules/helpdesk/pages/HelpdeskPage').then(m => ({ default: m.HelpdeskPage })));
 
 // These share one chunk (friend_2 bundle) — still lazy to defer the large file
 const AdministrationPage = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.AdministrationPage })));
@@ -83,25 +84,7 @@ export const ModuleViews: React.FC = () => {
     case 'employee':       content = <EmployeeWorkReportPage />; break;
 
     case 'helpdesk':
-      content = (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Headphones className="text-rose-400" size={22} />
-            Helpdesk &amp; Support Tickets
-          </h1>
-          <div className="space-y-3">
-            {helpdeskTickets.map((tck) => (
-              <div key={tck.id} className="bg-white shadow-sm border border-slate-200 p-4 rounded-2xl flex justify-between items-center">
-                <div>
-                  <p className="font-bold text-[#0f172a] text-xs">{tck.ticketNo} - {tck.subject}</p>
-                  <p className="text-[10px] text-slate-500">{tck.customerName} • {tck.createdAt}</p>
-                </div>
-                <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 text-xs font-bold rounded-lg">{tck.status}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+      content = <HelpdeskPage />;
       break;
 
     case 'automation':

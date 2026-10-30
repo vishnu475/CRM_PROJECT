@@ -3,11 +3,11 @@ import { AuthService } from '../services/authService.js';
 
 const router = express.Router();
 
-// POST /api/auth/login and POST /api/auth/employee/login - Employee ID + PIN Authentication
+// POST /api/auth/login and POST /api/auth/employee/login - Employee ID + PIN Authentication with Role Verification
 const handleLogin = async (req, res) => {
-  const { employeeId, pin } = req.body;
+  const { employeeId, pin, role } = req.body;
   try {
-    const result = await AuthService.loginEmployee(employeeId, pin);
+    const result = await AuthService.loginEmployee(employeeId, pin, role);
     res.json({ success: true, ...result });
   } catch (err) {
     const statusCode = err.statusCode || 401;

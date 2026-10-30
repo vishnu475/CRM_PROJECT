@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../../context/AppContext';
-import { Building2, Globe, DollarSign, Calendar, FileText, CheckCircle2, Save, Sun, Moon } from 'lucide-react';
+import { Building2, Globe, DollarSign, Calendar, FileText, CheckCircle2, Save, Sun, Moon, Laptop } from 'lucide-react';
 import { OrganizationSystemSettings } from '../types';
 
 export const OrganizationRegionalSettings: React.FC = () => {
@@ -256,8 +256,9 @@ export const OrganizationRegionalSettings: React.FC = () => {
             <h3 className="text-sm font-bold text-slate-900">Interface Display Theme</h3>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs max-w-md">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs max-w-2xl">
             <button
+              id="theme-btn-light"
               type="button"
               onClick={() => setTheme('light')}
               className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer ${
@@ -279,6 +280,7 @@ export const OrganizationRegionalSettings: React.FC = () => {
             </button>
 
             <button
+              id="theme-btn-dark"
               type="button"
               onClick={() => setTheme('dark')}
               className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer ${
@@ -297,6 +299,28 @@ export const OrganizationRegionalSettings: React.FC = () => {
                 </div>
               </div>
               {theme === 'dark' && <CheckCircle2 size={16} className="text-emerald-400" />}
+            </button>
+
+            <button
+              id="theme-btn-system"
+              type="button"
+              onClick={() => setTheme('system')}
+              className={`p-4 rounded-xl border flex items-center justify-between transition cursor-pointer ${
+                theme === 'system'
+                  ? 'bg-indigo-50/70 border-indigo-500 text-indigo-900 dark:bg-slate-800 dark:border-indigo-400 dark:text-white'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-300 flex items-center justify-center text-slate-700">
+                  <Laptop size={18} />
+                </div>
+                <div className="text-left">
+                  <span className="font-bold block">System Theme</span>
+                  <span className="text-[11px] text-slate-500">Follows device OS preference</span>
+                </div>
+              </div>
+              {theme === 'system' && <CheckCircle2 size={16} className="text-indigo-600 dark:text-indigo-400" />}
             </button>
           </div>
         </div>

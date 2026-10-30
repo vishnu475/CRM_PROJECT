@@ -5,7 +5,7 @@ import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2 (users
 const JWT_SECRET = process.env.JWT_SECRET || 'crm_hrms_super_secret_jwt_key_2026';
 
 export class AuthService {
-  static async loginEmployee(employeeId, pin) {
+  static async loginEmployee(employeeId, pin, requestedRole = null) {
     if (!employeeId || pin === undefined || pin === null || String(pin).trim() === '') {
       const err = new Error('Employee ID and PIN/password are required.');
       err.statusCode = 400;
@@ -94,19 +94,46 @@ export class AuthService {
       throw err;
     }
 
-    // 5. Determine user role & permissions from employee record
+    // 5. Determine actual user role from employee record
     const designation = employee.designation || '';
-    const role = (designation.includes('Director') || designation.includes('VP') || designation.includes('Admin')) ? 'Executive' 
+    const actualRole = (designation.includes('Director') || designation.includes('VP') || designation.includes('Admin')) ? 'Executive' 
       : employee.department === 'HR' ? 'HRAdmin'
       : employee.department === 'Sales' ? 'SalesExecutive'
       : 'Employee';
+
+    // 6. Security verification: Ensure requested role is compatible with verified account permissions
+    let role = actualRole;
+    if (requestedRole !== undefined && requestedRole !== null && String(requestedRole).trim() !== '') {
+      const normalizedReq = String(requestedRole).trim();
+      const isExecutiveRequested = 
+        normalizedReq === 'Executive' || 
+        normalizedReq === 'Super Admin' || 
+        normalizedReq === 'SuperAdmin' ||
+        normalizedReq === 'Executive / Super Admin';
+
+      if (isExecutiveRequested) {
+        if (actualRole !== 'Executive' && actualRole !== 'HRAdmin') {
+          const err = new Error('This account does not have Executive / Super Admin privileges.');
+          err.statusCode = 403;
+          throw err;
+        }
+        role = actualRole === 'HRAdmin' ? 'HRAdmin' : 'Executive';
+      } else if (normalizedReq === 'Employee') {
+        // Both standard employees and executives can access Employee Self-Service (ESS)
+        role = 'Employee';
+      } else if (normalizedReq !== actualRole && actualRole !== 'Executive') {
+        const err = new Error('This account is not authorized for the selected role.');
+        err.statusCode = 403;
+        throw err;
+      }
+    }
 
     const permissions = ['attendance.read', 'attendance.mark', 'profile.read'];
     if (role === 'Executive' || role === 'HRAdmin') {
       permissions.push('hrms.all', 'attendance.all', 'payroll.all', 'finance.all');
     }
 
-    // Generate JWT token
+    // Generate JWT token with verified server-side role and permissions
     const token = jwt.sign(
       {
         id: employee.id,

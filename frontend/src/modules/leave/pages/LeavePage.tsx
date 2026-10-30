@@ -11,6 +11,8 @@ import { DynamicLeaveBalanceCards } from '../components/DynamicLeaveBalanceCards
 import { LeaveTypeMasterManager } from '../components/LeaveTypeMasterManager';
 import { EncashmentCompOffView } from '../components/EncashmentCompOffView';
 import { ExtendedLeaveRequest, DynamicLeaveBalance, LeaveRequestStatus, LeaveTypeCategory } from '../types';
+import { LeaveAPI } from '../../../services/apiService';
+import { getOfficialHolidays, formatHolidayDisplayDate, getDayOfWeekForDate, HolidayRecord } from '../../attendance/utils/attendanceCalculator';
 
 export const LeavePage: React.FC = () => {
   const { employees, activeSubSection, setActiveSubSection } = useApp();
@@ -36,9 +38,48 @@ export const LeavePage: React.FC = () => {
   // LEAVE REQUESTS STATE
   const [leaveRequests, setLeaveRequests] = useState<ExtendedLeaveRequest[]>([]);
 
+  // HOLIDAYS CALENDAR STATE (BUG-108)
+  const [holidayYear, setHolidayYear] = useState<number>(2026);
+  const [holidayCategory, setHolidayCategory] = useState<string>('All');
+  const [holidaySearchQuery, setHolidaySearchQuery] = useState<string>('');
+  const [holidaysList, setHolidaysList] = useState<HolidayRecord[]>(() => getOfficialHolidays(2026));
+  const [isHolidaysLoading, setIsHolidaysLoading] = useState<boolean>(false);
+
   React.useEffect(() => {
     fetchLeaveRequestsFromDB();
   }, []);
+
+  React.useEffect(() => {
+    if (mainTab === 'holidays') {
+      fetchHolidays(holidayYear, holidayCategory);
+    }
+  }, [mainTab, holidayYear, holidayCategory]);
+
+  const fetchHolidays = async (year: number, category: string) => {
+    setIsHolidaysLoading(true);
+    try {
+      const res = await LeaveAPI.getHolidays({ year, type: category });
+      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+        const mapped: HolidayRecord[] = res.data.map((item: any) => ({
+          id: item.id || `HOL-${item.date}`,
+          name: item.name || item.title,
+          date: item.date,
+          day: item.day || getDayOfWeekForDate(item.date),
+          type: (item.type || (item.is_mandatory ? 'Gazetted' : 'Restricted')) as any,
+          isMandatory: item.is_mandatory !== undefined ? Boolean(item.is_mandatory) : item.type === 'Gazetted',
+          description: item.description || ''
+        }));
+        setHolidaysList(mapped);
+      } else {
+        setHolidaysList(getOfficialHolidays(year, category));
+      }
+    } catch {
+      // Fallback gracefully to offline official catalog
+      setHolidaysList(getOfficialHolidays(year, category));
+    } finally {
+      setIsHolidaysLoading(false);
+    }
+  };
 
   const fetchLeaveRequestsFromDB = async () => {
     try {
@@ -301,29 +342,173 @@ export const LeavePage: React.FC = () => {
           <CalendarDays size={14} /> Leave Requests Portal
         </button>
         <button
+          id="tab-btn-holidays"
           onClick={() => setMainTab('holidays')}
           className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors flex items-center gap-2 ${
             mainTab === 'holidays' ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
-          <CalendarIcon size={14} /> Public Holidays 2026
+          <CalendarIcon size={14} /> {`Public Holidays ${holidayYear}`}
         </button>
       </div>
 
       {/* TAB: PUBLIC HOLIDAYS */}
-      {mainTab === 'holidays' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {holidays.map((h, i) => (
-            <div key={i} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-slate-900">{h.name}</span>
-                <Badge variant="neutral">{h.type}</Badge>
+      {mainTab === 'holidays' && (() => {
+        // De-duplicate by calendar date to strictly prevent duplicates
+        const uniqueHolidays = holidaysList.filter((h, idx, arr) => arr.findIndex(item => item.date === h.date) === idx);
+        const filteredHolidays = uniqueHolidays.filter(h => {
+          if (!holidaySearchQuery.trim()) return true;
+          const q = holidaySearchQuery.toLowerCase();
+          return h.name.toLowerCase().includes(q) || (h.description && h.description.toLowerCase().includes(q));
+        });
+
+        const totalCount = uniqueHolidays.length;
+        const gazettedCount = uniqueHolidays.filter(h => h.type === 'Gazetted' || h.isMandatory).length;
+        const restrictedCount = uniqueHolidays.filter(h => h.type === 'Restricted' && !h.isMandatory).length;
+        const companyCount = uniqueHolidays.filter(h => h.type === 'Company').length;
+
+        return (
+          <div className="space-y-4">
+            {/* KPI Summary Cards Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Total Holidays ({holidayYear})</span>
+                <span id="total-holidays-count" className="text-xl font-extrabold text-slate-900 mt-1 block">{totalCount}</span>
+                <span className="text-[10px] text-slate-400">Official Calendar Days</span>
               </div>
-              <p className="text-xs text-amber-600 font-bold">{h.date} ({h.day})</p>
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-amber-500">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Gazetted (Mandatory)</span>
+                <span id="gazetted-holidays-count" className="text-xl font-extrabold text-amber-700 mt-1 block">{gazettedCount}</span>
+                <span className="text-[10px] text-amber-600">Statutory Paid Leave Days</span>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-sky-500">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Restricted / Optional</span>
+                <span id="optional-holidays-count" className="text-xl font-extrabold text-sky-700 mt-1 block">{restrictedCount}</span>
+                <span className="text-[10px] text-sky-600">Employee Opt-in Days</span>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm border-l-4 border-l-purple-500">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Company Specific</span>
+                <span id="company-holidays-count" className="text-xl font-extrabold text-purple-700 mt-1 block">{companyCount}</span>
+                <span className="text-[10px] text-purple-600">Corporate Observances</span>
+              </div>
             </div>
-          ))}
-        </div>
-      )}
+
+            {/* Filter and Search Controls Toolbar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs">
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Year Selector */}
+                <div className="flex items-center gap-1.5 font-semibold text-slate-700">
+                  <span>Year:</span>
+                  <select
+                    id="holiday-year-select"
+                    aria-label="Filter holidays by calendar year"
+                    value={holidayYear}
+                    onChange={(e) => setHolidayYear(Number(e.target.value))}
+                    className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value={2025}>2025 (Historical)</option>
+                    <option value={2026}>2026 (Current Active)</option>
+                    <option value={2027}>2027 (Upcoming)</option>
+                  </select>
+                </div>
+
+                {/* Category Selector */}
+                <div className="flex items-center gap-1.5 font-semibold text-slate-700">
+                  <span>Category:</span>
+                  <select
+                    id="holiday-category-select"
+                    aria-label="Filter holidays by category"
+                    value={holidayCategory}
+                    onChange={(e) => setHolidayCategory(e.target.value)}
+                    className="px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value="All">All Categories ({uniqueHolidays.length})</option>
+                    <option value="Gazetted">Gazetted (Mandatory) ({gazettedCount})</option>
+                    <option value="Restricted">Restricted / Optional ({restrictedCount})</option>
+                    <option value="Company">Company Observances ({companyCount})</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
+                <input
+                  id="holiday-search-input"
+                  aria-label="Search holidays by name"
+                  type="text"
+                  placeholder="Search holiday name..."
+                  value={holidaySearchQuery}
+                  onChange={(e) => setHolidaySearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+
+            {/* Holiday Cards Grid */}
+            {isHolidaysLoading ? (
+              <div className="bg-white p-12 text-center rounded-xl border border-slate-200 text-slate-400 text-xs">
+                Loading official holiday calendar...
+              </div>
+            ) : filteredHolidays.length === 0 ? (
+              <div className="bg-white p-12 text-center rounded-xl border border-slate-200 space-y-2">
+                <CalendarIcon className="mx-auto text-slate-300" size={32} />
+                <p className="text-xs font-semibold text-slate-600">No holidays found for this selection.</p>
+                <p className="text-[11px] text-slate-400">Try adjusting the year or category filter.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredHolidays.map((h) => {
+                  const dayName = h.day || getDayOfWeekForDate(h.date);
+                  const formattedDate = formatHolidayDisplayDate(h.date);
+                  const isGazetted = h.type === 'Gazetted' || h.isMandatory;
+                  const isCompany = h.type === 'Company';
+
+                  return (
+                    <div
+                      key={h.date}
+                      id={`holiday-card-${h.date}`}
+                      className="bg-white p-5 rounded-xl border border-slate-200 hover:border-amber-300 hover:shadow-md transition-all space-y-2 relative"
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-sm font-bold text-slate-900 leading-snug">{h.name}</span>
+                        <Badge
+                          variant={isGazetted ? 'neutral' : isCompany ? 'info' : 'warning'}
+                          className={
+                            isGazetted
+                              ? 'bg-amber-100 text-amber-800 border-amber-200'
+                              : isCompany
+                              ? 'bg-purple-100 text-purple-800 border-purple-200'
+                              : 'bg-sky-100 text-sky-800 border-sky-200'
+                          }
+                        >
+                          {h.type}
+                        </Badge>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs font-bold text-amber-600">
+                        <CalendarIcon size={13} className="text-amber-500 shrink-0" />
+                        <span>{formattedDate} ({dayName})</span>
+                      </div>
+
+                      {h.description && (
+                        <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                          {h.description}
+                        </p>
+                      )}
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                        <span>{isGazetted ? '● Mandatory Paid Holiday' : isCompany ? '● Company Holiday' : '○ Optional Day'}</span>
+                        <span className="font-mono">{h.date}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* TAB: LEAVE REQUESTS PORTAL */}
       {mainTab === 'requests' && (

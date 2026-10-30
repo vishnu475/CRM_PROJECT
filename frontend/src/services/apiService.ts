@@ -109,6 +109,12 @@ export const LeaveAPI = {
     request('PATCH', `/leave/requests/${id}/approve`, { approvedBy, comments }),
   reject: (id: string, rejectedBy: string, reason: string) =>
     request('PATCH', `/leave/requests/${id}/reject`, { rejectedBy, reason }),
+  getHolidays: (filters?: { year?: number | string; type?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.year) params.set('year', String(filters.year));
+    if (filters?.type && filters.type !== 'All') params.set('type', filters.type);
+    return request('GET', `/leave/holidays?${params.toString()}`);
+  },
 };
 
 // ────────────────────────────────────────────────────────────
@@ -197,10 +203,28 @@ export const HealthAPI = {
 // CRM — LEADS
 // ────────────────────────────────────────────────────────────
 export const LeadsAPI = {
-  getAll: (filters?: { stage?: string; source?: string }) => {
+  getAll: (filters?: {
+    stage?: string;
+    source?: string;
+    assignedTo?: string;
+    search?: string;
+    q?: string;
+    minScore?: number;
+    maxScore?: number;
+    minValue?: number;
+    maxValue?: number;
+    status?: string;
+  }) => {
     const params = new URLSearchParams();
-    if (filters?.stage)  params.set('stage', filters.stage);
-    if (filters?.source) params.set('source', filters.source);
+    if (filters?.stage && filters.stage !== 'All') params.set('stage', filters.stage);
+    if (filters?.source && filters.source !== 'All') params.set('source', filters.source);
+    if (filters?.assignedTo && filters.assignedTo !== 'All') params.set('assignedTo', filters.assignedTo);
+    if (filters?.search || filters?.q) params.set('search', filters?.search || filters?.q || '');
+    if (filters?.minScore !== undefined) params.set('minScore', String(filters.minScore));
+    if (filters?.maxScore !== undefined) params.set('maxScore', String(filters.maxScore));
+    if (filters?.minValue !== undefined) params.set('minValue', String(filters.minValue));
+    if (filters?.maxValue !== undefined) params.set('maxValue', String(filters.maxValue));
+    if (filters?.status && filters.status !== 'All') params.set('status', filters.status);
     return request('GET', `/leads?${params.toString()}`);
   },
   getById: (id: string) => request('GET', `/leads/${id}`),
@@ -328,6 +352,8 @@ export const QuotationsAPI = {
   create: (data: any) => request('POST', '/quotations', data),
   update: (id: string, data: any) => request('PATCH', `/quotations/${id}`, data),
   delete: (id: string) => request('DELETE', `/quotations/${id}`),
+  send: (id: string, options?: { recipientEmail?: string; forceResend?: boolean }) =>
+    request('POST', `/quotations/${id}/send`, options),
 };
 
 // ────────────────────────────────────────────────────────────
@@ -392,7 +418,14 @@ export const CRMProductsAPI = {
 // CRM — VENDORS
 // ────────────────────────────────────────────────────────────
 export const VendorsAPI = {
-  getAll:  () => request('GET', '/vendors'),
+  getAll:  (filters?: { status?: string; search?: string; dedupe?: boolean }) => {
+    const params = new URLSearchParams();
+    if (filters?.status && filters.status !== 'All') params.set('status', filters.status);
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.dedupe) params.set('dedupe', 'true');
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/vendors${query}`);
+  },
   getById: (id: string) => request('GET', `/vendors/${id}`),
   create:  (data: any)  => request('POST', '/vendors', data),
   update:  (id: string, data: any) => request('PATCH', `/vendors/${id}`, data),
@@ -445,3 +478,23 @@ export const ProjectsAPI = {
 
 
 
+
+// ────────────────────────────────────────────────────────────
+// HELPDESK & SUPPORT TICKETS
+// ────────────────────────────────────────────────────────────
+export const HelpdeskAPI = {
+  getAll: (filters?: { status?: string; priority?: string; category?: string; search?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.priority) params.set('priority', filters.priority);
+    if (filters?.category) params.set('category', filters.category);
+    if (filters?.search) params.set('search', filters.search);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return request('GET', `/helpdesk${query}`);
+  },
+  getSummary: () => request('GET', '/helpdesk/summary'),
+  getById: (id: string) => request('GET', `/helpdesk/${id}`),
+  create: (data: any) => request('POST', '/helpdesk', data),
+  update: (id: string, data: any) => request('PUT', `/helpdesk/${id}`, data),
+  delete: (id: string) => request('DELETE', `/helpdesk/${id}`),
+};

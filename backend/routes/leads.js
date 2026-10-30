@@ -119,26 +119,101 @@ router.delete('/upload-attachment/:filename', async (req, res) => {
 // GET /api/leads — Fetch all leads from CRM database
 router.get('/', async (req, res) => {
   try {
-    const { stage, source, assignedTo } = req.query;
-    let query = `SELECT * FROM leads WHERE 1=1`;
+    const { stage, source, assignedTo, search, q, minScore, maxScore, minValue, maxValue, status } = req.query;
+    let query = `
+      SELECT 
+        l.*,
+        q.id AS latest_quotation_id,
+        q.quote_number AS latest_quotation_number,
+        q.status AS latest_quotation_status,
+        q.amount AS latest_quotation_amount,
+        q.revision_number AS latest_quotation_revision,
+        q.sent_date AS latest_quotation_sent_date,
+        q.date AS latest_quotation_date,
+        so.id AS linked_sales_order_id,
+        so.so_number AS linked_sales_order_number
+      FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT q1.id, q1.quote_number, q1.status, q1.amount, q1.revision_number, q1.sent_date, q1.date
+        FROM quotations q1
+        WHERE q1.lead_id = l.id
+        ORDER BY q1.created_at DESC, q1.revision_number DESC
+        LIMIT 1
+      ) q ON true
+      LEFT JOIN LATERAL (
+        SELECT so1.id, so1.so_number
+        FROM sales_orders so1
+        WHERE so1.quotation_id = q.id
+        LIMIT 1
+      ) so ON true
+      WHERE 1=1
+    `;
     const params = [];
 
+    // 1. Stage filter (case-insensitive and trimmed)
     if (stage && stage !== 'All') {
-      params.push(stage);
-      query += ` AND stage = $${params.length}`;
-    }
-    if (source && source !== 'All') {
-      params.push(source);
-      query += ` AND source = $${params.length}`;
-    }
-    if (assignedTo) {
-      params.push(assignedTo);
-      query += ` AND (assigned_to = $${params.length} OR assigned_to_employee_id = $${params.length})`;
+      params.push(stage.trim());
+      query += ` AND l.stage ILIKE $${params.length}`;
     }
 
-    query += ` ORDER BY created_at DESC`;
+    // 2. Source filter (case-insensitive and trimmed)
+    if (source && source !== 'All') {
+      params.push(source.trim());
+      query += ` AND l.source ILIKE $${params.length}`;
+    }
+
+    // 3. Assigned owner filter (by employee code/id or name)
+    if (assignedTo && assignedTo !== 'All') {
+      params.push(assignedTo.trim());
+      query += ` AND (l.assigned_to ILIKE $${params.length} OR l.assigned_to_employee_id ILIKE $${params.length})`;
+    }
+
+    // 4. Multi-field search (name, company, email, phone, contact_person, assigned_to, source, requirement)
+    const rawSearch = (search || q || '').trim();
+    if (rawSearch) {
+      params.push(`%${rawSearch}%`);
+      const pIdx = params.length;
+      query += ` AND (
+        l.name ILIKE $${pIdx} OR 
+        l.company ILIKE $${pIdx} OR 
+        l.email ILIKE $${pIdx} OR 
+        l.phone ILIKE $${pIdx} OR 
+        l.contact_person ILIKE $${pIdx} OR 
+        l.assigned_to ILIKE $${pIdx} OR 
+        l.source ILIKE $${pIdx} OR 
+        l.requirement ILIKE $${pIdx}
+      )`;
+    }
+
+    // 5. Score range filters
+    if (minScore !== undefined && minScore !== '') {
+      params.push(Number(minScore));
+      query += ` AND l.score >= $${params.length}`;
+    }
+    if (maxScore !== undefined && maxScore !== '') {
+      params.push(Number(maxScore));
+      query += ` AND l.score <= $${params.length}`;
+    }
+
+    // 6. Deal value range filters
+    if (minValue !== undefined && minValue !== '') {
+      params.push(Number(minValue));
+      query += ` AND l.value >= $${params.length}`;
+    }
+    if (maxValue !== undefined && maxValue !== '') {
+      params.push(Number(maxValue));
+      query += ` AND l.value <= $${params.length}`;
+    }
+
+    // 7. Status filter (handle active vs archived)
+    if (status && status !== 'All') {
+      params.push(status.trim());
+      query += ` AND l.status ILIKE $${params.length}`;
+    }
+
+    query += ` ORDER BY l.created_at DESC`;
     const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows });
+    res.json({ success: true, data: result.rows, total: result.rows.length });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -147,7 +222,34 @@ router.get('/', async (req, res) => {
 // GET /api/leads/:id — Fetch single lead
 router.get('/:id', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    const result = await pool.query(`
+      SELECT 
+        l.*,
+        q.id AS latest_quotation_id,
+        q.quote_number AS latest_quotation_number,
+        q.status AS latest_quotation_status,
+        q.amount AS latest_quotation_amount,
+        q.revision_number AS latest_quotation_revision,
+        q.sent_date AS latest_quotation_sent_date,
+        q.date AS latest_quotation_date,
+        so.id AS linked_sales_order_id,
+        so.so_number AS linked_sales_order_number
+      FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT q1.id, q1.quote_number, q1.status, q1.amount, q1.revision_number, q1.sent_date, q1.date
+        FROM quotations q1
+        WHERE q1.lead_id = l.id
+        ORDER BY q1.created_at DESC, q1.revision_number DESC
+        LIMIT 1
+      ) q ON true
+      LEFT JOIN LATERAL (
+        SELECT so1.id, so1.so_number
+        FROM sales_orders so1
+        WHERE so1.quotation_id = q.id
+        LIMIT 1
+      ) so ON true
+      WHERE l.id = $1
+    `, [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {

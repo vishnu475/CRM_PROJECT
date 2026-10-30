@@ -108,7 +108,7 @@ export interface Lead {
   email: string;
   phone: string;
   value: number;
-  stage: 'New' | 'Contacted' | 'Qualified' | 'Won' | 'Lost';
+  stage: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Negotiation' | 'Won' | 'Lost' | (string & {});
   score: number;
   source: string;
   assignedTo: string;
@@ -129,6 +129,15 @@ export interface Lead {
   proposalDate?: string;
   proposalStatus?: 'Draft' | 'Sent' | 'Accepted' | 'Revised';
   proposalSentDate?: string;
+  latestQuotationId?: string;
+  latestQuotationNumber?: string;
+  latestQuotationStatus?: QuotationStatus;
+  latestQuotationAmount?: number;
+  latestQuotationRevision?: number;
+  latestQuotationSentDate?: string;
+  latestQuotationDate?: string;
+  linkedSalesOrderId?: string;
+  linkedSalesOrderNumber?: string;
   finalAgreedAmount?: number;
   wonDate?: string;
   dealClosedNotes?: string;
@@ -312,6 +321,8 @@ export interface QuotationItem {
   unitPrice: number;
   taxRate: number;
   total: number;
+  scope?: string;
+  mode?: 'catalog' | 'custom';
 }
 
 export type QuotationStatus = 'Draft' | 'Sent' | 'Revision Requested' | 'Revised' | 'Accepted' | 'Approved' | 'Rejected' | 'Expired';
@@ -792,15 +803,29 @@ export interface Task {
   dueDate: string;
 }
 
+export interface HelpdeskTicketHistoryItem {
+  id?: string;
+  action: string;
+  author: string;
+  timestamp: string;
+  note?: string;
+}
+
 export interface HelpdeskTicket {
   id: string;
   ticketNo: string;
   subject: string;
   customerName: string;
+  customerId?: string;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   status: 'Open' | 'In Progress' | 'Resolved' | 'Closed';
   assignedAgent: string;
+  category?: string;
+  description?: string;
+  resolutionNotes?: string;
   createdAt: string;
+  updatedAt?: string;
+  history?: HelpdeskTicketHistoryItem[];
 }
 
 export interface DocumentFile {

@@ -36,7 +36,17 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'notes', path: '/crm/notes', label: 'Notes' },
     ]
   },
-  { id: 'customers', path: '/customers', label: 'Customers & Account Ledger' },
+  {
+    id: 'customers',
+    path: '/customers',
+    label: 'Customers & Account Ledger',
+    defaultSubSection: 'list',
+    subSections: [
+      { id: 'list', path: '/customers/list', label: 'Customers' },
+      { id: 'add-customer', path: '/customers/add-customer', label: 'Add Customer' },
+      { id: 'customer-details', path: '/customers/customer-details', label: 'Customer Details' },
+    ]
+  },
   { id: 'sales', path: '/sales', label: 'Sales Orders & Invoicing' },
   { id: 'vendors', path: '/vendors', label: 'Vendors & Procurement' },
   { id: 'purchases', path: '/purchases', label: 'Purchase Orders & Bills' },

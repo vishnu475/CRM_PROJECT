@@ -32,6 +32,7 @@ import { ReceiveGoodsModal } from '../components/ReceiveGoodsModal';
 import { PurchaseOrderDetailsModal } from '../components/PurchaseOrderDetailsModal';
 import { CreateVendorInvoiceModal } from '../components/CreateVendorInvoiceModal';
 import { RecordPurchasePaymentModal } from '../components/RecordPurchasePaymentModal';
+import { getEligibleVendorsForDropdown, formatVendorDropdownLabel, isSameVendorEntity } from '../../vendors/utils/vendorDropdownUtils';
 
 export const PurchasesPage: React.FC = () => {
   const { purchaseOrders, vendors, updatePurchaseOrder } = useApp();
@@ -164,6 +165,11 @@ export const PurchasesPage: React.FC = () => {
     }
   };
 
+  // Deduplicated eligible vendors for procurement filter dropdown
+  const filterVendors = useMemo(() => {
+    return getEligibleVendorsForDropdown(vendors);
+  }, [vendors]);
+
   // Filtered List
   const filteredOrders = useMemo(() => {
     return purchaseOrders.filter(po => {
@@ -171,9 +177,20 @@ export const PurchasesPage: React.FC = () => {
       if (selectedStatusTab !== 'All' && po.status !== selectedStatusTab) {
         return false;
       }
-      // Vendor filter
-      if (vendorFilter !== 'All' && (po.vendor_id !== vendorFilter && po.vendorId !== vendorFilter)) {
-        return false;
+      // Vendor filter (matches exact vendor_id or associated business entity)
+      if (vendorFilter !== 'All') {
+        const selectedV = filterVendors.find(v => v.id === vendorFilter);
+        const matchesId = po.vendor_id === vendorFilter || po.vendorId === vendorFilter;
+        const matchesEntity = selectedV && isSameVendorEntity(selectedV, {
+          id: po.vendor_id || po.vendorId || '',
+          name: po.vendor_name || po.vendorName || '',
+          gstin: (po as any).vendor_gstin || (po as any).gstin || '',
+          email: (po as any).vendor_email || (po as any).email || '',
+        } as any);
+
+        if (!matchesId && !matchesEntity) {
+          return false;
+        }
       }
       // Receipt filter
       const rStatus = po.receiptStatus || po.receipt_status || 'Not Received';
@@ -382,14 +399,15 @@ export const PurchasesPage: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             {/* Vendor Filter */}
             <select
+              id="po-vendor-filter"
               value={vendorFilter}
               onChange={e => setVendorFilter(e.target.value)}
               className="px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium text-slate-700"
             >
               <option value="All">All Vendors</option>
-              {vendors.map(v => (
+              {filterVendors.map(v => (
                 <option key={v.id} value={v.id}>
-                  {v.name}
+                  {formatVendorDropdownLabel(v, filterVendors, { includeCodeAlways: false })}
                 </option>
               ))}
             </select>

@@ -13,7 +13,18 @@
     "migrate": "node setup_hrms.js && node setup_crm.js",
     "db:migrate": "node setup_hrms.js && node setup_crm.js",
     "db:setup": "node setup_hrms.js && node setup_crm.js",
-    "db:seed": "node setup_hrms.js && node setup_crm.js"
+    "db:seed": "node setup_hrms.js && node setup_crm.js",
+    "test": "node tests/run_all_tests.js",
+    "test:all": "node tests/run_all_tests.js",
+    "test:unit": "node tests/01_unit_testing_suite.js",
+    "test:integration": "node tests/02_integration_testing_suite.js",
+    "test:uat": "node tests/03_acceptance_uat_testing_suite.js",
+    "test:smoke": "node tests/04_smoke_testing_suite.js",
+    "test:sanity": "node tests/05_sanity_testing_suite.js",
+    "test:regression": "node tests/06_regression_testing_suite.js",
+    "test:e2e": "node tests/07_e2e_testing_suite.js",
+    "test:component": "node tests/08_component_testing_suite.js",
+    "test:interface": "node tests/09_interface_testing_suite.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -5,7 +5,7 @@ import { formatINR } from '../../crm/utils/crmUtils';
 import { 
   TrendingUp, Plus, Search, FileText, ShoppingCart, CheckCircle2, 
   ChevronRight, RefreshCw, Send, Check, Eye, MoreVertical,
-  Receipt, DollarSign, ArrowRight, Tag
+  Receipt, DollarSign, ArrowRight, Tag, Loader2, User
 } from 'lucide-react';
 import { QuotationModal } from '../components/QuotationModal';
 import { SalesOrderModal } from '../components/SalesOrderModal';
@@ -14,11 +14,13 @@ import { CRM_LOST_REASONS } from '../../crm/utils/leadWorkflowValidation';
 
 export const SalesPage: React.FC = () => {
   const { 
+    leads,
     quotations, 
     salesOrders, 
     invoices, 
     updateQuotation, 
     deleteQuotation,
+    sendQuotation,
     updateSalesOrder,
     deleteSalesOrder,
     updateInvoice,
@@ -37,6 +39,8 @@ export const SalesPage: React.FC = () => {
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [isRevisionMode, setIsRevisionMode] = useState(false);
+  const [initialLeadIdForQuote, setInitialLeadIdForQuote] = useState<string | undefined>(undefined);
+  const [isDefinitiveLoss, setIsDefinitiveLoss] = useState(false);
 
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [selectedQuoteForOrder, setSelectedQuoteForOrder] = useState<Quotation | null>(null);
@@ -120,12 +124,19 @@ export const SalesPage: React.FC = () => {
     });
   }, [invoices, invoiceStatusFilter, searchTerm]);
 
+  const [sendingQuoteId, setSendingQuoteId] = useState<string | null>(null);
+
   // Quotation Workflow Action Handlers
   const handleSendQuote = async (quote: Quotation) => {
-    await updateQuotation(quote.id, {
-      status: 'Sent',
-      sentDate: new Date().toISOString().split('T')[0],
-    });
+    if (sendingQuoteId) return;
+    setSendingQuoteId(quote.id);
+    try {
+      await sendQuotation(quote.id);
+    } catch (err: any) {
+      alert(err.message || 'Failed to dispatch quotation email.');
+    } finally {
+      setSendingQuoteId(null);
+    }
   };
 
   const handleAcceptQuote = async (quote: Quotation) => {
@@ -148,44 +159,54 @@ export const SalesPage: React.FC = () => {
   };
 
   const handleRejectQuote = async (quote: Quotation) => {
-    if (quote.leadId || (quote as any).lead_id) {
-      setRejectionModalQuote(quote);
-      setRejectReason('Price / Budget Constraints');
-      setRejectReasonDetails('');
-      setRejectNotes('');
-    } else if (window.confirm(`Mark quotation ${quote.quoteNumber} as Rejected?`)) {
-      await updateQuotation(quote.id, {
-        status: 'Rejected',
-      });
-    }
+    setRejectionModalQuote(quote);
+    setIsDefinitiveLoss(false);
+    setRejectReason('Customer chose competitor');
+    setRejectReasonDetails('');
+    setRejectNotes('');
   };
 
   const handleConfirmRejectQuote = async () => {
     if (!rejectionModalQuote) return;
-    const reason = rejectReason.trim();
-    if (!reason) {
-      alert('Please select a Lost Reason.');
-      return;
-    }
-    if (reason === 'Other' && !rejectReasonDetails.trim() && !rejectNotes.trim()) {
-      alert('Please provide a custom explanation when selecting "Other" as the Lost Reason.');
-      return;
-    }
-    if (!rejectNotes.trim()) {
-      alert('Please provide Lost Notes/Comments explaining why this deal was lost.');
-      return;
-    }
 
-    try {
-      await updateQuotation(rejectionModalQuote.id, {
-        status: 'Rejected',
-        lostReason: reason,
-        lostReasonDetails: rejectReasonDetails.trim(),
-        lostNotes: rejectNotes.trim(),
-      } as any);
-      setRejectionModalQuote(null);
-    } catch (err: any) {
-      // Handled inside AppContext
+    if (isDefinitiveLoss) {
+      const reason = rejectReason.trim();
+      if (!reason) {
+        alert('Please select a Lost Reason.');
+        return;
+      }
+      if (reason === 'Other' && !rejectReasonDetails.trim() && !rejectNotes.trim()) {
+        alert('Please provide a custom explanation when selecting "Other" as the Lost Reason.');
+        return;
+      }
+      if (!rejectNotes.trim()) {
+        alert('Please provide Lost Notes/Comments explaining why this deal was lost.');
+        return;
+      }
+
+      try {
+        await updateQuotation(rejectionModalQuote.id, {
+          status: 'Rejected',
+          isDefinitiveLoss: true,
+          lostReason: reason,
+          lostReasonDetails: rejectReasonDetails.trim(),
+          lostNotes: rejectNotes.trim(),
+        } as any);
+        setRejectionModalQuote(null);
+      } catch (err: any) {
+        // Handled inside AppContext
+      }
+    } else {
+      // Non-definitive quotation rejection: lead remains open in Qualified stage
+      try {
+        await updateQuotation(rejectionModalQuote.id, {
+          status: 'Rejected',
+          isDefinitiveLoss: false,
+        } as any);
+        setRejectionModalQuote(null);
+      } catch (err: any) {
+        // Handled inside AppContext
+      }
     }
   };
 
@@ -502,9 +523,15 @@ export const SalesPage: React.FC = () => {
 
                           <td className="py-3 px-3">
                             <div className="font-semibold text-slate-900">{quote.customerName}</div>
+                            {quote.leadId && (
+                              <div className="text-[11px] text-indigo-600 font-semibold flex items-center gap-1 mt-0.5">
+                                <User size={11} className="text-indigo-500 shrink-0" />
+                                <span>Lead: {leads.find(l => l.id === quote.leadId)?.name || quote.leadId}</span>
+                              </div>
+                            )}
                             {quote.opportunityId && (
                               <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                <Tag size={10} className="text-slate-400" /> Opp: {quote.opportunityId}
+                                <Tag size={10} className="text-slate-400 shrink-0" /> Opp: {quote.opportunityId}
                               </div>
                             )}
                           </td>
@@ -534,9 +561,18 @@ export const SalesPage: React.FC = () => {
                             {quote.status === 'Draft' && (
                               <button
                                 onClick={() => handleSendQuote(quote)}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1.5 w-full shadow-xs"
+                                disabled={sendingQuoteId === quote.id}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1.5 w-full shadow-xs disabled:opacity-60"
                               >
-                                <Send size={13} /> Send Quotation
+                                {sendingQuoteId === quote.id ? (
+                                  <>
+                                    <Loader2 size={13} className="animate-spin" /> Sending...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send size={13} /> Send Quotation
+                                  </>
+                                )}
                               </button>
                             )}
 
@@ -957,9 +993,10 @@ export const SalesPage: React.FC = () => {
       {/* MODALS */}
       <QuotationModal
         isOpen={showQuoteModal}
-        onClose={() => { setShowQuoteModal(false); setEditingQuotation(null); setIsRevisionMode(false); }}
+        onClose={() => { setShowQuoteModal(false); setEditingQuotation(null); setIsRevisionMode(false); setInitialLeadIdForQuote(undefined); }}
         quotationToEdit={editingQuotation}
         isRevisionMode={isRevisionMode}
+        initialLeadId={initialLeadIdForQuote}
       />
 
       <SalesOrderModal
@@ -974,63 +1011,100 @@ export const SalesPage: React.FC = () => {
         salesOrder={selectedOrderForInvoice}
       />
 
-      {/* Rejection Modal for Lead-linked Quotation */}
+      {/* Rejection Modal for Quotations with CRM Sync Options */}
       {rejectionModalQuote && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl border border-slate-200">
-            <h3 className="text-sm font-bold text-slate-900 mb-1">Reject Quotation & Mark Lead Lost</h3>
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl border border-slate-200">
+            <h3 className="text-sm font-bold text-slate-900 mb-1">Reject Quotation ({rejectionModalQuote.quoteNumber})</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Quotation <span className="font-semibold text-slate-800">{rejectionModalQuote.quoteNumber}</span> is linked to a CRM Lead. Specify the Lost Reason and Notes to proceed.
+              Select how this quotation rejection affects the sales workflow and linked CRM lead.
             </p>
 
-            <div className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Lost Reason <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none bg-white"
-                >
-                  {CRM_LOST_REASONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Workflow Mode Selector */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-3 mb-4">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="lossType"
+                  checked={!isDefinitiveLoss}
+                  onChange={() => setIsDefinitiveLoss(false)}
+                  className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900 text-xs block">Reject Quotation Only (Negotiation Continues)</span>
+                  <span className="text-[11px] text-slate-500 block leading-relaxed">
+                    Customer declined these specific commercial terms or pricing. Linked CRM Lead remains <strong>Qualified</strong> so a revised quotation can be created.
+                  </span>
+                </div>
+              </label>
 
-              {rejectReason === 'Other' && (
+              <label className="flex items-start gap-2.5 cursor-pointer pt-3 border-t border-slate-200">
+                <input
+                  type="radio"
+                  name="lossType"
+                  checked={isDefinitiveLoss}
+                  onChange={() => setIsDefinitiveLoss(true)}
+                  className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                />
+                <div>
+                  <span className="font-semibold text-rose-800 text-xs block">Close Deal as Lost (Definitive Loss)</span>
+                  <span className="text-[11px] text-slate-500 block leading-relaxed">
+                    Customer definitively declined the offer or chose a competitor. Automatically marks linked CRM Lead as <strong>Lost</strong> with mandatory reason & notes.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {isDefinitiveLoss && (
+              <div className="space-y-3.5 border-t border-slate-100 pt-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Custom Reason Explanation <span className="text-rose-500">*</span>
+                    Lost Reason <span className="text-rose-500">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <select
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 focus:outline-none bg-white"
+                  >
+                    {CRM_LOST_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {rejectReason === 'Other' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Custom Reason Explanation <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Specify custom reason..."
+                      value={rejectReasonDetails}
+                      onChange={(e) => setRejectReasonDetails(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Lost Notes / Comments <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
                     required
-                    placeholder="Specify custom reason..."
-                    value={rejectReasonDetails}
-                    onChange={(e) => setRejectReasonDetails(e.target.value)}
-                    className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                    placeholder="Provide details explaining why the deal was lost..."
+                    value={rejectNotes}
+                    onChange={(e) => setRejectNotes(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:border-rose-500 focus:outline-none text-slate-800"
                   />
                 </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Lost Notes / Comments <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  placeholder="Provide details explaining why the deal was lost..."
-                  value={rejectNotes}
-                  onChange={(e) => setRejectNotes(e.target.value)}
-                  className="w-full p-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-slate-800"
-                />
               </div>
-            </div>
+            )}
 
             <div className="flex justify-end gap-2 mt-5 pt-3 border-t border-slate-100">
               <button
@@ -1043,9 +1117,11 @@ export const SalesPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmRejectQuote}
-                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-xs"
+                className={`px-4 py-1.5 text-white rounded-lg text-xs font-semibold shadow-xs transition ${
+                  isDefinitiveLoss ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-800 hover:bg-slate-900'
+                }`}
               >
-                Confirm Rejection
+                {isDefinitiveLoss ? 'Confirm Deal as Lost' : 'Reject Quotation (Keep Lead Open)'}
               </button>
             </div>
           </div>

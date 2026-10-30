@@ -3,9 +3,48 @@ import { hrmsPool, crmPool } from '../db/pool.js';
 
 const router = express.Router();
 
+// Helper to construct SQL period filter clause
+function getPeriodFilterClause(period, dateColumn, customStart, customEnd) {
+  if (customStart && customEnd) {
+    return `${dateColumn} >= '${customStart}' AND ${dateColumn} <= '${customEnd}'`;
+  }
+  const norm = (period || 'month').toLowerCase().trim();
+  switch (norm) {
+    case 'today':
+    case 'daily':
+      return `${dateColumn} >= CURRENT_DATE`;
+    case 'week':
+    case 'weekly':
+      return `${dateColumn} >= CURRENT_DATE - INTERVAL '7 days'`;
+    case 'month':
+    case 'monthly':
+      return `${dateColumn} >= CURRENT_DATE - INTERVAL '30 days'`;
+    case 'quarter':
+    case 'quarterly':
+      return `${dateColumn} >= CURRENT_DATE - INTERVAL '90 days'`;
+    case 'ytd':
+    case 'year':
+    case 'yearly':
+      return `${dateColumn} >= DATE_TRUNC('year', CURRENT_DATE)`;
+    case 'all':
+    case 'all-time':
+      return null;
+    default:
+      return `${dateColumn} >= CURRENT_DATE - INTERVAL '30 days'`;
+  }
+}
+
 // GET /api/reports/summary — Dual-DB Real-time Aggregated Report
 router.get('/summary', async (req, res) => {
   try {
+    const { period = 'month', startDate, endDate } = req.query;
+
+    const attClause = getPeriodFilterClause(period, 'date', startDate, endDate);
+    const expClause = getPeriodFilterClause(period, 'expense_date', startDate, endDate);
+    const leadsClause = getPeriodFilterClause(period, 'created_at', startDate, endDate);
+    const invClause = getPeriodFilterClause(period, 'date', startDate, endDate);
+    const soClause = getPeriodFilterClause(period, 'date', startDate, endDate);
+
     // ----------------------------------------------------
     // 1. HRMS Metrics (from hrmsPool)
     // ----------------------------------------------------
@@ -38,7 +77,7 @@ router.get('/summary', async (req, res) => {
       hrmsPool.query(`
         SELECT status, COUNT(*) as count 
         FROM attendance_records 
-        WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+        ${attClause ? `WHERE ${attClause}` : ''}
         GROUP BY status
       `),
       hrmsPool.query(`
@@ -74,6 +113,7 @@ router.get('/summary', async (req, res) => {
       hrmsPool.query(`
         SELECT status, ROUND(SUM(COALESCE(amount, 0))::numeric, 2) as total 
         FROM expenses 
+        ${expClause ? `WHERE ${expClause}` : ''}
         GROUP BY status
       `)
     ]);
@@ -92,12 +132,14 @@ router.get('/summary', async (req, res) => {
         crmPool.query(`
           SELECT stage, COUNT(*) as count, ROUND(SUM(COALESCE(value, 0))::numeric, 2) as total_value 
           FROM leads 
+          ${leadsClause ? `WHERE ${leadsClause}` : ''}
           GROUP BY stage
           ORDER BY total_value DESC
         `),
         crmPool.query(`
           SELECT source, COUNT(*) as count, ROUND(SUM(COALESCE(value, 0))::numeric, 2) as total_value 
           FROM leads 
+          ${leadsClause ? `WHERE ${leadsClause}` : ''}
           GROUP BY source 
           ORDER BY total_value DESC 
           LIMIT 6
@@ -105,11 +147,13 @@ router.get('/summary', async (req, res) => {
         crmPool.query(`
           SELECT status, COUNT(*) as count, ROUND(SUM(COALESCE(amount, 0))::numeric, 2) as total_amount 
           FROM crm_invoices 
+          ${invClause ? `WHERE ${invClause}` : ''}
           GROUP BY status
         `),
         crmPool.query(`
           SELECT fulfillment_status, COUNT(*) as count, ROUND(SUM(COALESCE(total_amount, 0))::numeric, 2) as total_value 
           FROM sales_orders 
+          ${soClause ? `WHERE ${soClause}` : ''}
           GROUP BY fulfillment_status
         `),
         crmPool.query(`SELECT COUNT(*) as count FROM customers`)
@@ -126,6 +170,7 @@ router.get('/summary', async (req, res) => {
 
     res.json({
       success: true,
+      selectedPeriod: period,
       timestamp: new Date().toISOString(),
       hrms: {
         statusDistribution: empStatusRes.rows,
