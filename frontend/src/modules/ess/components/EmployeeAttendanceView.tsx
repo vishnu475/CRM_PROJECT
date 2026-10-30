@@ -41,6 +41,26 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     reason: 'Biometric Scanner Failure'
   });
 
+  const [viewMode, setViewMode] = useState<'records' | 'calendar'>('records');
+
+  const empJoiningDate = data?.header?.joiningDate || null;
+  const joinDateParts = empJoiningDate ? String(empJoiningDate).split('T')[0].split('-') : null;
+  const joinYear = joinDateParts && joinDateParts.length >= 3 ? parseInt(joinDateParts[0], 10) : 2024;
+  const joinMonth = joinDateParts && joinDateParts.length >= 3 ? parseInt(joinDateParts[1], 10) : 1;
+  const joinDateStr = empJoiningDate ? String(empJoiningDate).split('T')[0] : '';
+  const todayStr = currentDate.toISOString().split('T')[0];
+
+  useEffect(() => {
+    if (joinYear && joinMonth) {
+      if (selectedYear < joinYear) {
+        setSelectedYear(joinYear);
+        setSelectedMonth(joinMonth);
+      } else if (selectedYear === joinYear && selectedMonth < joinMonth) {
+        setSelectedMonth(joinMonth);
+      }
+    }
+  }, [joinYear, joinMonth, selectedYear, selectedMonth]);
+
   const fetchAttendance = async (m = selectedMonth, y = selectedYear) => {
     setIsLoading(true);
     try {
@@ -87,8 +107,6 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     }
   };
 
-  const [viewMode, setViewMode] = useState<'records' | 'calendar'>('records');
-
   const parseMinutes = (t: string) => {
     if (!t || t === '-' || t === 'OFF') return null;
     const str = t.trim().toUpperCase();
@@ -111,6 +129,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
 
     if (status === 'Not Joined' || status === 'NOT_JOINED') {
       return <Badge variant="neutral">Not Joined</Badge>;
+    }
+    if (status === 'Upcoming' || status === 'UPCOMING') {
+      return <Badge variant="neutral">Upcoming</Badge>;
     }
     if (status === 'Weekly Off' || status === 'WEEKLY_OFF') {
       return <Badge variant="neutral">Weekly Off</Badge>;
@@ -152,7 +173,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     designation: 'Senior Full Stack Engineer',
     department: 'Product Management',
     reportingManager: 'Priya Sharma',
-    shift: 'General Shift (10:00 AM - 05:00 PM)'
+    shift: 'General Shift (10:00 AM - 05:00 PM)',
+    joiningDate: null
   };
 
   const records = data?.records || [];
@@ -193,6 +215,11 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Authoritative PostgreSQL attendance logs for <span className="font-bold text-slate-900">{header.employeeName}</span> ({header.employeeId}). Shift: <span className="font-bold text-indigo-600">10:00 AM - 05:00 PM</span>.
+              {joinDateStr && (
+                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60 font-semibold text-[11px]">
+                  Joined: {joinDateStr}
+                </span>
+              )}
             </p>
           </div>
 
@@ -223,7 +250,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
               </button>
             </div>
 
-            {/* INLINE MONTH & YEAR SELECTORS */}
+            {/* INLINE MONTH & YEAR SELECTORS (RESTRICTED TO JOINING DATE ONWARDS) */}
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
               <span className="text-[10px] font-bold text-slate-400 uppercase">Month:</span>
               <select
@@ -231,9 +258,20 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                 onChange={(e) => setSelectedMonth(Number(e.target.value))}
                 className="bg-transparent text-xs font-extrabold text-slate-900 focus:outline-none cursor-pointer"
               >
-                {monthNames.map((name, idx) => (
-                  <option key={idx + 1} value={idx + 1}>{name}</option>
-                ))}
+                {monthNames.map((name, idx) => {
+                  const mNum = idx + 1;
+                  const isMonthDisabled = selectedYear < joinYear || (selectedYear === joinYear && mNum < joinMonth);
+                  return (
+                    <option
+                      key={mNum}
+                      value={mNum}
+                      disabled={isMonthDisabled}
+                      className={isMonthDisabled ? 'text-slate-300 bg-slate-100 italic' : ''}
+                    >
+                      {name} {isMonthDisabled ? '(Before Joining)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -241,19 +279,41 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
               <span className="text-[10px] font-bold text-slate-400 uppercase">Year:</span>
               <select
                 value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                onChange={(e) => {
+                  const newYear = Number(e.target.value);
+                  setSelectedYear(newYear);
+                  if (newYear === joinYear && selectedMonth < joinMonth) {
+                    setSelectedMonth(joinMonth);
+                  }
+                }}
                 className="bg-transparent text-xs font-extrabold text-slate-900 focus:outline-none cursor-pointer"
               >
-                {[2024, 2025, 2026, 2027].map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
+                {[2024, 2025, 2026, 2027].map((y) => {
+                  const isYearDisabled = y < joinYear;
+                  return (
+                    <option
+                      key={y}
+                      value={y}
+                      disabled={isYearDisabled}
+                      className={isYearDisabled ? 'text-slate-300 bg-slate-100 italic' : ''}
+                    >
+                      {y} {isYearDisabled ? '(Before Joining)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
             <Button
               variant="primary"
               size="sm"
-              onClick={() => setIsRegModalOpen(true)}
+              onClick={() => {
+                setRegForm(prev => ({
+                  ...prev,
+                  date: todayStr >= joinDateStr ? todayStr : (joinDateStr || todayStr)
+                }));
+                setIsRegModalOpen(true);
+              }}
               className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm"
             >
               <Plus size={14} /> Request Regularization
@@ -284,21 +344,32 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  records.map((r: any, idx: number) => (
-                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3.5 font-bold text-slate-900">{r.date ? r.date.split('T')[0] : '-'}</td>
-                      <td className="p-3.5 font-mono font-bold text-emerald-600">{r.check_in || '-'}</td>
-                      <td className="p-3.5 font-mono font-bold text-blue-600">{r.check_out || '-'}</td>
-                      <td className="p-3.5 text-slate-900 font-bold">{r.worked_hours || 0} hrs</td>
-                      <td className="p-3.5 text-purple-600 font-bold">{r.overtime_hours || 0} hrs</td>
-                      <td className="p-3.5 font-bold">
-                        {renderStatusBadge(r)}
-                      </td>
-                      <td className="p-3.5 font-mono text-[11px] text-slate-500">
-                        {r.regularization_status || 'NONE'}
-                      </td>
-                    </tr>
-                  ))
+                  records.map((r: any, idx: number) => {
+                    const rDate = r.date ? r.date.split('T')[0] : '';
+                    const isBeforeJoin = Boolean(joinDateStr && rDate < joinDateStr);
+                    return (
+                      <tr key={idx} className={`transition-colors ${isBeforeJoin ? 'bg-slate-50/50 text-slate-400' : 'hover:bg-slate-50/80'}`}>
+                        <td className="p-3.5 font-bold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <span>{rDate || '-'}</span>
+                            {isBeforeJoin && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 font-semibold">Pre-Join</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3.5 font-mono font-bold text-emerald-600">{r.check_in || '-'}</td>
+                        <td className="p-3.5 font-mono font-bold text-blue-600">{r.check_out || '-'}</td>
+                        <td className="p-3.5 text-slate-900 font-bold">{r.worked_hours || 0} hrs</td>
+                        <td className="p-3.5 text-purple-600 font-bold">{r.overtime_hours || 0} hrs</td>
+                        <td className="p-3.5 font-bold">
+                          {renderStatusBadge(r)}
+                        </td>
+                        <td className="p-3.5 font-mono text-[11px] text-slate-500">
+                          {isBeforeJoin ? 'N/A' : (r.regularization_status || 'NONE')}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -317,6 +388,8 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
               <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span> H: Holiday</div>
               <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span> WO: Weekly Off</div>
               <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500 inline-block"></span> A: Absent</div>
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-300 border border-slate-400/60 inline-block"></span> NJ: Not Joined</div>
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-200 inline-block"></span> ◌ Upcoming</div>
             </div>
 
             {/* CALENDAR MATRIX GRID - BALANCED COMFORTABLE TILES */}
@@ -341,6 +414,9 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                 const dayDate = new Date(selectedYear, selectedMonth - 1, dayNum);
                 const isSunday = dayDate.getDay() === 0;
 
+                const isBeforeJoining = Boolean(joinDateStr && dayStr < joinDateStr);
+                const isFutureDate = dayStr > todayStr;
+
                 let status = matchedRecord?.status || (isSunday ? 'Weekly Off' : 'Absent');
                 let checkIn = matchedRecord?.check_in || '-';
                 let checkOut = matchedRecord?.check_out || '-';
@@ -348,40 +424,64 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
                 // Color styling matching user screenshot
                 let bgStyle = 'bg-rose-50/75 border-rose-200/80 text-rose-900';
                 let labelColor = 'text-rose-700';
+                let canRegularize = true;
 
-                if (status === 'Not Joined' || status === 'NOT_JOINED') {
-                  bgStyle = 'bg-slate-50/60 border-dashed border-slate-200 text-slate-400';
+                if (isBeforeJoining || status === 'Not Joined' || status === 'NOT_JOINED') {
+                  status = 'Not Joined';
+                  bgStyle = 'bg-slate-100/70 border-dashed border-slate-300 text-slate-400 cursor-not-allowed opacity-75';
+                  labelColor = 'text-slate-400 font-medium italic';
+                  canRegularize = false;
+                } else if (isFutureDate || status === 'Upcoming' || status === 'UPCOMING') {
+                  status = isSunday ? 'Weekly Off' : 'Upcoming';
+                  bgStyle = isSunday ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-slate-50/50 border-slate-200/60 text-slate-400 cursor-default';
                   labelColor = 'text-slate-400 font-normal';
+                  canRegularize = false;
                 } else if (status === 'Present' || status === 'PRESENT' || (checkIn && checkIn !== '-')) {
-                  bgStyle = 'bg-emerald-50/90 border-emerald-200 text-emerald-950';
+                  bgStyle = 'bg-emerald-50/90 border-emerald-200 text-emerald-950 cursor-pointer hover:shadow-md';
                   labelColor = 'text-emerald-700 font-bold';
                   status = 'Present';
                 } else if (status === 'Late In' || status === 'LATE_IN') {
-                  bgStyle = 'bg-amber-50/90 border-amber-200 text-amber-950';
+                  bgStyle = 'bg-amber-50/90 border-amber-200 text-amber-950 cursor-pointer hover:shadow-md';
                   labelColor = 'text-amber-700 font-bold';
                 } else if (status === 'Early Out' || status === 'EARLY_OUT') {
-                  bgStyle = 'bg-orange-50/90 border-orange-200 text-orange-950';
+                  bgStyle = 'bg-orange-50/90 border-orange-200 text-orange-950 cursor-pointer hover:shadow-md';
                   labelColor = 'text-orange-700 font-bold';
                 } else if (status === 'Weekly Off' || status === 'WEEKLY_OFF' || isSunday) {
-                  bgStyle = 'bg-slate-50 border-slate-200 text-slate-700';
+                  bgStyle = 'bg-slate-50 border-slate-200 text-slate-700 cursor-pointer hover:shadow-md';
                   labelColor = 'text-slate-500 font-medium';
                   status = 'Weekly Off';
                 } else if (status === 'On Leave' || status === 'ON_LEAVE') {
-                  bgStyle = 'bg-blue-50/90 border-blue-200 text-blue-950';
+                  bgStyle = 'bg-blue-50/90 border-blue-200 text-blue-950 cursor-pointer hover:shadow-md';
                   labelColor = 'text-blue-700 font-bold';
                 } else if (status === 'Holiday' || status === 'HOLIDAY') {
-                  bgStyle = 'bg-purple-50/90 border-purple-200 text-purple-950';
+                  bgStyle = 'bg-purple-50/90 border-purple-200 text-purple-950 cursor-pointer hover:shadow-md';
                   labelColor = 'text-purple-700 font-bold';
+                } else {
+                  // Absent
+                  bgStyle = 'bg-rose-50/75 border-rose-200/80 text-rose-900 cursor-pointer hover:shadow-md';
+                  labelColor = 'text-rose-700';
                 }
 
                 return (
                   <div
                     key={dayNum}
-                    className={`min-h-[58px] p-2 px-2.5 rounded-xl border transition-all flex flex-col justify-between ${bgStyle} hover:shadow-md cursor-pointer`}
+                    onClick={() => {
+                      if (!canRegularize) return;
+                      setRegForm(prev => ({ ...prev, date: dayStr }));
+                      setIsRegModalOpen(true);
+                    }}
+                    title={
+                      isBeforeJoining
+                        ? `Date ${dayStr} is before employee joining date (${joinDateStr})`
+                        : isFutureDate
+                        ? `Future date (${dayStr})`
+                        : `Click to regularize attendance for ${dayStr}`
+                    }
+                    className={`min-h-[58px] p-2 px-2.5 rounded-xl border transition-all flex flex-col justify-between ${bgStyle}`}
                   >
                     <div className="flex justify-between items-center">
                       <span className="font-black text-xs">{dayNum}</span>
-                      {checkIn !== '-' && (
+                      {checkIn !== '-' && checkIn !== 'OFF' && (
                         <span className="text-[9px] font-mono font-bold bg-white/90 px-1.5 py-0.5 rounded text-slate-800 shadow-2xs">
                           {checkIn}
                         </span>
@@ -407,9 +507,16 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
             label="Date to Regularize"
             type="date"
             value={regForm.date}
+            min={joinDateStr || undefined}
+            max={todayStr}
             onChange={(e) => setRegForm({ ...regForm, date: e.target.value })}
             required
           />
+          {joinDateStr && regForm.date < joinDateStr && (
+            <p className="text-xs text-rose-600 font-semibold">
+              Selected date cannot be before employee joining date ({joinDateStr}).
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="Requested Check In Time"
@@ -441,7 +548,7 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" size="sm" type="button" onClick={() => setIsRegModalOpen(false)}>Cancel</Button>
-            <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+            <Button variant="primary" size="sm" type="submit" disabled={isSubmitting || (Boolean(joinDateStr) && regForm.date < joinDateStr)}>
               {isSubmitting ? 'Submitting...' : 'Submit Request'}
             </Button>
           </div>
@@ -450,3 +557,5 @@ export const EmployeeAttendanceView: React.FC<EmployeeAttendanceViewProps> = ({
     </div>
   );
 };
+
+

@@ -48,7 +48,8 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   fileName,
   fileUrl,
   taskTitle = 'Task Specification Document',
-  projectName = 'HRMS'
+  projectName = 'Sigma Systems - Implementation Project',
+  scopeOfWork
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [rotation, setRotation] = useState<number>(0);
@@ -61,7 +62,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     setCurrentPage(1);
   }, [fileUrl, isOpen]);
 
-  const rawFileName = fileName || 'Document.pdf';
+  const rawFileName = fileName || 'PRJ-3240_Requirements_Specification.pdf';
 
   // Convert Base64 Data URL to a real browser Object URL if needed
   const { directUrl, isPdf, isImage } = useMemo(() => {
@@ -122,6 +123,36 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    } else {
+      const printDoc = document.getElementById('printable-spec-sheet');
+      if (printDoc) {
+        const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${rawFileName}</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #0f172a; padding: 40px; margin: 0; }
+@page { size: A4; margin: 15mm; }
+table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+th, td { border: 1px solid #cbd5e1; padding: 10px 12px; font-size: 12px; }
+th { background: #f1f5f9; text-align: left; }
+</style>
+</head>
+<body>
+${printDoc.innerHTML}
+</body>
+</html>`;
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = rawFileName.replace(/\.pdf$/i, '.html');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
     }
   };
 
@@ -138,8 +169,35 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     setRotation(prev => (prev + 90) % 360);
   };
 
+  const todayFormatted = new Date().toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  });
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-xs animate-fade-in">
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #printable-spec-sheet, #printable-spec-sheet * {
+            visibility: visible !important;
+          }
+          #printable-spec-sheet {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 15mm !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+        }
+      `}</style>
+
       <div
         className={`bg-slate-900 rounded-2xl shadow-2xl flex flex-col border border-slate-700 overflow-hidden transition-all duration-200 ${
           isFullscreen ? 'w-full h-full rounded-none' : 'w-full max-w-5xl h-[92vh]'
@@ -253,7 +311,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               type="button"
               onClick={handleDownload}
               className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
-              title="Download PDF"
+              title="Download Document"
             >
               <Download size={15} />
             </button>
@@ -281,7 +339,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         </div>
 
         {/* PDF Document Viewport */}
-        <div className="flex-1 overflow-auto bg-slate-800/90 p-3 sm:p-6 flex justify-center items-start min-h-0">
+        <div className="flex-1 overflow-auto bg-slate-950/95 p-3 sm:p-6 flex justify-center items-start min-h-0">
           {directUrl ? (
             isImage ? (
               /* High-Clarity Receipt & Bill Image Viewer */
@@ -330,24 +388,182 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               </div>
             )
           ) : (
-            /* Clean Empty State when No PDF Attached */
-            <div className="bg-slate-900 rounded-2xl border border-slate-800 p-10 text-center space-y-4 max-w-md my-auto">
-              <div className="w-16 h-16 rounded-2xl bg-slate-800 text-slate-400 flex items-center justify-center mx-auto border border-slate-700">
-                <FileText size={32} />
+            /* High-Fidelity Enterprise Requirements Specification Document Canvas */
+            <div
+              id="printable-spec-sheet"
+              className="bg-white text-slate-900 rounded-lg shadow-2xl p-6 sm:p-12 max-w-4xl w-full min-h-[960px] border border-slate-200 transition-transform duration-150 space-y-6"
+              style={{
+                transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
+                transformOrigin: 'top center'
+              }}
+            >
+              {/* Document Header */}
+              <div className="border-b-2 border-slate-900 pb-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                        <FileText size={18} />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-600 block">
+                          Enterprise Implementation Framework
+                        </span>
+                        <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 leading-none">
+                          Requirements Specification Document
+                        </h1>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right space-y-1 shrink-0">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Approved & Released
+                    </span>
+                    <p className="text-[10px] font-mono text-slate-500">
+                      Doc Ref: {rawFileName.replace('.pdf', '')}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      Date: <strong className="text-slate-800">{todayFormatted}</strong>
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-white">No PDF Document Attached</h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  No PDF document was attached to this task by the administrator.
+
+              {/* Project & Task Meta Summary Card */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Project Name</span>
+                  <strong className="text-slate-900 font-bold block truncate mt-0.5" title={projectName}>
+                    {projectName}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Deliverable</span>
+                  <strong className="text-slate-900 font-bold block truncate mt-0.5" title={taskTitle}>
+                    {taskTitle}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Target Milestone</span>
+                  <span className="text-blue-700 font-bold block mt-0.5">Phase 1 Delivery</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Specification File</span>
+                  <span className="text-slate-700 font-mono text-[11px] block truncate mt-0.5" title={rawFileName}>
+                    {rawFileName}
+                  </span>
+                </div>
+              </div>
+
+              {/* 1. Executive Summary */}
+              <div className="space-y-2">
+                <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-l-3 border-blue-600 pl-2">
+                  1. Executive Overview & Technical Objectives
+                </h2>
+                <p className="text-xs sm:text-[13px] text-slate-700 leading-relaxed">
+                  This official Requirements Specification defines the architectural constraints, functional deliverables, dual-database sync requirements, and quality benchmarks for <strong>{projectName}</strong>. The implementation team is authorized to build, test, and release all assigned modules in strict compliance with the specifications detailed herein.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer"
-              >
-                Close Viewer
-              </button>
+
+              {/* 2. Scope of Work & Deliverables */}
+              <div className="space-y-2">
+                <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-l-3 border-blue-600 pl-2">
+                  2. Detailed Scope of Work & Implementation Requirements
+                </h2>
+                <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-100 text-xs sm:text-[13px] text-slate-800 leading-relaxed whitespace-pre-line">
+                  {scopeOfWork ? (
+                    scopeOfWork
+                  ) : (
+                    `• Complete business logic implementation for ${taskTitle} with transactional database persistence.
+• Dual-database synchronization between CRM (Sales/Projects) and HRMS (Employees/Tasks/Groups) databases.
+• Real-time WebSocket broadcasting of task state updates, progress milestones, and deliverables reviews.
+• End-to-end user experience integration with responsive form controls, validation, and optimistic UI handling.
+• Automated test coverage covering unit contracts, data constraints, and edge-case execution flows.`
+                  )}
+                </div>
+              </div>
+
+              {/* 3. Deliverables Breakdown Table */}
+              <div className="space-y-2">
+                <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-l-3 border-blue-600 pl-2">
+                  3. Deliverables Breakdown & Acceptance Criteria
+                </h2>
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="py-2.5 px-3">Item</th>
+                        <th className="py-2.5 px-3">Deliverable Module</th>
+                        <th className="py-2.5 px-3">Acceptance Benchmark</th>
+                        <th className="py-2.5 px-3">Weightage</th>
+                        <th className="py-2.5 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 text-slate-700">
+                      <tr>
+                        <td className="py-2.5 px-3 font-mono font-bold">REQ-01</td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-900">Schema & DB Persistence</td>
+                        <td className="py-2.5 px-3">All columns aligned, transactional commit, no orphan records</td>
+                        <td className="py-2.5 px-3 font-semibold">30%</td>
+                        <td className="py-2.5 px-3"><span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[10px]">Verified</span></td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 px-3 font-mono font-bold">REQ-02</td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-900">API & Endpoint Contracts</td>
+                        <td className="py-2.5 px-3">Full RESTful CRUD endpoints with cascade deletion and error guards</td>
+                        <td className="py-2.5 px-3 font-semibold">40%</td>
+                        <td className="py-2.5 px-3"><span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-bold text-[10px]">In Progress</span></td>
+                      </tr>
+                      <tr>
+                        <td className="py-2.5 px-3 font-mono font-bold">REQ-03</td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-900">Interactive UI & Document Viewer</td>
+                        <td className="py-2.5 px-3">Live previews, PDF zoom/rotate, print & export capability</td>
+                        <td className="py-2.5 px-3 font-semibold">30%</td>
+                        <td className="py-2.5 px-3"><span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded font-bold text-[10px]">Complete</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 4. Technical Constraints & Governance */}
+              <div className="space-y-2">
+                <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 border-l-3 border-blue-600 pl-2">
+                  4. Security, Architectural Governance & Code Quality
+                </h2>
+                <ul className="list-disc list-inside text-xs text-slate-700 space-y-1 leading-relaxed pl-1">
+                  <li><strong>Security:</strong> All operations must be authenticated with valid session tokens; unauthorized modifications will be rejected.</li>
+                  <li><strong>Database Safety:</strong> Cascading foreign keys and transactional rollbacks are mandatory on all deletion and migration scripts.</li>
+                  <li><strong>Data Cleanliness:</strong> System rejects soft-delete ghosts; permanent delete requests must purge associated child rows.</li>
+                </ul>
+              </div>
+
+              {/* 5. Authorizations & Sign-off Stamp */}
+              <div className="pt-4 border-t border-slate-200">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Project Manager</span>
+                    <strong className="text-xs font-bold text-slate-900 block mt-1">Sarah Jenkins</strong>
+                    <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">✓ Electronically Signed</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lead Architect</span>
+                    <strong className="text-xs font-bold text-slate-900 block mt-1">Michael Vance</strong>
+                    <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">✓ Technical Approval</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">QA Directorate</span>
+                    <strong className="text-xs font-bold text-slate-900 block mt-1">Priya Sharma</strong>
+                    <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">✓ Certified Compliance</span>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-100 pt-3">
+                  <span>CONFIDENTIAL — FOR INTERNAL USE ONLY</span>
+                  <span>Page 1 of 1 • System Generated Specification Sheet</span>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -217,3 +217,57 @@ html.dark .hover\:bg-white:hover {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.5);
 }
+
+@keyframes subtle-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.03);
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes float-badge {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-float-1 {
+  animation: float-badge 4.2s ease-in-out infinite;
+}
+.animate-float-2 {
+  animation: float-badge 4.8s ease-in-out 0.7s infinite;
+}
+.animate-float-3 {
+  animation: float-badge 3.9s ease-in-out 1.4s infinite;
+}
+.animate-float-4 {
+  animation: float-badge 4.5s ease-in-out 2.1s infinite;
+}
+.animate-float-5 {
+  animation: float-badge 4.9s ease-in-out 2.8s infinite;
+}
+.animate-float-6 {
+  animation: float-badge 4.1s ease-in-out 3.5s infinite;
+}
+
+@keyframes marquee-glide {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}

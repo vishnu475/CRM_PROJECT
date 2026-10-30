@@ -3,7 +3,7 @@ import { crmPool as pool } from '../db/pool.js'; // CRM DB — Friend 1
 
 const router = express.Router();
 
-// GET /api/vendors — Fetch all vendors with live purchase & payable aggregation
+// GET /api/vendors — Fetch all vendors with live purchase & payable aggregation (Deduplicated unique vendors)
 router.get('/', async (req, res) => {
   try {
     const { status, search, dedupe } = req.query;
@@ -33,7 +33,11 @@ router.get('/', async (req, res) => {
         COALESCE(po_stats.paid_amount, 0) AS total_paid_amount,
         COALESCE(po_stats.amount_due, v.payable_balance, 0) AS calculated_amount_due,
         COALESCE(po_stats.overdue_amount, 0) AS overdue_amount
-      FROM vendors v
+      FROM (
+        SELECT DISTINCT ON (LOWER(TRIM(name))) *
+        FROM vendors
+        ORDER BY LOWER(TRIM(name)), created_at DESC
+      ) v
       LEFT JOIN (
         SELECT 
           po.vendor_id,

@@ -13,11 +13,14 @@ import {
   Clock,
   Save,
   X,
-  Edit2
+  Edit2,
+  Palette,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 export const AccountPreferencesFlowView: React.FC = () => {
-  const { userProfile, setUserProfile, employees } = useApp();
+  const { userProfile, setUserProfile, employees, theme, setTheme } = useApp();
 
   // Profile State (initialized from active employee)
   const [fullName, setFullName] = useState<string>(userProfile.name || 'Vishnu Vardhan');
@@ -316,6 +319,94 @@ export const AccountPreferencesFlowView: React.FC = () => {
               [ View ]
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* CARD 3: 🎨 THEME & APPEARANCE PREFERENCES (BUG-112) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+              <Palette size={15} />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Interface Display Theme</h2>
+              <p className="text-[11px] text-slate-400">Choose your visual appearance preference across the application</p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase tracking-wide">
+            Active: {theme === 'dark' ? 'Dark Mode' : 'Light Mode'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+          {/* Light Theme Option */}
+          <button
+            type="button"
+            onClick={() => {
+              setTheme('light');
+              showToast('Theme updated to Light mode. Application preferences saved.');
+            }}
+            className={`p-4 rounded-xl border-2 text-left transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+              theme === 'light'
+                ? 'border-blue-600 bg-blue-50/40 shadow-xs'
+                : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-lg ${theme === 'light' ? 'bg-amber-100 text-amber-600' : 'bg-slate-200 text-slate-600'}`}>
+                  <Sun size={18} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">Light Theme</h3>
+                  <span className="text-[10px] text-slate-400">Daylight workspace</span>
+                </div>
+              </div>
+              {theme === 'light' ? (
+                <CheckCircle2 size={18} className="text-blue-600" />
+              ) : (
+                <div className="w-4 h-4 rounded-full border border-slate-300" />
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500">
+              High contrast clean background optimized for bright environments and daylight productivity.
+            </p>
+          </button>
+
+          {/* Dark Theme Option */}
+          <button
+            type="button"
+            onClick={() => {
+              setTheme('dark');
+              showToast('Theme updated to Dark mode. Application preferences saved.');
+            }}
+            className={`p-4 rounded-xl border-2 text-left transition-all flex flex-col justify-between gap-3 cursor-pointer ${
+              theme === 'dark'
+                ? 'border-indigo-600 bg-indigo-50/40 shadow-xs'
+                : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-lg ${theme === 'dark' ? 'bg-indigo-900 text-indigo-300' : 'bg-slate-200 text-slate-600'}`}>
+                  <Moon size={18} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900">Dark Theme (Default)</h3>
+                  <span className="text-[10px] text-slate-400">Night & OLED workspace</span>
+                </div>
+              </div>
+              {theme === 'dark' ? (
+                <CheckCircle2 size={18} className="text-indigo-600" />
+              ) : (
+                <div className="w-4 h-4 rounded-full border border-slate-300" />
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Deep obsidian palette engineered to reduce eye strain with vibrant ambient data highlights.
+            </p>
+          </button>
         </div>
       </div>
 
