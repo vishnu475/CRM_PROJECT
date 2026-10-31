@@ -1868,6 +1868,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newProject;
   }, []);
 
+  const updateProject = useCallback(async (projectId: string, updatedFields: Partial<Project>) => {
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, ...updatedFields, updatedAt: new Date().toISOString() } : p))
+    );
+    try {
+      const res = await ProjectsAPI.update(projectId, {
+        name: updatedFields.name,
+        client: updatedFields.client,
+        customerId: updatedFields.customerId,
+        projectRequirement: updatedFields.projectRequirement,
+        projectNotes: updatedFields.projectNotes,
+        projectManager: updatedFields.projectManager,
+        startDate: updatedFields.startDate,
+        endDate: updatedFields.endDate,
+        budget: updatedFields.budget,
+        spent: updatedFields.spent,
+        progress: updatedFields.progress,
+        status: updatedFields.status,
+        priority: updatedFields.priority,
+        weightage: updatedFields.weightage,
+        repositoryUrl: updatedFields.repositoryUrl,
+        requirementDocuments: updatedFields.requirementDocuments,
+        projectLinks: updatedFields.projectLinks,
+      });
+      if (res.success && res.data) {
+        return { success: true, data: res.data };
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Failed to update project on backend:', err.message);
+    }
+    return { success: true };
+  }, []);
+
   const deleteProject = useCallback(async (projectId: string) => {
     setProjects((prev) => prev.filter((p) => p.id !== projectId && p.code !== projectId));
     try {

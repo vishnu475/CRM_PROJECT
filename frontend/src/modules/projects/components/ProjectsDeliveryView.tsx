@@ -1,20 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { Project } from '../../../types';
 import { 
   FolderKanban, Search, Filter, Calendar, User, DollarSign, 
   CheckCircle2, Clock, FileText, X, ArrowRight, Building2, 
-  Sparkles, ShieldCheck, ChevronRight, Trash2, Layers, Users
+  Sparkles, ShieldCheck, ChevronRight, Trash2, Layers, Users,
+  AlertCircle, CheckSquare, Download, Edit3, GitBranch, Tag
 } from 'lucide-react';
 import { TestingDocumentsView } from '../../testing/components/TestingDocumentsView';
 import { ProjectAllocationPanel } from './ProjectAllocationPanel';
+
+interface ProjectsDeliveryViewProps {
+  onNavigateToTasks?: (projectId?: string) => void;
+}
+
+export const ProjectsDeliveryView: React.FC<ProjectsDeliveryViewProps> = ({ onNavigateToTasks }) => {
+  const { 
+    projects, 
+    employees, 
+    customers, 
+    contacts, 
+    leads, 
+    updateProject, 
+    deleteProject 
+  } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [projectModalTab, setProjectModalTab] = useState<'overview' | 'team' | 'testing'>('overview');
-  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
-  const [isDeletingProject, setIsDeletingProject] = useState<boolean>(false);
+
+
 
   const [projectGroup, setProjectGroup] = useState<any | null>(null);
   const [taskSummary, setTaskSummary] = useState<{ total: number; notStarted: number; inProgress: number; completed: number }>({
