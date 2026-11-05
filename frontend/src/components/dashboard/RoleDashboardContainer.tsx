@@ -21,11 +21,18 @@ import {
 } from 'lucide-react';
 
 export const RoleDashboardContainer: React.FC = () => {
-  const { userRole, userProfile, setActiveModule } = useApp();
+  const { userRole, userProfile, isAuthenticated, setActiveModule } = useApp();
 
   if (userRole === 'Executive') {
     return <ExecutiveDashboard />;
   }
+
+  const displayName =
+    isAuthenticated && userProfile?.name && userProfile.name.trim()
+      ? userProfile.name.trim()
+      : 'there';
+  const roleTitle = userProfile?.roleTitle || userRole || 'User';
+  const company = userProfile?.company || 'Company';
 
   return (
     <div className="space-y-6">
@@ -33,13 +40,13 @@ export const RoleDashboardContainer: React.FC = () => {
       <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#2563eb] bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
-            {userProfile.roleTitle} Mode
+            {roleTitle} Mode
           </span>
           <h1 className="text-xl font-bold text-[#0f172a] mt-2">
-            Welcome back, {userProfile.name}! 👋
+            Welcome back, {displayName}! 👋
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Logged in as <span className="text-[#2563eb] font-semibold">{userProfile.roleTitle}</span> for {userProfile.company}.
+            Logged in as <span className="text-[#2563eb] font-semibold">{roleTitle}</span> for {company}.
           </p>
         </div>
 

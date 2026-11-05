@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CrmView } from '../../../types';
 import { useApp } from '../../../context/AppContext';
 import { ChevronRight, Save, ArrowLeft, Building2, User, MapPin, FileText, Banknote, Tag, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -16,7 +16,13 @@ export const CrmAddCustomer: React.FC<CrmAddCustomerProps> = ({ onViewChange }) 
   const [customerCode, setCustomerCode] = useState('');
   const [industry, setIndustry] = useState('');
   const [website, setWebsite] = useState('');
-  const [ownerId, setOwnerId] = useState(userProfile.name);
+  const [ownerId, setOwnerId] = useState(() => (userProfile?.name && userProfile.name.trim()) ? userProfile.name.trim() : 'Sarah Jenkins');
+
+  useEffect(() => {
+    if (userProfile?.name && userProfile.name.trim() && (!ownerId || ownerId === 'Sarah Jenkins')) {
+      setOwnerId(userProfile.name.trim());
+    }
+  }, [userProfile?.name]);
   const [status, setStatus] = useState<'Active' | 'At Risk' | 'Inactive'>('Active');
 
   const [contactName, setContactName] = useState('');
@@ -42,6 +48,8 @@ export const CrmAddCustomer: React.FC<CrmAddCustomerProps> = ({ onViewChange }) 
   // Validation
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [showToast, setShowToast] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const handleAddressChange = (type: 'billing' | 'shipping', field: string, value: string) => {
     if (type === 'billing') {
@@ -151,10 +159,17 @@ export const CrmAddCustomer: React.FC<CrmAddCustomerProps> = ({ onViewChange }) 
           <h1 className="text-2xl font-bold text-[#0f172a]">Create Customer</h1>
           <p className="text-sm text-slate-500 mt-1">Add an established customer account to your CRM.</p>
         </div>
-        <button onClick={handleSave} className="hidden sm:flex px-6 py-2.5 bg-indigo-600 text-white font-semibold text-sm rounded-xl shadow-sm hover:bg-indigo-500 transition-all items-center gap-2">
+        <button onClick={handleSave} disabled={isSaving} className="hidden sm:flex px-6 py-2.5 bg-indigo-600 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm hover:bg-indigo-500 transition-all items-center gap-2 cursor-pointer">
           <Save size={16} /> Save Customer
         </button>
       </div>
+
+      {serverError && (
+        <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-center gap-2 text-sm font-semibold animate-in fade-in">
+          <AlertCircle size={18} className="shrink-0" />
+          <span>{serverError}</span>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="space-y-6">
         
@@ -421,7 +436,7 @@ export const CrmAddCustomer: React.FC<CrmAddCustomerProps> = ({ onViewChange }) 
           <button type="button" onClick={() => onViewChange('customers')} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-semibold text-sm rounded-xl hover:bg-slate-50 transition-all">
             Cancel
           </button>
-          <button type="submit" className="px-8 py-2.5 bg-indigo-600 text-white font-semibold text-sm rounded-xl shadow-sm hover:bg-indigo-500 transition-all flex items-center gap-2">
+          <button type="submit" disabled={isSaving} className="px-8 py-2.5 bg-indigo-600 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-sm hover:bg-indigo-500 transition-all flex items-center gap-2 cursor-pointer">
             <Save size={16} /> Save Customer
           </button>
         </div>

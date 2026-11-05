@@ -31,7 +31,8 @@ import {
   SlidersHorizontal,
   Activity,
   GripVertical,
-  RotateCcw
+  RotateCcw,
+  X
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { ModuleId } from '../../types';
@@ -79,9 +80,21 @@ export const Sidebar: React.FC = () => {
     userRole,
     isSidebarCollapsed = false,
     setIsSidebarCollapsed = () => {},
+    isMobileSidebarOpen = false,
+    setIsMobileSidebarOpen = () => {},
     theme = 'dark',
     setTheme = () => {},
   } = useApp() || {};
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isMobileSidebarOpen) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileSidebarOpen, setIsMobileSidebarOpen]);
 
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
     tasks: true,
@@ -220,36 +233,63 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside
-      className={`bg-white border-r border-slate-200 flex flex-col transition-all duration-300 z-20 select-none ${
-        isSidebarCollapsed ? 'w-20' : 'w-64'
-      }`}
-    >
-      {/* Brand Header */}
-      <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200">
-        <div 
-          onClick={() => {
-            window.history.pushState({}, '', '/');
-            window.dispatchEvent(new Event('popstate'));
-          }}
-          className="flex items-center space-x-3 overflow-hidden cursor-pointer"
-          title="Go to Home Page"
-        >
-          <div className="w-9 h-9 rounded-xl bg-[#1e3a8a] flex items-center justify-center text-white shadow-sm shrink-0">
-            <Zap size={20} className="fill-white/20" />
-          </div>
-          {!isSidebarCollapsed && (
-            <div>
-              <h1 className="font-extrabold text-sm tracking-wide text-[#0f172a] flex items-center space-x-1">
-                <span>ERP SUITE</span>
-              </h1>
-              <p className="text-[10px] text-slate-500 font-medium tracking-tight truncate">
-                Business Management Platform
-              </p>
+    <>
+      {/* Mobile Drawer Backdrop */}
+      {isMobileSidebarOpen && (
+        <div
+          id="mobile-sidebar-backdrop"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 md:hidden animate-fade-in cursor-pointer"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Navigation Sidebar: Off-canvas drawer on mobile (< md), static collapsible on desktop (>= md) */}
+      <aside
+        id="app-navigation-sidebar"
+        className={`fixed md:static inset-y-0 left-0 z-50 md:z-20 bg-white dark:bg-[#0B0F19] border-r border-slate-200 dark:border-slate-800 flex flex-col transition-all duration-300 select-none shadow-2xl md:shadow-none ${
+          isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        } ${
+          isSidebarCollapsed ? 'w-64 md:w-20' : 'w-64'
+        }`}
+      >
+        {/* Brand Header */}
+        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200">
+          <div 
+            onClick={() => {
+              setIsMobileSidebarOpen(false);
+              window.history.pushState({}, '', '/');
+              window.dispatchEvent(new Event('popstate'));
+            }}
+            className="flex items-center space-x-3 overflow-hidden cursor-pointer"
+            title="Go to Home Page"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#1e3a8a] flex items-center justify-center text-white shadow-sm shrink-0">
+              <Zap size={20} className="fill-white/20" />
             </div>
-          )}
+            {(!isSidebarCollapsed || isMobileSidebarOpen) && (
+              <div>
+                <h1 className="font-extrabold text-sm tracking-wide text-[#0f172a] flex items-center space-x-1">
+                  <span>ERP SUITE</span>
+                </h1>
+                <p className="text-[10px] text-slate-500 font-medium tracking-tight truncate">
+                  Business Management Platform
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Close button for mobile drawer */}
+          <button
+            id="mobile-sidebar-close-btn"
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg md:hidden cursor-pointer hover:bg-slate-100 transition-colors"
+            aria-label="Close navigation menu"
+          >
+            <X size={18} />
+          </button>
         </div>
-      </div>
 
       {/* Navigation Links with Drag & Drop */}
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
@@ -400,9 +440,13 @@ export const Sidebar: React.FC = () => {
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              id="sidebar-theme-toggle"
+              onClick={() => {
+                const nextTheme = theme === 'dark' ? 'light' : 'dark';
+                setTheme(nextTheme);
+              }}
               className="p-1.5 text-slate-400 hover:text-[#2563eb] hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200 hover:shadow-sm cursor-pointer"
-              title="Toggle theme"
+              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Theme`}
             >
               {theme === 'dark' ? <Moon size={15} /> : <Sun size={15} />}
             </button>
@@ -440,5 +484,6 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
     </aside>
+  </>
   );
 };

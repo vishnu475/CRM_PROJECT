@@ -127,35 +127,151 @@ export function calculateOvertimeHours(
 }
 
 /**
- * Standard list of company holidays for calculation.
+ * Holiday Record Interface
  */
-export const DEFAULT_COMPANY_HOLIDAYS = [
-  { name: 'New Year Day', date: '2026-01-01' },
-  { name: 'Republic Day', date: '2026-01-26' },
-  { name: 'May Day / Labor Day', date: '2026-05-01' },
-  { name: 'Independence Day', date: '2026-08-15' },
-  { name: 'Gandhi Jayanti', date: '2026-10-02' },
-  { name: 'Diwali', date: '2026-11-08' },
-  { name: 'Christmas Day', date: '2026-12-25' }
+export interface HolidayRecord {
+  id: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  day: string;
+  type: 'Gazetted' | 'Restricted' | 'Company';
+  isMandatory: boolean;
+  description: string;
+}
+
+/**
+ * Timezone-safe extraction of calendar date (YYYY-MM-DD) from string or timestamp.
+ * Avoids UTC timezone conversion shifts (+05:30 IST or -08:00 PST).
+ */
+export function extractCalendarDate(input: string): string {
+  if (!input) return '';
+  const match = String(input).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  const d = new Date(input);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Get weekday name for a date string in YYYY-MM-DD format deterministically.
+ */
+export function getDayOfWeekForDate(dateStr: string): string {
+  const cal = extractCalendarDate(dateStr);
+  if (!cal) return '';
+  const [y, m, d] = cal.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+/**
+ * Format date into 'DD Mon YYYY' format without timezone shifts.
+ */
+export function formatHolidayDisplayDate(dateStr: string): string {
+  const cal = extractCalendarDate(dateStr);
+  if (!cal) return dateStr;
+  const [y, m, d] = cal.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const day = String(d).padStart(2, '0');
+  const month = date.toLocaleDateString('en-US', { month: 'short' });
+  return `${day} ${month} ${y}`;
+}
+
+/**
+ * Standard list of official central government gazetted, restricted, and company holidays.
+ */
+export const DEFAULT_COMPANY_HOLIDAYS: HolidayRecord[] = [
+  // 2025
+  { id: 'HOL-2025-01', name: "New Year's Day", date: '2025-01-01', day: 'Wednesday', type: 'Restricted', isMandatory: false, description: 'Celebration of the first day of the Gregorian year' },
+  { id: 'HOL-2025-02', name: 'Republic Day', date: '2025-01-26', day: 'Sunday', type: 'Gazetted', isMandatory: true, description: 'National holiday marking the adoption of the Constitution of India' },
+  { id: 'HOL-2025-03', name: 'Holi', date: '2025-03-14', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Festival of colors and arrival of spring' },
+  { id: 'HOL-2025-04', name: 'Id-ul-Fitr', date: '2025-03-31', day: 'Monday', type: 'Gazetted', isMandatory: true, description: 'Islamic festival marking the culmination of Ramadan' },
+  { id: 'HOL-2025-05', name: 'Good Friday', date: '2025-04-18', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Christian holiday commemorating the crucifixion of Jesus Christ' },
+  { id: 'HOL-2025-06', name: 'May Day / Labor Day', date: '2025-05-01', day: 'Thursday', type: 'Company', isMandatory: true, description: 'International workers day and company holiday' },
+  { id: 'HOL-2025-07', name: 'Independence Day', date: '2025-08-15', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'National holiday commemorating Indian Independence from British rule in 1947' },
+  { id: 'HOL-2025-08', name: "Mahatma Gandhi's Birthday / Dussehra", date: '2025-10-02', day: 'Thursday', type: 'Gazetted', isMandatory: true, description: 'Mahatma Gandhi Jayanti and Dussehra (Vijayadashami)' },
+  { id: 'HOL-2025-10', name: 'Diwali (Deepavali)', date: '2025-10-20', day: 'Monday', type: 'Gazetted', isMandatory: true, description: 'Hindu festival of lights celebrating prosperity and victory of light over darkness' },
+  { id: 'HOL-2025-11', name: 'Christmas Day', date: '2025-12-25', day: 'Thursday', type: 'Gazetted', isMandatory: true, description: 'Celebration of the birth of Jesus Christ' },
+
+  // 2026 (Official Central Government Gazetted & Corporate Calendar)
+  { id: 'HOL-2026-01', name: "New Year's Day", date: '2026-01-01', day: 'Thursday', type: 'Restricted', isMandatory: false, description: 'Celebration of the first day of the new Gregorian calendar year' },
+  { id: 'HOL-2026-02', name: 'Makar Sankranti / Pongal', date: '2026-01-14', day: 'Wednesday', type: 'Restricted', isMandatory: false, description: 'Traditional solar harvest festival observed across India' },
+  { id: 'HOL-2026-03', name: 'Republic Day', date: '2026-01-26', day: 'Monday', type: 'Gazetted', isMandatory: true, description: 'National holiday marking the formal enactment of the Constitution of India in 1950' },
+  { id: 'HOL-2026-04', name: 'Maha Shivratri', date: '2026-02-15', day: 'Sunday', type: 'Restricted', isMandatory: false, description: 'Great night of Lord Shiva observed in solemn prayer and fasting' },
+  { id: 'HOL-2026-05', name: 'Holi', date: '2026-03-04', day: 'Wednesday', type: 'Gazetted', isMandatory: true, description: 'National festival of colors, brotherhood, and joy celebrating spring harvest' },
+  { id: 'HOL-2026-06', name: 'Id-ul-Fitr (Ramzan Id)', date: '2026-03-21', day: 'Saturday', type: 'Gazetted', isMandatory: true, description: 'Major Islamic festival marking the end of the holy month of Ramadan' },
+  { id: 'HOL-2026-07', name: 'Ram Navami', date: '2026-03-26', day: 'Thursday', type: 'Gazetted', isMandatory: true, description: 'Spring Hindu festival celebrating the birth of Lord Rama' },
+  { id: 'HOL-2026-08', name: 'Mahavir Jayanti', date: '2026-03-31', day: 'Tuesday', type: 'Gazetted', isMandatory: true, description: 'Birth anniversary of Bhagwan Mahavira, 24th Tirthankara of Jainism' },
+  { id: 'HOL-2026-09', name: 'Good Friday', date: '2026-04-03', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Christian solemn observance of the passion and crucifixion of Jesus Christ' },
+  { id: 'HOL-2026-10', name: 'Buddha Purnima / May Day', date: '2026-05-01', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Buddha Purnima and International Workers Rights Day' },
+  { id: 'HOL-2026-12', name: 'Id-ul-Zuha (Bakrid)', date: '2026-05-27', day: 'Wednesday', type: 'Gazetted', isMandatory: true, description: 'Feast of the Sacrifice honoring Ibrahim readiness to sacrifice his son' },
+  { id: 'HOL-2026-13', name: 'Muharram', date: '2026-06-26', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Sacred first month of the Islamic calendar and day of Ashura remembrance' },
+  { id: 'HOL-2026-14', name: 'Independence Day', date: '2026-08-15', day: 'Saturday', type: 'Gazetted', isMandatory: true, description: 'National holiday commemorating 79 years of Indian Independence (1947)' },
+  { id: 'HOL-2026-15', name: 'Milad-un-Nabi (Id-e-Milad)', date: '2026-08-26', day: 'Wednesday', type: 'Gazetted', isMandatory: true, description: 'Observance of the birthday of the Prophet Muhammad' },
+  { id: 'HOL-2026-16', name: 'Raksha Bandhan', date: '2026-08-28', day: 'Friday', type: 'Restricted', isMandatory: false, description: 'Traditional celebration of the bond between brothers and sisters' },
+  { id: 'HOL-2026-17', name: 'Janmashtami (Vaishnava)', date: '2026-09-04', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Celebration of the birth of Lord Krishna with devotional singing and fasting' },
+  { id: 'HOL-2026-18', name: "Mahatma Gandhi's Birthday (Gandhi Jayanti)", date: '2026-10-02', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'National holiday honoring Mahatma Gandhi apostle of non-violence and Father of the Nation' },
+  { id: 'HOL-2026-19', name: 'Company Annual Foundation Day', date: '2026-10-15', day: 'Thursday', type: 'Company', isMandatory: true, description: 'Corporate celebration of organization inception and employee milestone recognition' },
+  { id: 'HOL-2026-20', name: 'Dussehra (Vijayadashami)', date: '2026-10-20', day: 'Tuesday', type: 'Gazetted', isMandatory: true, description: 'National festival celebrating the triumph of good over evil (Lord Rama over Ravana)' },
+  { id: 'HOL-2026-21', name: 'Diwali (Deepavali)', date: '2026-11-08', day: 'Sunday', type: 'Gazetted', isMandatory: true, description: 'Festival of lights commemorating spiritual victory of righteousness and prosperity' },
+  { id: 'HOL-2026-22', name: "Guru Nanak's Birthday", date: '2026-11-24', day: 'Tuesday', type: 'Gazetted', isMandatory: true, description: 'Gurpurab celebrating the birth anniversary of Guru Nanak Dev Ji, founder of Sikhism' },
+  { id: 'HOL-2026-23', name: 'Christmas Day', date: '2026-12-25', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Celebration of the birth of Jesus Christ observed globally with peace and joy' },
+
+  // 2027
+  { id: 'HOL-2027-01', name: "New Year's Day", date: '2027-01-01', day: 'Friday', type: 'Restricted', isMandatory: false, description: 'Celebration of the first day of the Gregorian year 2027' },
+  { id: 'HOL-2027-02', name: 'Republic Day', date: '2027-01-26', day: 'Tuesday', type: 'Gazetted', isMandatory: true, description: 'National holiday marking the adoption of the Constitution of India' },
+  { id: 'HOL-2027-03', name: 'Id-ul-Fitr', date: '2027-03-10', day: 'Wednesday', type: 'Gazetted', isMandatory: true, description: 'Islamic festival marking the end of Ramadan' },
+  { id: 'HOL-2027-04', name: 'Holi', date: '2027-03-22', day: 'Monday', type: 'Gazetted', isMandatory: true, description: 'National festival of colors and spring joy' },
+  { id: 'HOL-2027-05', name: 'Good Friday', date: '2027-03-26', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Christian observance of the crucifixion of Jesus Christ' },
+  { id: 'HOL-2027-06', name: 'May Day / Labor Day', date: '2027-05-01', day: 'Saturday', type: 'Company', isMandatory: true, description: 'International workers day and company holiday' },
+  { id: 'HOL-2027-07', name: 'Independence Day', date: '2027-08-15', day: 'Sunday', type: 'Gazetted', isMandatory: true, description: 'National holiday commemorating 80 years of Indian Independence' },
+  { id: 'HOL-2027-08', name: "Mahatma Gandhi's Birthday (Gandhi Jayanti)", date: '2027-10-02', day: 'Saturday', type: 'Gazetted', isMandatory: true, description: 'National holiday commemorating Mahatma Gandhi' },
+  { id: 'HOL-2027-09', name: 'Dussehra (Vijayadashami)', date: '2027-10-10', day: 'Sunday', type: 'Gazetted', isMandatory: true, description: 'Celebration of the victory of good over evil' },
+  { id: 'HOL-2027-10', name: 'Diwali (Deepavali)', date: '2027-10-29', day: 'Friday', type: 'Gazetted', isMandatory: true, description: 'Festival of lights celebrating prosperity and righteousness' },
+  { id: 'HOL-2027-11', name: 'Christmas Day', date: '2027-12-25', day: 'Saturday', type: 'Gazetted', isMandatory: true, description: 'Celebration of the birth of Jesus Christ' }
 ];
 
 /**
- * Check if a date string is a public holiday.
+ * Filter holidays by year and category type.
+ */
+export function getOfficialHolidays(year?: number | string, type?: string): HolidayRecord[] {
+  const targetYear = parseInt(String(year || 2026), 10) || 2026;
+  let list = DEFAULT_COMPANY_HOLIDAYS.filter(h => h.date.startsWith(`${targetYear}-`));
+  if (type && type !== 'All') {
+    if (type === 'Gazetted') {
+      list = list.filter(h => h.type === 'Gazetted' || h.isMandatory === true);
+    } else if (type === 'Optional' || type === 'Restricted') {
+      list = list.filter(h => h.type === 'Restricted' || h.isMandatory === false);
+    } else if (type === 'Company') {
+      list = list.filter(h => h.type === 'Company');
+    }
+  }
+  return list;
+}
+
+/**
+ * Check if a date string is a public or company holiday (timezone-safe).
  */
 export function isPublicHoliday(
   dateStr: string,
-  holidaysList: { name: string; date: string }[] = DEFAULT_COMPANY_HOLIDAYS
-): { isHoliday: boolean; holidayName?: string } {
+  holidaysList: { name: string; date: string; type?: string; isMandatory?: boolean }[] = DEFAULT_COMPANY_HOLIDAYS
+): { isHoliday: boolean; holidayName?: string; holidayType?: string; isMandatory?: boolean } {
   if (!dateStr) return { isHoliday: false };
+  const targetCalendarDate = extractCalendarDate(dateStr);
+  if (!targetCalendarDate) return { isHoliday: false };
+
   const found = holidaysList.find(h => {
-    if (h.date === dateStr) return true;
-    // Format comparison if dateStr is YYYY-MM-DD
-    const d = new Date(dateStr);
-    const hDate = new Date(h.date);
-    return d.toISOString().split('T')[0] === hDate.toISOString().split('T')[0];
+    const hCalendarDate = extractCalendarDate(h.date);
+    return hCalendarDate === targetCalendarDate;
   });
 
-  return found ? { isHoliday: true, holidayName: found.name } : { isHoliday: false };
+  return found
+    ? { isHoliday: true, holidayName: found.name, holidayType: found.type || 'Gazetted', isMandatory: found.isMandatory !== false }
+    : { isHoliday: false };
 }
 
 /**

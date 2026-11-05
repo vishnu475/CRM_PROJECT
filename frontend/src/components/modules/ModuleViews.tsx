@@ -18,45 +18,46 @@ const ProjectsDeliveryView   = React.lazy(() => import('../../modules/projects/c
 const ReportsPage            = React.lazy(() => import('../../modules/reports/pages/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const DocumentsPage          = React.lazy(() => import('../../modules/documents').then(m => ({ default: m.DocumentsPage })));
 const EmployeeWorkReportPage = React.lazy(() => import('../../modules/ess/pages/EmployeeWorkReportPage').then(m => ({ default: m.EmployeeWorkReportPage })));
+const HelpdeskPage           = React.lazy(() => import('../../modules/helpdesk/pages/HelpdeskPage').then(m => ({ default: m.HelpdeskPage })));
+const TestingPage            = React.lazy(() => import('../../modules/testing').then(m => ({ default: m.TestingPage })));
+const TimesheetPage          = React.lazy(() => import('../../modules/timesheets').then(m => ({ default: m.TimesheetPage })));
 
-// These share one chunk (friend_2 bundle) — still lazy to defer the large file
-const AdministrationPage = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.AdministrationPage })));
-const HrmsPage           = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.HrmsPage })));
-const AttendancePage     = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.AttendancePage })));
-const LeavePage          = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.LeavePage })));
-const PayrollPage        = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.PayrollPage })));
-const RecruitmentPage    = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.RecruitmentPage })));
-const AccountsPage       = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.AccountsPage })));
-const LedgerPage         = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.LedgerPage })));
-const BankingPage        = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.BankingPage })));
-const ExpensesPage       = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.ExpensesPage })));
-const SettingsPage       = React.lazy(() => import('../../modules/friend_2_frontend_implementation').then(m => ({ default: m.SettingsPage })));
+import {
+  AdministrationPage,
+  HrmsPage,
+  AttendancePage,
+  LeavePage,
+  PayrollPage,
+  RecruitmentPage,
+  AccountsPage,
+  LedgerPage,
+  BankingPage,
+  ExpensesPage,
+  SettingsPage,
+} from '../../modules/friend_2_frontend_implementation';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Slim animated skeleton — shown only while a chunk downloads (first visit only)
 // ─────────────────────────────────────────────────────────────────────────────
-const ModuleSkeleton = memo(() => (
-  <div className="flex flex-col gap-4 animate-pulse p-2">
-    <div className="h-8 w-56 bg-slate-200/70 rounded-xl" />
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      {[0, 1, 2].map(i => (
-        <div key={i} className="h-28 bg-slate-100 rounded-2xl border border-slate-200/60" />
+const ModuleLoadingSkeleton: React.FC = () => (
+  <div className="space-y-5 animate-pulse p-2">
+    <div className="h-8 bg-slate-100 dark:bg-slate-800 rounded-lg w-1/4" />
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} className="h-28 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/60 dark:border-slate-800" />
       ))}
     </div>
-    <div className="h-64 bg-slate-100 rounded-2xl border border-slate-200/60" />
+    <div className="h-64 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/60 dark:border-slate-800" />
   </div>
-));
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main component
+// Main Content Switcher — routes the active navigation selection to its page.
 // ─────────────────────────────────────────────────────────────────────────────
-export const ModuleViews: React.FC = () => {
-  const {
-    activeModule,
-    helpdeskTickets,
-  } = useApp();
+export const ModuleViews: React.FC = memo(() => {
+  const { activeModule } = useApp();
 
-  let content: React.ReactNode = null;
+  let content: React.ReactNode;
 
   switch (activeModule) {
     case 'crm':            content = <CrmModule />;             break;
@@ -76,33 +77,15 @@ export const ModuleViews: React.FC = () => {
     case 'inventory':      content = <InventoryPage />;         break;
     case 'projects':       content = <ProjectsDeliveryView />;  break;
     case 'tasks':          content = <TasksPage />;             break;
+    case 'testing':        content = <TestingPage />;           break;
+    case 'timesheet':
+    case 'timesheets':     content = <TimesheetPage />;         break;
     case 'documents':      content = <DocumentsPage />;         break;
     case 'reports':        content = <ReportsPage />;           break;
     case 'administration': content = <AdministrationPage />;    break;
     case 'settings':       content = <SettingsPage />;          break;
     case 'employee':       content = <EmployeeWorkReportPage />; break;
-
-    case 'helpdesk':
-      content = (
-        <div className="space-y-6">
-          <h1 className="text-xl font-bold text-[#0f172a] flex items-center gap-2">
-            <Headphones className="text-rose-400" size={22} />
-            Helpdesk &amp; Support Tickets
-          </h1>
-          <div className="space-y-3">
-            {helpdeskTickets.map((tck) => (
-              <div key={tck.id} className="bg-white shadow-sm border border-slate-200 p-4 rounded-2xl flex justify-between items-center">
-                <div>
-                  <p className="font-bold text-[#0f172a] text-xs">{tck.ticketNo} - {tck.subject}</p>
-                  <p className="text-[10px] text-slate-500">{tck.customerName} • {tck.createdAt}</p>
-                </div>
-                <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 text-xs font-bold rounded-lg">{tck.status}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-      break;
+    case 'helpdesk':       content = <HelpdeskPage />;          break;
 
     case 'automation':
       content = (
@@ -111,28 +94,31 @@ export const ModuleViews: React.FC = () => {
             <Zap className="text-amber-400" size={22} />
             Workflow &amp; Automation Rules
           </h1>
-          <div className="bg-white shadow-sm border border-slate-200 p-5 rounded-2xl space-y-3">
-            <p className="text-xs text-slate-600 font-semibold">Active Event Rules:</p>
-            <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-700">
-              ⚡ Trigger: Lead Stage = "Qualified" → Action: Auto-assign Sales Manager &amp; Send Email
-            </div>
-            <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-700">
-              ⚡ Trigger: Attendance Lock → Action: Compute LOP &amp; Auto-feed into Payroll Run
-            </div>
+          <div className="bg-white rounded-xl p-8 border border-slate-200 text-center">
+            <Zap size={40} className="mx-auto text-amber-400 mb-3" />
+            <h2 className="text-base font-bold text-slate-800">Visual Automation Builder</h2>
+            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+              Configure cross-module triggers, automated emails, approval workflows, and status synchronization rules.
+            </p>
           </div>
         </div>
       );
       break;
 
     default:
-      content = null;
+      content = (
+        <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-xs">
+          <p className="font-semibold text-slate-600">Module &ldquo;{activeModule}&rdquo; not found</p>
+          <p className="mt-1">Please select an available module from the sidebar.</p>
+        </div>
+      );
   }
 
-  // Single Suspense boundary — skeleton only shows on a module's FIRST ever load.
-  // Every click after that is instant.
   return (
-    <Suspense fallback={<ModuleSkeleton />}>
+    <Suspense fallback={<ModuleLoadingSkeleton />}>
       {content}
     </Suspense>
   );
-};
+});
+
+ModuleViews.displayName = 'ModuleViews';

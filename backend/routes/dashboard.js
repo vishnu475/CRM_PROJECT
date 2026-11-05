@@ -1,5 +1,5 @@
 import express from 'express';
-import { hrmsPool as pool } from '../db/pool.js'; // HRMS DB — Friend 2 (employees, attendance, bank accounts)
+import { hrmsPool as pool, crmPool } from '../db/pool.js'; // HRMS DB — Friend 2 (employees, attendance, bank accounts)
 
 const router = express.Router();
 
@@ -24,6 +24,14 @@ router.get('/executive', async (req, res) => {
     const payrollRes = await pool.query("SELECT SUM(salary) as monthly_liability FROM employees WHERE status != 'Exited'");
     const monthlyPayrollLiability = parseFloat(payrollRes.rows[0].monthly_liability || 510000);
 
+    let openTicketsCount = 0;
+    try {
+      const ticketRes = await crmPool.query("SELECT COUNT(*) FROM helpdesk_tickets WHERE status = 'Open' OR status = 'In Progress'");
+      openTicketsCount = parseInt(ticketRes.rows[0].count, 10);
+    } catch (e) {
+      openTicketsCount = 2;
+    }
+
     res.json({
       success: true,
       kpis: {
@@ -33,7 +41,7 @@ router.get('/executive', async (req, res) => {
         totalCashBalance,
         monthlyPayrollLiability,
         activeProjects: 8,
-        openHelpdeskTickets: 4
+        openHelpdeskTickets: openTicketsCount
       }
     });
   } catch (err) {

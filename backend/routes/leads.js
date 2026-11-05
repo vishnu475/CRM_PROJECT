@@ -119,26 +119,101 @@ router.delete('/upload-attachment/:filename', async (req, res) => {
 // GET /api/leads — Fetch all leads from CRM database
 router.get('/', async (req, res) => {
   try {
-    const { stage, source, assignedTo } = req.query;
-    let query = `SELECT * FROM leads WHERE 1=1`;
+    const { stage, source, assignedTo, search, q, minScore, maxScore, minValue, maxValue, status } = req.query;
+    let query = `
+      SELECT 
+        l.*,
+        q.id AS latest_quotation_id,
+        q.quote_number AS latest_quotation_number,
+        q.status AS latest_quotation_status,
+        q.amount AS latest_quotation_amount,
+        q.revision_number AS latest_quotation_revision,
+        q.sent_date AS latest_quotation_sent_date,
+        q.date AS latest_quotation_date,
+        so.id AS linked_sales_order_id,
+        so.so_number AS linked_sales_order_number
+      FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT q1.id, q1.quote_number, q1.status, q1.amount, q1.revision_number, q1.sent_date, q1.date
+        FROM quotations q1
+        WHERE q1.lead_id = l.id
+        ORDER BY q1.created_at DESC, q1.revision_number DESC
+        LIMIT 1
+      ) q ON true
+      LEFT JOIN LATERAL (
+        SELECT so1.id, so1.so_number
+        FROM sales_orders so1
+        WHERE so1.quotation_id = q.id
+        LIMIT 1
+      ) so ON true
+      WHERE 1=1
+    `;
     const params = [];
 
+    // 1. Stage filter (case-insensitive and trimmed)
     if (stage && stage !== 'All') {
-      params.push(stage);
-      query += ` AND stage = $${params.length}`;
-    }
-    if (source && source !== 'All') {
-      params.push(source);
-      query += ` AND source = $${params.length}`;
-    }
-    if (assignedTo) {
-      params.push(assignedTo);
-      query += ` AND (assigned_to = $${params.length} OR assigned_to_employee_id = $${params.length})`;
+      params.push(stage.trim());
+      query += ` AND l.stage ILIKE $${params.length}`;
     }
 
-    query += ` ORDER BY created_at DESC`;
+    // 2. Source filter (case-insensitive and trimmed)
+    if (source && source !== 'All') {
+      params.push(source.trim());
+      query += ` AND l.source ILIKE $${params.length}`;
+    }
+
+    // 3. Assigned owner filter (by employee code/id or name)
+    if (assignedTo && assignedTo !== 'All') {
+      params.push(assignedTo.trim());
+      query += ` AND (l.assigned_to ILIKE $${params.length} OR l.assigned_to_employee_id ILIKE $${params.length})`;
+    }
+
+    // 4. Multi-field search (name, company, email, phone, contact_person, assigned_to, source, requirement)
+    const rawSearch = (search || q || '').trim();
+    if (rawSearch) {
+      params.push(`%${rawSearch}%`);
+      const pIdx = params.length;
+      query += ` AND (
+        l.name ILIKE $${pIdx} OR 
+        l.company ILIKE $${pIdx} OR 
+        l.email ILIKE $${pIdx} OR 
+        l.phone ILIKE $${pIdx} OR 
+        l.contact_person ILIKE $${pIdx} OR 
+        l.assigned_to ILIKE $${pIdx} OR 
+        l.source ILIKE $${pIdx} OR 
+        l.requirement ILIKE $${pIdx}
+      )`;
+    }
+
+    // 5. Score range filters
+    if (minScore !== undefined && minScore !== '') {
+      params.push(Number(minScore));
+      query += ` AND l.score >= $${params.length}`;
+    }
+    if (maxScore !== undefined && maxScore !== '') {
+      params.push(Number(maxScore));
+      query += ` AND l.score <= $${params.length}`;
+    }
+
+    // 6. Deal value range filters
+    if (minValue !== undefined && minValue !== '') {
+      params.push(Number(minValue));
+      query += ` AND l.value >= $${params.length}`;
+    }
+    if (maxValue !== undefined && maxValue !== '') {
+      params.push(Number(maxValue));
+      query += ` AND l.value <= $${params.length}`;
+    }
+
+    // 7. Status filter (handle active vs archived)
+    if (status && status !== 'All') {
+      params.push(status.trim());
+      query += ` AND l.status ILIKE $${params.length}`;
+    }
+
+    query += ` ORDER BY l.created_at DESC`;
     const result = await pool.query(query, params);
-    res.json({ success: true, data: result.rows });
+    res.json({ success: true, data: result.rows, total: result.rows.length });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -147,7 +222,34 @@ router.get('/', async (req, res) => {
 // GET /api/leads/:id — Fetch single lead
 router.get('/:id', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    const result = await pool.query(`
+      SELECT 
+        l.*,
+        q.id AS latest_quotation_id,
+        q.quote_number AS latest_quotation_number,
+        q.status AS latest_quotation_status,
+        q.amount AS latest_quotation_amount,
+        q.revision_number AS latest_quotation_revision,
+        q.sent_date AS latest_quotation_sent_date,
+        q.date AS latest_quotation_date,
+        so.id AS linked_sales_order_id,
+        so.so_number AS linked_sales_order_number
+      FROM leads l
+      LEFT JOIN LATERAL (
+        SELECT q1.id, q1.quote_number, q1.status, q1.amount, q1.revision_number, q1.sent_date, q1.date
+        FROM quotations q1
+        WHERE q1.lead_id = l.id
+        ORDER BY q1.created_at DESC, q1.revision_number DESC
+        LIMIT 1
+      ) q ON true
+      LEFT JOIN LATERAL (
+        SELECT so1.id, so1.so_number
+        FROM sales_orders so1
+        WHERE so1.quotation_id = q.id
+        LIMIT 1
+      ) so ON true
+      WHERE l.id = $1
+    `, [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -217,6 +319,199 @@ function sanitizeTags(tagsInput) {
   }
   return cleanTags;
 }
+
+// POST /api/leads/:id/convert — Convert Won lead to Customer, Contact, and Opportunity
+router.post('/:id/convert', async (req, res) => {
+  const { id } = req.params;
+  const customData = req.body || {};
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch lead
+    const leadRes = await client.query('SELECT * FROM leads WHERE id = $1', [id]);
+    if (leadRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'Lead not found.' });
+    }
+
+    const lead = leadRes.rows[0];
+
+    // 2. Duplicate conversion check (Rule 5)
+    if (lead.is_converted) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: 'This lead has already been converted to a Customer, Contact, and Opportunity.',
+        customerId: lead.converted_to_customer_id,
+        contactId: lead.converted_to_contact_id,
+        opportunityId: lead.converted_to_opportunity_id,
+      });
+    }
+
+    // 3. Stage check: Must be Won (Rule 1 & 2)
+    if (lead.stage !== 'Won') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: `Lead cannot be converted from stage "${lead.stage}". Conversion is only available when the Lead is Won.`
+      });
+    }
+
+    const timestamp = Date.now();
+
+    // 4. Handle Customer Record (Rule 3 & 4)
+    let customerId = '';
+    let customerName = '';
+    let isExistingCustomerReused = false;
+
+    if (customData.useExistingCustomerId) {
+      const existingCust = await client.query('SELECT * FROM customers WHERE id = $1', [customData.useExistingCustomerId]);
+      if (existingCust.rows.length > 0) {
+        customerId = existingCust.rows[0].id;
+        customerName = existingCust.rows[0].customer_name;
+        isExistingCustomerReused = true;
+      }
+    }
+
+    if (!customerId) {
+      const existingByLead = await client.query('SELECT * FROM customers WHERE converted_from_lead_id = $1', [id]);
+      if (existingByLead.rows.length > 0) {
+        customerId = existingByLead.rows[0].id;
+        customerName = existingByLead.rows[0].customer_name;
+        isExistingCustomerReused = true;
+      }
+    }
+
+    if (!customerId) {
+      customerName = (customData.customerName || '').trim() || (lead.company || '').trim() || (lead.name || '').trim();
+      if (!customerName) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Customer name is required for lead conversion.' });
+      }
+
+      customerId = `CUST-${timestamp}`;
+      const customerType = customData.customerType || (lead.company ? 'Company' : 'Individual');
+      const industry = customData.industry || lead.industry || 'General';
+      const ownerId = lead.assigned_to || lead.assigned_to_employee_id || '';
+      const contactPersonName = (customData.contactName || '').trim() || (lead.decision_maker || lead.contact_person || lead.name || '').trim();
+      const contactEmail = (customData.contactEmail || '').trim() || lead.email || '';
+      const contactPhone = (customData.contactPhone || '').trim() || lead.phone || '';
+      const billingCity = lead.city || lead.address || '';
+      const billingCountry = lead.country || '';
+
+      await client.query(`
+        INSERT INTO customers (
+          id, customer_code, customer_name, customer_type, industry, owner_id, status,
+          credit_limit, contact_name, contact_email, contact_phone, billing_city, billing_country,
+          converted_from_lead_id, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        customerId, customerId, customerName, customerType, industry, ownerId, 'Active',
+        0, contactPersonName, contactEmail, contactPhone, billingCity, billingCountry, id
+      ]);
+    }
+
+    // 5. Handle Contact Record
+    let contactId = '';
+    let isExistingContactReused = false;
+
+    const contactPersonName = (customData.contactName || '').trim() || (lead.decision_maker || lead.contact_person || lead.name || '').trim();
+    const contactEmail = (customData.contactEmail || '').trim() || lead.email || '';
+    const contactPhone = (customData.contactPhone || '').trim() || lead.phone || '';
+    const designation = (customData.contactDesignation || '').trim() || lead.designation || 'Primary Contact';
+
+    const existingContact = await client.query(
+      'SELECT * FROM contacts WHERE customer_id = $1 AND lead_id = $2',
+      [customerId, id]
+    );
+
+    if (existingContact.rows.length > 0) {
+      contactId = existingContact.rows[0].id;
+      isExistingContactReused = true;
+    } else {
+      contactId = `CON-${timestamp}`;
+      await client.query(`
+        INSERT INTO contacts (
+          id, name, email, phone, company, customer_id, lead_id, title, contact_role, alternate_phone, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        contactId, contactPersonName, contactEmail, contactPhone, customerName, customerId, id,
+        designation, lead.contact_role || 'Decision Maker', lead.alternate_phone || null
+      ]);
+    }
+
+    // 6. Handle Opportunity Record
+    let opportunityId = '';
+    const defaultOppSummary = lead.requirement ? (lead.requirement.length > 40 ? `${lead.requirement.slice(0, 37)}...` : lead.requirement) : 'Deal';
+    const oppName = (customData.opportunityName || '').trim() || (lead.company ? `${lead.company} - ${defaultOppSummary}` : `${lead.name} Deal`);
+    const oppValue = customData.opportunityValue !== undefined && !isNaN(customData.opportunityValue)
+      ? parseFloat(customData.opportunityValue)
+      : (parseFloat(lead.final_agreed_amount) || parseFloat(lead.value) || parseFloat(lead.budget) || 0);
+    const oppExpectedClose = customData.expectedCloseDate || lead.won_date || lead.expected_close_date || new Date().toISOString().split('T')[0];
+
+    const existingOpp = await client.query(
+      'SELECT * FROM opportunities WHERE customer_id = $1 AND name = $2',
+      [customerId, oppName]
+    );
+
+    if (existingOpp.rows.length > 0) {
+      opportunityId = existingOpp.rows[0].id;
+    } else {
+      opportunityId = `OPP-${timestamp}`;
+      await client.query(`
+        INSERT INTO opportunities (
+          id, name, customer_id, customer_name, value, probability, expected_close, owner, stage, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        opportunityId, oppName, customerId, customerName, oppValue, 100, oppExpectedClose,
+        lead.assigned_to || '', 'Won'
+      ]);
+    }
+
+    // 7. Update Lead conversion references and flag (Rule 6 & 7)
+    await client.query(`
+      UPDATE leads SET
+        is_converted = TRUE,
+        converted_at = CURRENT_TIMESTAMP,
+        converted_to_customer_id = $2,
+        converted_to_contact_id = $3,
+        converted_to_opportunity_id = $4,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [id, customerId, contactId, opportunityId]);
+
+    await client.query('COMMIT');
+
+    const createdCust = (await pool.query('SELECT * FROM customers WHERE id = $1', [customerId])).rows[0];
+    const createdCont = (await pool.query('SELECT * FROM contacts WHERE id = $1', [contactId])).rows[0];
+    const createdOpp = (await pool.query('SELECT * FROM opportunities WHERE id = $1', [opportunityId])).rows[0];
+    const updatedLead = (await pool.query('SELECT * FROM leads WHERE id = $1', [id])).rows[0];
+
+    res.json({
+      success: true,
+      message: 'Lead converted successfully.',
+      customerId,
+      contactId,
+      opportunityId,
+      isExistingCustomerReused,
+      isExistingContactReused,
+      data: {
+        lead: updatedLead,
+        customer: createdCust,
+        contact: createdCont,
+        opportunity: createdOpp
+      }
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Lead conversion endpoint error:', err);
+    res.status(400).json({ success: false, message: err.message || 'Lead conversion failed.' });
+  } finally {
+    client.release();
+  }
+});
 
 // POST /api/leads — Create new lead in CRM database
 
@@ -373,7 +668,7 @@ Sales Team
 
     // 6. Email sent successfully -> update lead
     const effectiveSentDate = sentDate || new Date().toISOString().split('T')[0];
-    const newStage = lead.stage === 'Qualified' ? 'Proposal' : lead.stage;
+    const newStage = lead.stage;
 
     const updateRes = await pool.query(
       `UPDATE leads SET
@@ -852,33 +1147,130 @@ const updateHandler = async (req, res) => {
   const { id } = req.params;
   const fields = { ...req.body };
   try {
-    if (fields.stage === 'Qualified') {
-      const existingRes = await pool.query('SELECT * FROM leads WHERE id = $1', [id]);
-      if (existingRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
-      const existing = existingRes.rows[0];
+    const existingRes = await pool.query('SELECT * FROM leads WHERE id = $1', [id]);
+    if (existingRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
+    const existing = existingRes.rows[0];
 
-      // Stage skipping protection: only allow transition from Contacted -> Qualified (or remaining in Qualified)
-      if (existing.stage !== 'Contacted' && existing.stage !== 'Qualified') {
-        return res.status(400).json({
-          success: false,
-          message: `Cannot transition lead stage from "${existing.stage}" to "Qualified". Leads can only move to Qualified from "Contacted" stage.`
-        });
-      }
+    // Stage validation rules
+    if ('stage' in fields && fields.stage !== undefined && fields.stage !== null) {
+      const targetStage = fields.stage;
+      const currentStage = existing.stage;
 
-      const merged = {
-        requirement: fields.requirement !== undefined ? fields.requirement : existing.requirement,
-        budget: fields.budget !== undefined ? fields.budget : (fields.value !== undefined ? fields.value : existing.budget || existing.value),
-        value: fields.value !== undefined ? fields.value : (fields.budget !== undefined ? fields.budget : existing.value || existing.budget),
-        decisionMaker: fields.decisionMaker !== undefined ? fields.decisionMaker : (fields.contactPerson !== undefined ? fields.contactPerson : existing.decision_maker || existing.contact_person),
-        expectedCloseDate: fields.expectedCloseDate !== undefined ? fields.expectedCloseDate : existing.expected_close_date,
-      };
+      if (currentStage !== targetStage) {
+        // Once Lost or Won, ordinary stage updates are blocked
+        if (currentStage === 'Lost') {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot move lead from "Lost" to "${targetStage}". Deals marked as Lost cannot be transitioned to active stages.`
+          });
+        }
+        if (currentStage === 'Won') {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot move lead from "Won" to "${targetStage}". Deals marked as Won are closed and finalized.`
+          });
+        }
 
-      const valErrors = validateQualificationBackend(merged);
-      if (valErrors.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Qualification validation failed: ' + valErrors.join(' ')
-        });
+        // Direct manual transition to Won is blocked
+        if (targetStage === 'Won') {
+          return res.status(400).json({
+            success: false,
+            message: 'Lead stage cannot be manually changed to Won. Won is an outcome reached when the linked quotation in Sales is accepted.'
+          });
+        }
+
+        // Moving lead to Lost requires Lost Reason & Notes
+        if (targetStage === 'Lost') {
+          const lostReason = (fields.lostReason !== undefined ? fields.lostReason : existing.lost_reason || '').trim();
+          if (!lostReason) {
+            return res.status(400).json({
+              success: false,
+              message: 'Please provide a valid Lost Reason before marking this lead as Lost.'
+            });
+          }
+          if (lostReason.toLowerCase() === 'other') {
+            const otherDetails = (fields.lostReasonDetails !== undefined ? fields.lostReasonDetails : existing.lost_reason_details || '').trim();
+            const lostNotes = (fields.lostNotes !== undefined ? fields.lostNotes : existing.lost_notes || '').trim();
+            if (!otherDetails && !lostNotes) {
+              return res.status(400).json({
+                success: false,
+                message: 'Please provide a custom explanation when selecting "Other" as the Lost Reason.'
+              });
+            }
+          }
+          const lostNotes = (fields.lostNotes !== undefined ? fields.lostNotes : existing.lost_notes || '').trim();
+          if (!lostNotes) {
+            return res.status(400).json({
+              success: false,
+              message: 'Please provide Lost Notes/Comments explaining why this deal was lost.'
+            });
+          }
+        }
+        // Reject obsolete/unsupported stages
+        else if (!['New', 'Contacted', 'Qualified', 'Won', 'Lost'].includes(targetStage)) {
+          return res.status(400).json({
+            success: false,
+            message: `"${targetStage}" is not a valid CRM lead stage.`
+          });
+        }
+        // Active stage transitions (New -> Contacted -> Qualified)
+        else {
+          const stageOrder = ['New', 'Contacted', 'Qualified'];
+          const currentIndex = stageOrder.indexOf(currentStage);
+          const targetIndex = stageOrder.indexOf(targetStage);
+
+          if (currentIndex !== -1 && targetIndex !== -1) {
+            if (targetIndex < currentIndex) {
+              return res.status(400).json({
+                success: false,
+                message: `Backward stage transition from "${currentStage}" to "${targetStage}" is not allowed.`
+              });
+            }
+            if (targetIndex > currentIndex + 1) {
+              return res.status(400).json({
+                success: false,
+                message: `Stage skipping is not allowed. Lead must move from "${currentStage}" to "${stageOrder[currentIndex + 1]}" first.`
+              });
+            }
+          }
+
+          // New -> Contacted requires completed Call, Email, or Meeting activity
+          if (currentStage === 'New' && targetStage === 'Contacted') {
+            const actRes = await pool.query(
+              `SELECT id FROM activities 
+               WHERE (related_to = $1 OR related_to = $2 OR related_to LIKE $3)
+                 AND type IN ('Call', 'Email', 'Meeting')
+                 AND status = 'Completed'
+               LIMIT 1`,
+              [id, existing.name, `%${existing.name}%`]
+            );
+            if (actRes.rows.length === 0) {
+              return res.status(400).json({
+                success: false,
+                message: 'Please record a completed call, email, or meeting before moving this lead to Contacted.'
+              });
+            }
+          }
+
+          // Contacted -> Qualified requires 4 qualification fields
+          if (currentStage === 'Contacted' && targetStage === 'Qualified') {
+            const merged = {
+              requirement: fields.requirement !== undefined ? fields.requirement : existing.requirement,
+              budget: fields.budget !== undefined ? fields.budget : (fields.value !== undefined ? fields.value : existing.budget || existing.value),
+              value: fields.value !== undefined ? fields.value : (fields.budget !== undefined ? fields.budget : existing.value || existing.budget),
+              decisionMaker: fields.decisionMaker !== undefined ? fields.decisionMaker : (fields.contactPerson !== undefined ? fields.contactPerson : existing.decision_maker || existing.contact_person),
+              expectedCloseDate: fields.expectedCloseDate !== undefined ? fields.expectedCloseDate : existing.expected_close_date,
+            };
+
+            const valErrors = validateQualificationBackend(merged);
+            if (valErrors.length > 0) {
+              return res.status(400).json({
+                success: false,
+                message: 'Qualification validation failed: ' + valErrors.join(' ')
+              });
+            }
+          }
+        }
       }
     }
     // If assignedTo or assignedToEmployeeId is being updated

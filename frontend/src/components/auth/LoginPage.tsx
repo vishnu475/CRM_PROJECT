@@ -1,18 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Hexagon, Mail, Lock, LogIn, CheckCircle2, ArrowRight, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 interface LoginPageProps {
-  onNavigate: (view: 'landing' | 'register') => void;
+  onNavigate: (view: 'landing' | 'login' | 'register' | 'careers') => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const { setIsAuthenticated, setUserRole, setUserProfile, setActiveModule } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('Executive');
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+  const [role, setRole] = useState(() => {
+    const saved = localStorage.getItem('crm_user_role');
+    if (saved === 'Employee') return 'Employee';
+    if (saved === 'Super Admin') return 'Super Admin';
+    if (saved === 'HRAdmin') return 'HRAdmin';
+    return 'Executive';
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const togglePasswordVisibility = () => {
+    setShowPassword((prev) => !prev);
+    if (passwordInputRef.current) {
+      passwordInputRef.current.focus();
+    }
+  };
 
   const [error, setError] = useState<string | null>(null);
 
@@ -35,8 +49,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const handleRoleChange = (selectedRole: string) => {
     setRole(selectedRole);
     setError(null);
-    setEmail('');
-    setPassword('');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -54,21 +66,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     }
 
     try {
-      // 1. Strict Backend API Authentication against PostgreSQL employees table
+      // 1. Strict Backend API Authentication against PostgreSQL employees table with selected role
       const apiRes = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId: inputKey, pin: pinKey })
+        body: JSON.stringify({ employeeId: inputKey, pin: pinKey, role })
       });
       const data = await apiRes.json();
 
       if (data.success && data.employee) {
         const emp = data.employee;
+
+        // Security check: Guard against frontend role tampering / privilege escalation
+        const isExecRequested = role === 'Executive' || role === 'Super Admin';
+        if (isExecRequested && emp.role !== 'Executive' && emp.role !== 'HRAdmin') {
+          setError('This account does not have Executive / Super Admin privileges. Please select Employee Self-Service (ESS).');
+          setIsLoading(false);
+          return;
+        }
+
         if (data.token) {
           localStorage.setItem('crm_token', data.token);
         }
 
-        const effectiveRole = role === 'Employee' ? 'Employee' : (role === 'Executive' ? 'Executive' : (emp.role || 'Employee'));
+        const effectiveRole = emp.role || (role === 'Employee' ? 'Employee' : role === 'HRAdmin' ? 'HRAdmin' : 'Executive');
 
         if (setUserProfile) {
           setUserProfile({
@@ -77,7 +98,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             name: emp.name,
             email: emp.email,
             role: effectiveRole,
-            roleTitle: emp.designation || (effectiveRole === 'Executive' ? 'Administrator' : 'Employee'),
+            roleTitle: emp.designation || (role === 'Super Admin' ? 'Super Administrator' : (effectiveRole === 'Executive' ? 'Administrator' : effectiveRole === 'HRAdmin' ? 'HR Operations Lead' : 'Employee')),
             department: emp.department || 'General'
           });
         }
@@ -86,6 +107,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
           setUserRole('Employee');
           if (setActiveModule) setActiveModule('employee', 'dashboard');
           window.history.pushState({}, '', '/employee/dashboard');
+        } else if (effectiveRole === 'HRAdmin') {
+          setUserRole('HRAdmin');
+          if (setActiveModule) setActiveModule('dashboard');
+          window.history.pushState({}, '', '/dashboard');
         } else {
           setUserRole(effectiveRole);
           if (setActiveModule) setActiveModule('dashboard');
@@ -94,7 +119,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         setIsAuthenticated(true);
         window.dispatchEvent(new Event('popstate'));
       } else {
-        // Display clear error from backend (e.g. "Employee ID does not exist. Please enter a valid Employee ID.")
+        // Display clear error from backend (e.g. "This account does not have Executive / Super Admin privileges." or "Invalid credentials")
         setError(data.message || 'Employee ID does not exist. Please enter a valid Employee ID.');
       }
     } catch (err: any) {
@@ -125,14 +150,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             </div>
           </div>
           
-          <div className="flex items-center gap-4 text-sm font-bold">
-            <span className="text-slate-500 hidden sm:block">Don't have an account?</span>
-            <button 
-              onClick={() => onNavigate('register')}
-              className="text-[#2563eb] hover:text-blue-800 transition-colors"
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <a 
+              href="/register"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('register');
+              }}
+              className="text-slate-500 hover:text-[#2563eb] transition-colors hidden sm:inline-block cursor-pointer"
+            >
+              Don't have an account?
+            </a>
+            <a 
+              href="/register"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigate('register');
+              }}
+              className="text-[#2563eb] hover:text-blue-800 transition-colors cursor-pointer"
             >
               Get Started Free
-            </button>
+            </a>
           </div>
         </div>
       </header>
@@ -215,8 +253,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     required
                     value={email}
                     onChange={(e) => {
-                      setEmail(e.target.value);
+                      const val = e.target.value;
+                      setEmail(val);
                       if (error) setError(null);
+                      if (val.trim().toUpperCase() === 'EMP-003' || val.toLowerCase().includes('priya')) {
+                        setRole('HRAdmin');
+                      }
                     }}
                     placeholder={role === 'Employee' ? 'Enter Employee ID (e.g. EMP-008 or 8)' : 'you@company.com or EMP-001'}
                     className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm"
@@ -231,9 +273,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                   </label>
                   <a href="#" className="text-xs font-bold text-[#2563eb] hover:text-blue-800 transition-colors">Forgot Password?</a>
                 </div>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                <div className="relative flex items-center">
+                  <Lock className="absolute left-4 text-slate-400 pointer-events-none" size={20} />
                   <input
+                    id="password-input"
+                    ref={passwordInputRef}
                     type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
@@ -245,24 +289,34 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     className="w-full pl-12 pr-12 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm"
                   />
                   <button 
-                    type="button" 
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-3.5 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none"
+                    type="button"
+                    id="password-toggle-btn"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                    aria-controls="password-input"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={togglePasswordVisibility}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/30 rounded-lg transition-colors flex items-center justify-center min-w-[36px] min-h-[36px] cursor-pointer"
                   >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    {showPassword ? <EyeOff size={20} aria-hidden="true" /> : <Eye size={20} aria-hidden="true" />}
                   </button>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-700 ml-1">Login As</label>
+                <label htmlFor="role-select" className="text-sm font-bold text-slate-700 ml-1">Login As</label>
                 <div className="relative">
                   <select
+                    id="role-select"
+                    data-testid="role-select"
                     value={role}
                     onChange={(e) => handleRoleChange(e.target.value)}
                     className="w-full pl-4 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-[#2563eb]/20 focus:border-[#2563eb] focus:bg-white transition-all shadow-sm appearance-none cursor-pointer"
                   >
-                    <option value="Executive">Executive / Super Admin</option>
+                    <option value="Executive">Executive</option>
+                    <option value="Super Admin">Super Admin</option>
+                    <option value="HRAdmin">HR Lead / HR Admin</option>
                     <option value="Employee">Employee Self-Service (ESS)</option>
                   </select>
                   <div className="absolute right-4 top-4 pointer-events-none text-slate-500">
@@ -300,50 +354,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                   onClick={() => {
                     setEmail('admin@company.com');
                     setPassword('admin@123');
-                    setRole('Executive');
+                    setRole('Super Admin');
                     setError(null);
                   }}
                   className="p-2.5 bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-colors group"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">Executive Admin</span>
-                    <span className="text-[10px] font-bold text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded">All Access</span>
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-100/60 px-1.5 py-0.5 rounded">Super Admin</span>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5 truncate">admin@company.com • 1234</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail('EMP-001');
-                    setPassword('1234');
-                    setRole('Executive');
-                    setError(null);
-                  }}
-                  className="p-2.5 bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-colors group"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">Sarah Jenkins</span>
-                    <span className="text-[10px] font-bold text-purple-600 bg-purple-100/60 px-1.5 py-0.5 rounded">VP Eng</span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">EMP-001 • PIN 1234</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmail('EMP-003');
-                    setPassword('1234');
-                    setRole('Executive');
-                    setError(null);
-                  }}
-                  className="p-2.5 bg-slate-50 hover:bg-blue-50/80 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition-colors group"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600">Priya Sharma</span>
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.5 rounded">HR Lead</span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5 truncate">EMP-003 • PIN 1234</div>
                 </button>
 
                 <button
@@ -365,15 +385,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               </div>
             </div>
 
-            {/* Mobile Register Link */}
-            <div className="mt-8 text-center text-sm font-bold text-slate-500 sm:hidden">
-              Don't have an account?{' '}
-              <button 
-                onClick={() => onNavigate('register')}
-                className="text-[#2563eb] hover:text-blue-800 transition-colors ml-1"
+            {/* Register Link (Mobile and Desktop) */}
+            <div className="mt-8 text-center text-sm font-bold text-slate-500 flex items-center justify-center gap-1.5 flex-wrap">
+              <a
+                href="/register"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate('register');
+                }}
+                className="text-slate-500 hover:text-[#2563eb] transition-colors cursor-pointer"
+              >
+                Don't have an account?
+              </a>
+              <a 
+                href="/register"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate('register');
+                }}
+                className="text-[#2563eb] hover:text-blue-800 transition-colors cursor-pointer"
               >
                 Get Started Free
-              </button>
+              </a>
             </div>
             
           </div>

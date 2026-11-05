@@ -5,6 +5,10 @@ let wss = null;
 export function initWebSocketServer(server) {
   wss = new WebSocketServer({ server });
 
+  wss.on('error', (err) => {
+    // Prevent unhandled exception if server encounters EADDRINUSE or socket errors
+  });
+
   wss.on('connection', (ws) => {
     console.log('📡 Real-time HR Dashboard client connected via WebSocket');
     ws.send(JSON.stringify({ type: 'CONNECTED', message: 'WebSocket connection active' }));

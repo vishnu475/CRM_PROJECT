@@ -18,9 +18,11 @@ export const ReportsPage: React.FC = () => {
   const [tableSearch, setTableSearch] = useState('');
   const [activeTableTab, setActiveTableTab] = useState<'employees' | 'leads' | 'invoices' | 'interns'>('employees');
 
-  const fetchReportData = useCallback(async () => {
+  const fetchReportData = useCallback(async (periodToFetch?: string) => {
+    const period = periodToFetch || selectedPeriod;
     try {
-      const res = await fetch('/api/reports/summary');
+      setIsRefreshing(true);
+      const res = await fetch(`/api/reports/summary?period=${encodeURIComponent(period)}`);
       const json = await res.json();
       if (json.success) {
         setData(json);
@@ -29,16 +31,17 @@ export const ReportsPage: React.FC = () => {
       console.error('Error fetching reports data:', err);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedPeriod]);
 
   useEffect(() => {
-    fetchReportData();
-  }, [fetchReportData]);
+    fetchReportData(selectedPeriod);
+  }, [selectedPeriod]);
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
-    await fetchReportData();
+    await fetchReportData(selectedPeriod);
     setIsRefreshing(false);
     setRefreshMsg('Dual-DB Analytics Refreshed from PostgreSQL!');
     setTimeout(() => setRefreshMsg(null), 3000);
@@ -79,14 +82,7 @@ export const ReportsPage: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[450px] space-y-4">
-        <RefreshCw className="animate-spin text-purple-600" size={36} />
-        <p className="text-xs font-semibold text-slate-500">Aggregating Live HRMS & CRM Intelligence...</p>
-      </div>
-    );
-  }
+
 
   const hrms = data?.hrms || {};
   const crm = data?.crm || {};
@@ -128,7 +124,7 @@ export const ReportsPage: React.FC = () => {
           )}
 
           {/* Period Filter */}
-          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-semibold">
+          <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-semibold" role="group" aria-label="Reporting Period Filter">
             {[
               { id: 'month', label: 'This Month' },
               { id: 'quarter', label: 'Quarter' },
@@ -137,9 +133,11 @@ export const ReportsPage: React.FC = () => {
             ].map(p => (
               <button
                 key={p.id}
+                id={`period-filter-${p.id}`}
                 onClick={() => setSelectedPeriod(p.id as any)}
+                aria-pressed={selectedPeriod === p.id}
                 className={`px-3 py-1.5 rounded-lg transition-colors ${
-                  selectedPeriod === p.id ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                  selectedPeriod === p.id ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 {p.label}
@@ -177,6 +175,14 @@ export const ReportsPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {isLoading && !data ? (
+        <div className="flex flex-col items-center justify-center min-h-[450px] space-y-4 bg-white rounded-2xl border border-slate-200 p-12">
+          <RefreshCw className="animate-spin text-purple-600" size={36} />
+          <p className="text-xs font-semibold text-slate-500">Aggregating Live HRMS & CRM Intelligence...</p>
+        </div>
+      ) : (
+        <>
 
       {/* 3 Interactive Highlight Category Cards (Matching User Reference Image) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -784,6 +790,8 @@ export const ReportsPage: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

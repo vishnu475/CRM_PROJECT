@@ -19,7 +19,9 @@ const ROUTE_MODULE_MAP = {
   '/api/opportunities': ['opportunities', 'crm', 'MOD-OPP', 'MOD-CRM'],
   '/api/quotations': ['quotations', 'crm', 'MOD-QUOT', 'MOD-CRM'],
   '/api/sales-orders': ['sales_orders', 'crm', 'MOD-SALES', 'MOD-CRM'],
-  '/api/crm': ['crm', 'MOD-CRM']
+  '/api/crm': ['crm', 'MOD-CRM'],
+  '/api/helpdesk': ['helpdesk', 'MOD-HD', 'support'],
+  '/api/tickets': ['helpdesk', 'MOD-HD', 'support']
 };
 
 /**

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Zap, Play, CheckCircle2, Shield, Cloud, 
+  Zap, CheckCircle2, Shield, Cloud, 
   Smartphone, BarChart, Settings, Users, Target, Briefcase, 
   FileText, Landmark, ShoppingCart, Boxes, FolderKanban, 
   CheckSquare, Headphones, Folder, BarChart3, Star, ArrowRight,
@@ -84,12 +84,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             >
               <LogIn size={16} /> Login
             </button>
-            <button 
-              onClick={() => onNavigate('register')} 
-              className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-extrabold rounded-xl transition-all border border-slate-200 cursor-pointer hidden sm:block"
-            >
-              Get Started Free
-            </button>
           </div>
         </div>
       </nav>
@@ -120,18 +114,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                   className="px-8 py-4 bg-[#2563eb] text-white font-extrabold rounded-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-600/30 transform hover:-translate-y-0.5 text-lg cursor-pointer"
                 >
                   <LogIn size={20} /> Login
-                </button>
-                <button 
-                  onClick={() => onNavigate('register')} 
-                  className="px-8 py-4 bg-white text-[#1e3a8a] font-extrabold rounded-xl hover:bg-slate-50 transition-all border-2 border-slate-200 flex items-center justify-center gap-2 shadow-sm transform hover:-translate-y-0.5 text-lg cursor-pointer"
-                >
-                  Start Free Trial <ArrowRight size={18} />
-                </button>
-                <button 
-                  onClick={() => scrollToSection('platform')} 
-                  className="px-6 py-4 text-slate-600 font-extrabold rounded-xl hover:bg-slate-100 transition-all flex items-center justify-center gap-2 text-base cursor-pointer"
-                >
-                  <Play size={18} className="text-[#2563eb]" /> Watch Demo
                 </button>
               </div>
               

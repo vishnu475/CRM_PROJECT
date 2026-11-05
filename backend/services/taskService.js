@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from '../db/pool.js';
 import { broadcastTaskEvent, broadcastNotificationEvent } from '../utils/websocket.js';
+import { TestingService } from './testingService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,7 +100,7 @@ export class TaskService {
     
     // Check HRMS DB projects table
     let res = await pool.query(
-      `SELECT * FROM projects WHERE id = $1 OR project_id = $1 OR code = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
+      `SELECT * FROM projects WHERE id = $1 OR code = $1 OR project_id = $1 OR LOWER(name) = LOWER($1) LIMIT 1`,
       [queryTerm]
     );
     if (res.rows.length > 0) {
@@ -272,8 +273,8 @@ export class TaskService {
       )
       LEFT JOIN projects p ON (
         t.project_id = p.id 
-        OR t.project_id = p.project_id
         OR t.project_id = p.code
+        OR (p.project_id IS NOT NULL AND t.project_id = p.project_id)
       )
       WHERE 1=1
     `;
@@ -481,8 +482,8 @@ export class TaskService {
       )
       LEFT JOIN projects p ON (
         t.project_id = p.id 
-        OR t.project_id = p.project_id
         OR t.project_id = p.code
+        OR (p.project_id IS NOT NULL AND t.project_id = p.project_id)
       )
       WHERE t.id = $1`,
       [taskId]
@@ -1126,6 +1127,17 @@ export class TaskService {
       progressNote 
     });
 
+    // Automatic Multi-Phase QA Milestone Trigger (80% -> Phase 1, 90% -> Phase 2, 100% -> Phase 3)
+    if (updatedTask.module_name) {
+      const targetEmp = targetEmpCode || updatedTask.assigned_to_employee_id || updatedTask.assigned_to;
+      const effectiveProg = employeeProgress || effectiveProgress;
+      TestingService.checkAndTriggerModuleTesting(
+        updatedTask.module_name,
+        targetEmp,
+        effectiveProg
+      ).catch(err => console.warn('QA milestone trigger notice:', err.message));
+    }
+
     return resultPayload;
   }
 
@@ -1282,6 +1294,16 @@ export class TaskService {
     }
 
     broadcastTaskEvent({ action: 'TASK_COMPLETED', task: completedTask });
+
+    // Automatic Multi-Phase QA Milestone Trigger (100% Final Gate)
+    if (completedTask.module_name) {
+      TestingService.checkAndTriggerModuleTesting(
+        completedTask.module_name,
+        completedTask.assigned_to_employee_id || completedTask.assigned_to,
+        100
+      ).catch(err => console.warn('QA milestone trigger notice:', err.message));
+    }
+
     return completedTask;
   }
 

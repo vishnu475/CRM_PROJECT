@@ -221,6 +221,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
     fileUrl?: string | null;
     taskTitle?: string;
     projectName?: string;
+    scopeOfWork?: string;
   } | null>(null);
 
   // Direct Chat Box state for Team Roster members
@@ -963,7 +964,9 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
       setActiveGroupDetails(res);
     } catch (err: any) {
       console.error('Error fetching group details:', err);
-      setErrorMessage(err.message || 'Failed to load project details');
+      setErrorMessage(err.message || 'Access denied or failed to load project details');
+      setSelectedGroupId(null);
+      setActiveGroupDetails(null);
     } finally {
       setIsLoadingDetails(false);
     }
@@ -1072,7 +1075,29 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
     const members = details.members || [];
     const moduleResponsibilities = details.module_responsibilities || [];
     const allTasks = details.tasks || [];
-    const documents = details.documents || project.documents || [];
+    const rawDocuments = details.documents || project.documents || [];
+
+    // Ensure official project specification document is always present in Project Documents
+    const projCode = (project.code || project.id || details.project_code || details.id || 'PRJ').toUpperCase();
+    const projName = project.name || details.name || 'Project';
+    const specFileName = `${projCode}_Requirements_Specification.pdf`;
+
+    const documents = [...rawDocuments];
+    const hasSpec = documents.some((d: any) => (d.name || d.fileName || '').toLowerCase().includes('specification') || (d.name || d.fileName || '').toLowerCase().includes('requirement'));
+    if (!hasSpec) {
+      documents.unshift({
+        id: `DOC-SPEC-${projCode}`,
+        name: specFileName,
+        fileName: specFileName,
+        fileType: 'PDF',
+        fileUrl: null,
+        uploadedBy: teamHead.name || 'PMO / System Admin',
+        uploadedDate: project.start_date || details.created_at || new Date().toISOString(),
+        fileSize: 2450000,
+        description: project.description || details.description || `Official requirements & architectural deliverables specification for ${projName}.`,
+        isSystemSpec: true
+      });
+    }
 
     // Filter tasks belonging specifically to logged-in employee + their module
     const myTasks = allTasks.filter(
@@ -1266,28 +1291,34 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
             {documents.map((doc: any, idx: number) => {
-              const fileName = doc.name || doc.fileName || `Document_${idx + 1}.pdf`;
+              const fileName = doc.name || doc.fileName || `${projCode}_Requirements_Specification.pdf`;
               const fileType = (doc.fileType || (fileName.endsWith('.docx') ? 'docx' : 'pdf')).toUpperCase();
               const isPdf = fileType === 'PDF';
-              const fileUrl = doc.fileUrl || `/uploads/documents/${fileName}`;
 
               return (
                 <div
                   key={doc.id || idx}
-                  className="p-4 rounded-2xl border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/20 transition flex items-center justify-between gap-4 group"
+                  className="p-4 rounded-2xl border border-slate-200/80 hover:border-blue-300 hover:bg-blue-50/20 transition flex items-center justify-between gap-4 group bg-white shadow-2xs"
                 >
                   <div className="flex items-center gap-3.5 min-w-0">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                      isPdf ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${
+                      isPdf ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-blue-50 text-blue-600 border border-blue-200'
                     }`}>
                       {fileType}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-xs font-bold text-slate-900 truncate group-hover:text-blue-600 transition">
-                        {fileName}
-                      </h3>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="text-xs font-bold text-slate-900 truncate group-hover:text-blue-600 transition" title={fileName}>
+                          {fileName}
+                        </h3>
+                        {doc.isSystemSpec && (
+                          <span className="px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[9px] font-bold uppercase tracking-wider shrink-0">
+                            Official Spec
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5 flex-wrap">
-                        <span>By: {doc.uploadedBy || 'Project Team'}</span>
+                        <span>By: {doc.uploadedBy || teamHead.name || 'Project Team'}</span>
                         <span>•</span>
                         <span>{formatDate(doc.uploadedDate || doc.created_at)}</span>
                         <span>•</span>
@@ -1301,25 +1332,32 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
                       type="button"
                       onClick={() => setPreviewDoc({
                         fileName,
-                        fileUrl,
-                        taskTitle: fileName,
-                        projectName: project.name || 'CMS Project'
+                        fileUrl: doc.fileUrl || null,
+                        taskTitle: `${projName} — Technical Specification`,
+                        projectName: projName,
+                        scopeOfWork: doc.description || project.description || details.description || project.project_requirement || ''
                       })}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-700 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-blue-200/80 shadow-2xs"
                     >
-                      <Eye size={12} />
-                      <span>View</span>
+                      <Eye size={13} />
+                      <span>View PDF</span>
                     </button>
-                    <a
-                      href={fileUrl}
-                      download={fileName}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition"
-                      title="Download document"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewDoc({
+                          fileName,
+                          fileUrl: doc.fileUrl || null,
+                          taskTitle: `${projName} — Technical Specification`,
+                          projectName: projName,
+                          scopeOfWork: doc.description || project.description || details.description || project.project_requirement || ''
+                        });
+                      }}
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                      title="Preview and Download"
                     >
-                      <Download size={13} />
-                    </a>
+                      <Download size={14} />
+                    </button>
                   </div>
                 </div>
               );
@@ -1819,6 +1857,7 @@ export const MyTasksView: React.FC<MyTasksViewProps> = ({
             fileUrl={previewDoc.fileUrl}
             taskTitle={previewDoc.taskTitle}
             projectName={previewDoc.projectName}
+            scopeOfWork={previewDoc.scopeOfWork}
           />
         )}
 

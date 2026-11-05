@@ -20,7 +20,7 @@ interface CrmLeadDetailsProps {
 
 type TabType = 'overview' | 'activities' | 'notes' | 'documents';
 
-const leadStages = ['New', 'Contacted', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
+const leadStages = ['New', 'Contacted', 'Qualified', 'Won', 'Lost'];
 
 export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewChange }) => {
   const { leads, customers, contacts, opportunities, activities, notes, documents, followUps, quotations, projects, employees, updateLead, addActivity, updateActivity, addQuotation, updateQuotation, addNote, addFollowUp, addDocument, convertLead, setActiveModule } = useApp();
@@ -2298,9 +2298,6 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <span className="text-base">🤝</span>
                   <div>
                     <span className="font-bold">Negotiation Activity:</span> Record discussion regarding pricing, discounts, custom features, payment terms, or delivery timeline.
-                    {activityForm.status === 'Completed' && false && (
-                      <span className="block mt-0.5 text-purple-700 font-semibold">Saving will advance lead to "Negotiation".</span>
-                    )}
                   </div>
                 </div>
               ) : activityForm.status === 'Pending' ? (

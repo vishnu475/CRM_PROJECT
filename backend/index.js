@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { hrmsPool, crmPool } from './db/pool.js';
 import { initWebSocketServer } from './utils/websocket.js';
 import { getMigrationStatus } from './db/migrator.js';
-// Reload trigger: sequential-employee-id-flow-v2
+// Reload trigger: restarted-and-synced-v3
 
 // ─── HRMS Routes (Friend 2 — Employees, Payroll, Attendance) ────────────────
 import authRouter from './routes/auth.js';
@@ -30,6 +30,10 @@ import tasksRouter from './routes/tasks.js';
 import internsRouter from './routes/interns.js';
 import reportsRouter from './routes/reports.js';
 import modulesRouter from './routes/modules.js';
+import testingRouter from './routes/testing.js';
+import testReportsRouter from './routes/testReports.js';
+import allocationsRouter from './routes/allocations.js';
+import timesheetsRouter from './routes/timesheets.js';
 
 // ─── CRM Routes (Friend 1 — Leads, Customers, Opportunities, Sales) ──────────
 import leadsRouter from './routes/leads.js';
@@ -48,6 +52,7 @@ import purchaseOrdersRouter from './routes/purchase_orders.js';
 import projectsRouter from './routes/projects.js';
 import groupsRouter from './routes/groups.js';
 import emailRouter from './routes/email.js';
+import helpdeskRouter from './routes/helpdesk.js';
 
 import { authenticateUser } from './middleware/auth.js';
 import { protectModuleRoute } from './middleware/moduleAuth.js';
@@ -70,6 +75,7 @@ const uploadsDir = path.join(__dirname, 'uploads');
 const tasksUploadsDir = path.join(uploadsDir, 'tasks');
 const docsUploadsDir = path.join(uploadsDir, 'documents');
 const leadsUploadsDir = path.join(uploadsDir, 'leads');
+const timesheetsUploadsDir = path.join(uploadsDir, 'timesheets');
 if (!fs.existsSync(tasksUploadsDir)) {
   fs.mkdirSync(tasksUploadsDir, { recursive: true });
 }
@@ -78,6 +84,9 @@ if (!fs.existsSync(docsUploadsDir)) {
 }
 if (!fs.existsSync(leadsUploadsDir)) {
   fs.mkdirSync(leadsUploadsDir, { recursive: true });
+}
+if (!fs.existsSync(timesheetsUploadsDir)) {
+  fs.mkdirSync(timesheetsUploadsDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDir));
 
@@ -97,6 +106,15 @@ app.use('/api/employees',           employeesRouter);
 app.use('/api/hrms',                hrmsRouter);
 app.use('/api/tasks',               tasksRouter);
 app.use('/api/modules',             modulesRouter);
+app.use('/api/testing',             testingRouter);
+app.use('/api/test-reports',        testReportsRouter);
+app.use('/api/allocations',         allocationsRouter);
+app.use('/api/timesheets',          timesheetsRouter);
+app.use('/api/admin/timesheets', (req, res, next) => {
+  const subPath = req.url.startsWith('/') ? req.url : '/' + req.url;
+  req.url = '/admin' + (subPath === '/' ? '' : subPath);
+  timesheetsRouter(req, res, next);
+});
 app.use('/api/interns',             internsRouter);
 app.use('/api/departments',         departmentsRouter);
 app.use('/api/designations',        designationsRouter);
@@ -137,6 +155,8 @@ app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/projects',        projectsRouter);
 app.use('/api/groups',          groupsRouter);
 app.use('/api/email',           emailRouter);
+app.use('/api/helpdesk',        helpdeskRouter);
+app.use('/api/tickets',         helpdeskRouter);
 
 // ─── Health Check (shows both DB connections & migration status) ──────────────
 app.get('/api/health', async (req, res) => {
@@ -205,6 +225,15 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
+
+// Handle server errors gracefully
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use by another process. Please terminate the conflicting process.`);
+  } else {
+    console.error('Server error:', err);
+  }
+});
 
 // Initialize Real-time WebSocket Server
 initWebSocketServer(server);

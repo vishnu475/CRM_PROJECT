@@ -125,6 +125,44 @@ router.get('/', async (req, res) => {
 // ============================================================
 // 2. GET /api/interns/:id — Fetch complete 360-degree intern report
 // ============================================================
+// ============================================================
+// 1.5 GET /api/interns/check-uniqueness — Check if email or intern ID is already registered
+// ============================================================
+router.get('/check-uniqueness', async (req, res) => {
+  try {
+    const { email, internId } = req.query;
+    let emailExists = false;
+    let idExists = false;
+
+    if (email && String(email).trim()) {
+      const emailCheck = await pool.query(
+        'SELECT intern_code, email FROM interns WHERE LOWER(email) = LOWER($1) LIMIT 1',
+        [String(email).trim()]
+      );
+      emailExists = emailCheck.rows.length > 0;
+    }
+
+    if (internId && String(internId).trim()) {
+      const idCheck = await pool.query(
+        'SELECT intern_code FROM interns WHERE LOWER(intern_code) = LOWER($1) OR LOWER(intern_id) = LOWER($1) OR LOWER(id) = LOWER($1) LIMIT 1',
+        [String(internId).trim()]
+      );
+      idExists = idCheck.rows.length > 0;
+    }
+
+    res.json({
+      success: true,
+      emailUnique: !emailExists,
+      idUnique: !idExists,
+      emailError: emailExists ? 'This email address is already registered to another intern.' : null,
+      idError: idExists ? `Intern ID "${internId}" is already taken.` : null
+    });
+  } catch (err) {
+    console.error('Error checking intern uniqueness:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -191,13 +229,133 @@ router.get('/:id', async (req, res) => {
 // 3. POST /api/interns — Create new intern record (Onboarding flow)
 // ============================================================
 router.post('/', async (req, res) => {
+  const {
+    name, email, phone, dob, gender, address, emergencyContact, profilePhoto,
+    college, degree, branch, branchSpecialization, graduationYear, rollNumber, cgpaPercentage, resumeUrl,
+    internshipType, department, designation, startDate, endDate, duration, workMode, location, stipend,
+    reportingManagerId, reportingManagerName, mentorId, mentorName, status, isDraft,
+    companyEmail, systemAccess, attendanceAccess, assignedDevice, idCardIssued, joiningChecklist, documents
+  } = req.body;
+
+  // 1. In-depth server-side validation
+  const errors = {};
+
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) {
+    errors.fullName = 'Full legal name is required.';
+  } else if (trimmedName.length < 2) {
+    errors.fullName = 'Full legal name must be at least 2 characters.';
+  } else if (trimmedName.length > 100) {
+    errors.fullName = 'Full legal name cannot exceed 100 characters.';
+  }
+
+  const trimmedEmail = (email || '').trim();
+  const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!trimmedEmail) {
+    errors.email = 'Personal email address is required.';
+  } else if (!EMAIL_REGEX.test(trimmedEmail)) {
+    errors.email = 'Please enter a valid personal email address.';
+  }
+
+  const trimmedInternCode = (req.body.internCode || req.body.internId || '').trim();
+  if (trimmedInternCode) {
+    if (trimmedInternCode.length < 3 || trimmedInternCode.length > 25) {
+      errors.internId = 'Intern ID must be between 3 and 25 characters.';
+    } else if (!/^[A-Za-z0-9\-_]+$/.test(trimmedInternCode)) {
+      errors.internId = 'Intern ID must contain only alphanumeric characters, hyphens, or underscores.';
+    }
+  }
+
+  if (phone) {
+    const trimmedPhone = String(phone).trim();
+    if (/[^0-9+\s\-]/.test(trimmedPhone)) {
+      errors.phone = 'Phone number must be 10 digits only.';
+    } else {
+      const digits = trimmedPhone.replace(/\D/g, '');
+      const local = (trimmedPhone.startsWith('+91') || (digits.length === 12 && digits.startsWith('91')))
+        ? digits.slice(-10)
+        : digits;
+      if (local.length !== 10) {
+        errors.phone = 'Phone number must be 10 digits only.';
+      }
+    }
+  }
+
+  if (startDate && endDate) {
+    if (new Date(endDate) <= new Date(startDate)) {
+      errors.endDate = 'Internship end date must be strictly after the start date.';
+    }
+  }
+
+  if (stipend !== undefined && stipend !== null && String(stipend).trim() !== '') {
+    const num = Number(stipend);
+    if (isNaN(num)) {
+      errors.stipend = 'Monthly stipend must be a valid number.';
+    } else if (num < 0) {
+      errors.stipend = 'Monthly stipend cannot be negative.';
+    } else if (num > 500000) {
+      errors.stipend = 'Monthly stipend cannot exceed ₹5,00,000.';
+    }
+  }
+
+  // Mandatory checks if not explicitly marked as draft
+  if (!isDraft) {
+    if (!department || !String(department).trim()) {
+      errors.department = 'Department is required.';
+    }
+    if (!designation || !String(designation).trim()) {
+      errors.designation = 'Designation is required.';
+    }
+    if (!mentorName || !String(mentorName).trim()) {
+      errors.mentor = 'Assigned mentor name is required.';
+    }
+    if (college && String(college).trim().length < 3) {
+      errors.college = 'College / University name must be at least 3 characters.';
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed: Please correct the highlighted errors.',
+      errors
+    });
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Generate sequence number
-    let internCode = req.body.internCode || req.body.internId;
-    if (!internCode) {
+    // Check duplicate personal email in database
+    const emailCheck = await client.query(
+      'SELECT id, intern_code, name FROM interns WHERE LOWER(email) = LOWER($1) LIMIT 1',
+      [trimmedEmail]
+    );
+    if (emailCheck.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        message: `An intern with email address "${trimmedEmail}" is already registered (${emailCheck.rows[0].intern_code} - ${emailCheck.rows[0].name}).`,
+        errors: { email: 'Email address is already registered.' }
+      });
+    }
+
+    // Generate or validate sequence number
+    let internCode = trimmedInternCode;
+    if (internCode) {
+      const codeCheck = await client.query(
+        'SELECT id FROM interns WHERE LOWER(intern_code) = LOWER($1) OR LOWER(intern_id) = LOWER($1) OR LOWER(id) = LOWER($1) LIMIT 1',
+        [internCode]
+      );
+      if (codeCheck.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: `Intern ID "${internCode}" is already in use. Please specify another ID or leave blank to auto-generate.`,
+          errors: { internId: 'Intern ID is already in use.' }
+        });
+      }
+    } else {
       const seqRes = await client.query(
         `UPDATE number_sequences SET current_value = current_value + 1 WHERE id = 'seq-intern' RETURNING current_value, prefix`
       );
@@ -206,21 +364,13 @@ router.post('/', async (req, res) => {
       internCode = `${prefix}-${String(nextVal).padStart(3, '0')}`;
     }
 
-    const {
-      name, email, phone, dob, gender, address, emergencyContact, profilePhoto,
-      college, degree, branch, branchSpecialization, graduationYear, rollNumber, cgpaPercentage, resumeUrl,
-      internshipType, department, designation, startDate, endDate, duration, workMode, location, stipend,
-      reportingManagerId, reportingManagerName, mentorId, mentorName, status,
-      companyEmail, systemAccess, attendanceAccess, assignedDevice, idCardIssued, joiningChecklist, documents
-    } = req.body;
-
     const finalBranch = branchSpecialization || branch || 'Computer Science';
     const finalStartDate = startDate || new Date().toISOString().split('T')[0];
     
-    // Calculate initial status based on joining date
-    let computedStatus = status || 'Active';
+    // Calculate initial status based on joining date and draft status
+    let computedStatus = isDraft ? 'Upcoming' : (status || 'Active');
     const todayStr = new Date().toISOString().split('T')[0];
-    if (finalStartDate > todayStr) {
+    if (finalStartDate > todayStr && !isDraft) {
       computedStatus = 'Upcoming';
     }
 
@@ -246,7 +396,7 @@ router.post('/', async (req, res) => {
     `;
 
     const values = [
-      internCode, internCode, internCode, name, email, phone || null,
+      internCode, internCode, internCode, trimmedName, trimmedEmail, phone || null,
       dob || '2002-05-15', gender || 'Male', address || '', emergencyContact || '',
       profilePhoto || null, profilePhoto || null, college || 'Engineering College', degree || 'B.Tech',
       finalBranch, finalBranch, graduationYear || '2025', rollNumber || '', cgpaPercentage || '8.5 CGPA',
@@ -255,7 +405,7 @@ router.post('/', async (req, res) => {
       duration || '6 Months', workMode || 'Hybrid', location || 'Headquarters (HQ)', Number(stipend) || 20000,
       reportingManagerId || 'EMP-001', reportingManagerName || 'Sarah Jenkins',
       mentorId || 'EMP-004', mentorName || 'Rahul Verma', computedStatus,
-      companyEmail || `${name.toLowerCase().replace(/\s+/g, '.')}@company.com`,
+      companyEmail || `${trimmedName.toLowerCase().replace(/\s+/g, '.')}@company.com`,
       systemAccess !== undefined ? Boolean(systemAccess) : true,
       attendanceAccess !== undefined ? Boolean(attendanceAccess) : true,
       assignedDevice || 'Company Laptop', idCardIssued !== undefined ? Boolean(idCardIssued) : true,
@@ -280,7 +430,11 @@ router.post('/', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    res.status(201).json({ success: true, message: 'Intern created successfully', data: result.rows[0] });
+    res.status(201).json({
+      success: true,
+      message: isDraft ? 'Intern draft saved successfully.' : 'Intern onboarding submitted successfully.',
+      data: result.rows[0]
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error creating intern:', err);

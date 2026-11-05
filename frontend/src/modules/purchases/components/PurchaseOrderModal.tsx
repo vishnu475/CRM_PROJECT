@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { PurchaseOrder, PurchaseOrderItem, Vendor, Product } from '../../../types';
 import { formatINR } from '../../crm/utils/crmUtils';
+import { getEligibleVendorsForDropdown, formatVendorDropdownLabel } from '../../vendors/utils/vendorDropdownUtils';
 import { X, Plus, Trash2, ShoppingCart, Calendar, MapPin, Building2, AlertCircle } from 'lucide-react';
 
 interface PurchaseOrderModalProps {
@@ -46,12 +47,19 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     unitPrice: number;
     taxRate: number;
     total: number;
+    mode?: 'catalog' | 'custom';
   }>>([
     { productName: '', quantity: 1, unitPrice: 0, taxRate: 18, total: 0 }
   ]);
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  // Deduplicate and filter eligible vendors for procurement dropdown
+  const eligibleVendors = useMemo(() => {
+    const activePOVendorId = activePO?.vendorId || (activePO as any)?.vendor_id;
+    return getEligibleVendorsForDropdown(vendors, vendorId || initialVendorId || activePOVendorId);
+  }, [vendors, vendorId, initialVendorId, activePO]);
 
   // Initialize on open or when editing
   useEffect(() => {
@@ -78,7 +86,8 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
           })));
         }
       } else {
-        const targetVendor = (initialVendorId ? vendors.find(v => v.id === initialVendorId) : null) || (vendors.length > 0 ? vendors[0] : null);
+        const eligible = getEligibleVendorsForDropdown(vendors, initialVendorId);
+        const targetVendor = (initialVendorId ? eligible.find(v => v.id === initialVendorId) : null) || (eligible.length > 0 ? eligible[0] : null);
         setVendorId(targetVendor?.id || '');
         setVendorName(targetVendor?.name || '');
         setDate(new Date().toISOString().split('T')[0]);
@@ -118,6 +127,10 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     const selected = vendors.find(v => v.id === vId);
     if (selected) {
       setVendorName(selected.name);
+      const terms = selected.paymentTerms || selected.payment_terms;
+      if (terms) {
+        setPaymentTerms(terms);
+      }
     }
   };
 
@@ -264,17 +277,18 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Vendor Selector */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
+              <label htmlFor="po-vendor-select" className="block text-xs font-bold text-slate-700 mb-1">
                 Authorized Supplier *
               </label>
               <select
+                id="po-vendor-select"
                 value={vendorId}
                 onChange={(e) => handleVendorSelect(e.target.value)}
                 className="w-full text-xs border border-slate-300 rounded-xl p-2.5 bg-white text-slate-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
               >
-                {vendors.map(v => (
+                {eligibleVendors.map(v => (
                   <option key={v.id} value={v.id}>
-                    {v.name} ({v.code || v.id})
+                    {formatVendorDropdownLabel(v, eligibleVendors, { includeCodeAlways: true })}
                   </option>
                 ))}
               </select>
@@ -372,25 +386,73 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                     <tr key={idx} className="hover:bg-slate-50/50">
                       {/* Product Selector / Text */}
                       <td className="p-2.5">
-                        <select
-                          value={item.productId || ''}
-                          onChange={(e) => handleItemChange(idx, 'productId', e.target.value)}
-                          className="w-full text-xs border border-slate-200 rounded-lg p-1.5 bg-white text-slate-800 mb-1"
-                        >
-                          <option value="">-- Select Catalog SKU or Custom --</option>
-                          {products.map(p => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} (₹{p.price.toLocaleString()} • {p.sku})
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="text"
-                          placeholder="Item Description"
-                          value={item.productName}
-                          onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
-                          className="w-full text-xs border border-slate-200 rounded-lg p-1.5 focus:ring-1 focus:ring-purple-500"
-                        />
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Item #{idx + 1}
+                            </span>
+                            <div className="inline-flex rounded-md p-0.5 bg-slate-100 border border-slate-200 text-[10px]">
+                              <button
+                                type="button"
+                                onClick={() => handleItemChange(idx, 'mode', 'catalog')}
+                                className={`px-2 py-0.5 rounded font-semibold transition ${
+                                  (item.mode || (item.productId ? 'catalog' : 'custom')) === 'catalog'
+                                    ? 'bg-purple-600 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                Select Catalog
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleItemChange(idx, 'mode', 'custom');
+                                  handleItemChange(idx, 'productId', '');
+                                }}
+                                className={`px-2 py-0.5 rounded font-semibold transition ${
+                                  (item.mode || (item.productId ? 'catalog' : 'custom')) === 'custom'
+                                    ? 'bg-purple-600 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                              >
+                                Enter Custom
+                              </button>
+                            </div>
+                          </div>
+
+                          {(item.mode || (item.productId ? 'catalog' : 'custom')) === 'catalog' ? (
+                            <select
+                              value={item.productId || ''}
+                              onChange={(e) => handleItemChange(idx, 'productId', e.target.value)}
+                              className="w-full text-xs border border-slate-200 rounded-lg p-1.5 bg-white text-slate-800"
+                            >
+                              <option value="">-- Select Catalog SKU or Product --</option>
+                              {products.map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} (₹{p.price.toLocaleString()} • {p.sku})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="relative">
+                              <input
+                                type="text"
+                                list={`po-catalog-suggestions-${idx}`}
+                                placeholder="Enter custom item name or description..."
+                                value={item.productName}
+                                onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
+                                className="w-full text-xs border border-slate-200 rounded-lg p-1.5 focus:ring-1 focus:ring-purple-500"
+                              />
+                              <datalist id={`po-catalog-suggestions-${idx}`}>
+                                {products.map(p => (
+                                  <option key={p.id} value={p.name}>
+                                    {p.sku ? `${p.sku} • ` : ''}₹{p.price.toLocaleString()}
+                                  </option>
+                                ))}
+                              </datalist>
+                            </div>
+                          )}
+                        </div>
                       </td>
 
                       {/* Quantity */}

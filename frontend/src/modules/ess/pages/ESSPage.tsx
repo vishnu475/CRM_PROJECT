@@ -32,6 +32,7 @@ import {
   Headphones,
   Settings,
   Megaphone,
+  Menu,
   Plane,
   HeartHandshake,
   Check,
@@ -108,7 +109,9 @@ export const ESSPage: React.FC = () => {
     employees = [],
     companyName = 'Demo Company Pvt. Ltd.',
     theme = 'dark',
-    setTheme = () => {}
+    setTheme = () => {},
+    isMobileSidebarOpen = false,
+    setIsMobileSidebarOpen = () => {}
   } = useApp() || {};
 
   const [localSubSection, setLocalSubSection] = useState<string>(activeSubSection || 'dashboard');
@@ -124,6 +127,9 @@ export const ESSPage: React.FC = () => {
     setLocalSubSection(id);
     if (setActiveSubSection) {
       setActiveSubSection(id);
+    }
+    if (setIsMobileSidebarOpen) {
+      setIsMobileSidebarOpen(false);
     }
   };
 
@@ -993,13 +999,26 @@ export const ESSPage: React.FC = () => {
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8faff] text-slate-900 selection:bg-blue-100 selection:text-blue-900 select-none">
+    <div className="flex h-screen overflow-hidden bg-[#f8faff] dark:bg-[#0B0F19] text-slate-900 dark:text-slate-100 selection:bg-blue-100 selection:text-blue-900 select-none">
       
+      {/* Mobile Drawer Backdrop */}
+      {isMobileSidebarOpen && (
+        <div
+          id="mobile-ess-sidebar-backdrop"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 md:hidden transition-opacity duration-300"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* 1. ADMIN-MATCHING SIDEBAR STRUCTURE */}
       <aside
-        className={`bg-white border-r border-slate-200 flex flex-col transition-all duration-300 z-20 shrink-0 ${
-          isSidebarCollapsed ? 'w-20' : 'w-64'
-        }`}
+        id="ess-sidebar"
+        className={`bg-white border-r border-slate-200 flex flex-col transition-all duration-300 shrink-0
+          fixed md:static inset-y-0 left-0 z-50 md:z-20
+          ${isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}
+          ${isSidebarCollapsed ? 'w-20' : 'w-64'}
+        `}
       >
         {/* Brand Header */}
         <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200">
@@ -1018,6 +1037,17 @@ export const ESSPage: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Close button on mobile */}
+          <button
+            id="mobile-ess-sidebar-close-btn"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            className="md:hidden p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            title="Close menu"
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Navigation Links */}
@@ -1118,16 +1148,29 @@ export const ESSPage: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         
         {/* Glassmorphic Top Header */}
-        <header className="h-16 bg-white/90 backdrop-blur-xl border-b border-slate-200 px-6 flex items-center justify-between shrink-0 z-10">
-          {/* Search Bar */}
-          <div className="flex items-center relative w-72 md:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-            <input
-              type="text"
-              placeholder="Search documents, requests, payslips..."
-              className="w-full pl-9 pr-10 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white transition-all shadow-2xs"
-            />
-            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 bg-slate-200/60 px-1.5 py-0.5 rounded border border-slate-300/40">⌘K</kbd>
+        <header className="h-16 bg-white/90 backdrop-blur-xl border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between shrink-0 z-10 gap-2">
+          {/* Hamburger Menu Toggle on Mobile */}
+          <div className="flex items-center gap-2">
+            <button
+              id="mobile-ess-menu-toggle-btn"
+              onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+              className="md:hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              title={isMobileSidebarOpen ? "Close menu" : "Open menu"}
+              aria-label="Toggle navigation menu"
+            >
+              {isMobileSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+
+            {/* Search Bar */}
+            <div className="flex items-center relative w-40 sm:w-64 md:w-80">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+              <input
+                type="text"
+                placeholder="Search documents, requests, payslips..."
+                className="w-full pl-9 pr-10 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white transition-all shadow-2xs"
+              />
+              <kbd className="hidden sm:inline-block absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 bg-slate-200/60 px-1.5 py-0.5 rounded border border-slate-300/40">⌘K</kbd>
+            </div>
           </div>
 
           {/* Right Control Actions */}
@@ -1189,7 +1232,7 @@ export const ESSPage: React.FC = () => {
         </header>
 
         {/* Scrollable View Surface */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
           
           {/* VIEW: DASHBOARD */}
           {subSection === 'dashboard' && (

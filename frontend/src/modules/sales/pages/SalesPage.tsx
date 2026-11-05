@@ -4,27 +4,27 @@ import { Quotation, SalesOrder, Invoice, QuotationStatus, SalesOrderStatus, Invo
 import { formatINR } from '../../crm/utils/crmUtils';
 import { 
   TrendingUp, Plus, Search, FileText, ShoppingCart, CheckCircle2, 
-  Clock, ArrowRight, Building2, Calendar, Tag, AlertCircle, 
-  ChevronRight, RefreshCw, Send, XCircle, Check, Eye, MoreVertical,
-  Layers, ShieldAlert, Sparkles, Receipt, DollarSign
+  ChevronRight, RefreshCw, Send, Check, Eye, MoreVertical,
+  Receipt, DollarSign, ArrowRight, Tag, Loader2, User
 } from 'lucide-react';
 import { QuotationModal } from '../components/QuotationModal';
 import { SalesOrderModal } from '../components/SalesOrderModal';
 import { InvoiceModal } from '../components/InvoiceModal';
+import { CRM_LOST_REASONS } from '../../crm/utils/leadWorkflowValidation';
 
 export const SalesPage: React.FC = () => {
   const { 
+    leads,
     quotations, 
     salesOrders, 
     invoices, 
     updateQuotation, 
     deleteQuotation,
+    sendQuotation,
     updateSalesOrder,
     deleteSalesOrder,
     updateInvoice,
-    deleteInvoice,
-    customers,
-    opportunities 
+    deleteInvoice
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'quotes' | 'orders' | 'invoices'>('quotes');
@@ -39,12 +39,20 @@ export const SalesPage: React.FC = () => {
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [isRevisionMode, setIsRevisionMode] = useState(false);
+  const [initialLeadIdForQuote, setInitialLeadIdForQuote] = useState<string | undefined>(undefined);
+  const [isDefinitiveLoss, setIsDefinitiveLoss] = useState(false);
 
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [selectedQuoteForOrder, setSelectedQuoteForOrder] = useState<Quotation | null>(null);
 
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<SalesOrder | null>(null);
+
+  // Rejection Modal state
+  const [rejectionModalQuote, setRejectionModalQuote] = useState<Quotation | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('Price / Budget Constraints');
+  const [rejectReasonDetails, setRejectReasonDetails] = useState<string>('');
+  const [rejectNotes, setRejectNotes] = useState<string>('');
 
   // 1. KPI Stats Computations from live data
   const metrics = useMemo(() => {
@@ -116,12 +124,19 @@ export const SalesPage: React.FC = () => {
     });
   }, [invoices, invoiceStatusFilter, searchTerm]);
 
+  const [sendingQuoteId, setSendingQuoteId] = useState<string | null>(null);
+
   // Quotation Workflow Action Handlers
   const handleSendQuote = async (quote: Quotation) => {
-    await updateQuotation(quote.id, {
-      status: 'Sent',
-      sentDate: new Date().toISOString().split('T')[0],
-    });
+    if (sendingQuoteId) return;
+    setSendingQuoteId(quote.id);
+    try {
+      await sendQuotation(quote.id);
+    } catch (err: any) {
+      alert(err.message || 'Failed to dispatch quotation email.');
+    } finally {
+      setSendingQuoteId(null);
+    }
   };
 
   const handleAcceptQuote = async (quote: Quotation) => {
@@ -144,10 +159,54 @@ export const SalesPage: React.FC = () => {
   };
 
   const handleRejectQuote = async (quote: Quotation) => {
-    if (window.confirm(`Mark quotation ${quote.quoteNumber} as Rejected?`)) {
-      await updateQuotation(quote.id, {
-        status: 'Rejected',
-      });
+    setRejectionModalQuote(quote);
+    setIsDefinitiveLoss(false);
+    setRejectReason('Customer chose competitor');
+    setRejectReasonDetails('');
+    setRejectNotes('');
+  };
+
+  const handleConfirmRejectQuote = async () => {
+    if (!rejectionModalQuote) return;
+
+    if (isDefinitiveLoss) {
+      const reason = rejectReason.trim();
+      if (!reason) {
+        alert('Please select a Lost Reason.');
+        return;
+      }
+      if (reason === 'Other' && !rejectReasonDetails.trim() && !rejectNotes.trim()) {
+        alert('Please provide a custom explanation when selecting "Other" as the Lost Reason.');
+        return;
+      }
+      if (!rejectNotes.trim()) {
+        alert('Please provide Lost Notes/Comments explaining why this deal was lost.');
+        return;
+      }
+
+      try {
+        await updateQuotation(rejectionModalQuote.id, {
+          status: 'Rejected',
+          isDefinitiveLoss: true,
+          lostReason: reason,
+          lostReasonDetails: rejectReasonDetails.trim(),
+          lostNotes: rejectNotes.trim(),
+        } as any);
+        setRejectionModalQuote(null);
+      } catch (err: any) {
+        // Handled inside AppContext
+      }
+    } else {
+      // Non-definitive quotation rejection: lead remains open in Qualified stage
+      try {
+        await updateQuotation(rejectionModalQuote.id, {
+          status: 'Rejected',
+          isDefinitiveLoss: false,
+        } as any);
+        setRejectionModalQuote(null);
+      } catch (err: any) {
+        // Handled inside AppContext
+      }
     }
   };
 
@@ -175,11 +234,11 @@ export const SalesPage: React.FC = () => {
       case 'Draft': return 'bg-slate-100 text-slate-700 border-slate-200';
       case 'Sent': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'Revision Requested': return 'bg-amber-50 text-amber-700 border-amber-200';
-      case 'Revised': return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'Revised': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'Accepted':
       case 'Approved': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'Rejected': return 'bg-rose-50 text-rose-700 border-rose-200';
-      case 'Expired': return 'bg-slate-200 text-slate-800 border-slate-300';
+      case 'Expired': return 'bg-slate-100 text-slate-600 border-slate-200';
       default: return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
@@ -187,13 +246,13 @@ export const SalesPage: React.FC = () => {
   const getOrderBadgeClass = (status?: string) => {
     switch (status) {
       case 'Draft': return 'bg-slate-100 text-slate-700 border-slate-200';
-      case 'Confirmed': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'Confirmed': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'Processing': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'Delivered':
       case 'Fulfilled':
       case 'Completed': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'Cancelled': return 'bg-rose-50 text-rose-700 border-rose-200';
-      default: return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      default: return 'bg-blue-50 text-blue-700 border-blue-200';
     }
   };
 
@@ -204,36 +263,36 @@ export const SalesPage: React.FC = () => {
       case 'Paid': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'Partially Paid': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'Overdue': return 'bg-rose-50 text-rose-700 border-rose-200';
-      case 'Cancelled': return 'bg-slate-200 text-slate-700 border-slate-300';
+      case 'Cancelled': return 'bg-slate-100 text-slate-600 border-slate-200';
       default: return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* 1. PAGE HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 pb-8 bg-slate-50 min-h-screen">
+      {/* 1. CLEAN PAGE HEADER */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center text-xs text-slate-500 mb-1 font-medium">
             <span>ERP Commercial</span> 
-            <ChevronRight size={12} className="mx-1" /> 
-            <span className="text-[#0f172a] font-semibold">Sales Workflow</span>
+            <ChevronRight size={13} className="mx-1 text-slate-400" /> 
+            <span className="text-slate-800 font-semibold">Sales & Revenue</span>
           </div>
-          <h1 className="text-2xl font-bold text-[#0f172a] flex items-center gap-2">
-            <TrendingUp className="text-emerald-600" size={24} />
-            Sales & Revenue Management Hub
+          <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+            <TrendingUp className="text-blue-600" size={22} />
+            Sales & Revenue Management
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Connected commercial transactions: Quotations → Customer Review → Accepted → Sales Orders → Tax Invoices.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Quotations, Sales Orders, Tax Invoices, and Revenue Tracking
           </p>
         </div>
 
-        {/* Action button */}
+        {/* Primary Action Button */}
         <div className="flex items-center gap-2">
           {activeTab === 'quotes' && (
             <button
               onClick={() => { setEditingQuotation(null); setIsRevisionMode(false); setShowQuoteModal(true); }}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-xs transition flex items-center gap-1.5"
             >
               <Plus size={15} /> New Quotation
             </button>
@@ -241,90 +300,122 @@ export const SalesPage: React.FC = () => {
           {activeTab === 'orders' && (
             <button
               onClick={() => setActiveTab('quotes')}
-              className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+              className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
             >
-              <ArrowRight size={14} /> Convert Accepted Quote
+              <ArrowRight size={14} className="text-blue-600" /> Convert Accepted Quote
             </button>
           )}
           {activeTab === 'invoices' && (
             <button
               onClick={() => setActiveTab('orders')}
-              className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+              className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
             >
-              <ArrowRight size={14} /> Bill Confirmed Order
+              <ArrowRight size={14} className="text-blue-600" /> Bill Confirmed Order
             </button>
           )}
         </div>
       </div>
 
-      {/* 2. EXECUTIVE KPI CARDS */}
+      {/* 2. RESTRAINED KPI CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Quotes Pipeline</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-emerald-600">{formatINR(metrics.activeQuoteValue)}</p>
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-              {quotations.length} Quotes
-            </span>
+        {/* Active Quotes Pipeline */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Quotes Pipeline</span>
+            <div className="p-2 bg-slate-100 text-slate-600 rounded-lg">
+              <TrendingUp size={16} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Pending customer approval & revisions</p>
+          <div className="mt-2">
+            <p className="text-2xl font-bold text-slate-900 tracking-tight">{formatINR(metrics.activeQuoteValue)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500">Pending Review</span>
+              <span className="text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                {quotations.length} Quotes
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Confirmed Sales Orders</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-indigo-600">{formatINR(metrics.confirmedOrdersValue)}</p>
-            <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-              {metrics.confirmedOrdersCount} Orders
-            </span>
+        {/* Confirmed Sales Orders */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Confirmed Sales Orders</span>
+            <div className="p-2 bg-slate-100 text-slate-600 rounded-lg">
+              <ShoppingCart size={16} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Accepted contracts ready for billing</p>
+          <div className="mt-2">
+            <p className="text-2xl font-bold text-slate-900 tracking-tight">{formatINR(metrics.confirmedOrdersValue)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500">Accepted Contracts</span>
+              <span className="text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                {metrics.confirmedOrdersCount} Orders
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Invoiced Value</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-[#0f172a]">{formatINR(metrics.totalInvoiced)}</p>
-            <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
-              {invoices.length} Invoices
-            </span>
+        {/* Total Invoiced Value */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Invoiced Value</span>
+            <div className="p-2 bg-slate-100 text-slate-600 rounded-lg">
+              <Receipt size={16} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Total revenue billed through tax invoices</p>
+          <div className="mt-2">
+            <p className="text-2xl font-bold text-slate-900 tracking-tight">{formatINR(metrics.totalInvoiced)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500">Billed Revenue</span>
+              <span className="text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                {invoices.length} Invoices
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Outstanding Balance</p>
-          <div className="flex items-baseline justify-between mt-2">
-            <p className="text-2xl font-bold text-amber-600">{formatINR(metrics.outstandingBalance)}</p>
-            <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-              Accounts A/R
-            </span>
+        {/* Outstanding Balance */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Outstanding Balance</span>
+            <div className="p-2 bg-amber-50 text-amber-700 rounded-lg">
+              <DollarSign size={16} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Receivables awaiting payment in Banking</p>
+          <div className="mt-2">
+            <p className="text-2xl font-bold text-amber-700 tracking-tight">{formatINR(metrics.outstandingBalance)}</p>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500">Receivables Due</span>
+              <span className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                Accounts A/R
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 3. MAIN SECTION WITH TABS AND WORKSPACE */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+      {/* 3. MAIN WORKSPACE CONTAINER */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
         
         {/* Navigation Tabs Header */}
-        <div className="border-b border-slate-200 p-4 sm:p-0 bg-slate-50/50">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:px-4">
+        <div className="border-b border-slate-200 bg-slate-50/50 px-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             
-            {/* Main Tabs */}
-            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {/* Navigation Tabs */}
+            <div className="flex gap-4 overflow-x-auto no-scrollbar">
               <button
                 onClick={() => { setActiveTab('quotes'); setSearchTerm(''); }}
-                className={`flex items-center px-4 py-4 text-sm font-semibold border-b-2 whitespace-nowrap transition ${
+                className={`flex items-center py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'quotes' 
-                    ? 'border-emerald-600 text-emerald-600 bg-white' 
-                    : 'border-transparent text-slate-500 hover:text-[#0f172a]'
+                    ? 'border-blue-600 text-blue-600 bg-transparent' 
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <FileText size={16} className="mr-2" />
+                <FileText size={15} className="mr-2" />
                 Quotations
-                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
-                  activeTab === 'quotes' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  activeTab === 'quotes' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
                 }`}>
                   {quotations.length}
                 </span>
@@ -332,16 +423,16 @@ export const SalesPage: React.FC = () => {
 
               <button
                 onClick={() => { setActiveTab('orders'); setSearchTerm(''); }}
-                className={`flex items-center px-4 py-4 text-sm font-semibold border-b-2 whitespace-nowrap transition ${
+                className={`flex items-center py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'orders' 
-                    ? 'border-indigo-600 text-indigo-600 bg-white' 
-                    : 'border-transparent text-slate-500 hover:text-[#0f172a]'
+                    ? 'border-blue-600 text-blue-600 bg-transparent' 
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <ShoppingCart size={16} className="mr-2" />
+                <ShoppingCart size={15} className="mr-2" />
                 Sales Orders
-                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
-                  activeTab === 'orders' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'
+                <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  activeTab === 'orders' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
                 }`}>
                   {salesOrders.length}
                 </span>
@@ -349,31 +440,31 @@ export const SalesPage: React.FC = () => {
 
               <button
                 onClick={() => { setActiveTab('invoices'); setSearchTerm(''); }}
-                className={`flex items-center px-4 py-4 text-sm font-semibold border-b-2 whitespace-nowrap transition ${
+                className={`flex items-center py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition ${
                   activeTab === 'invoices' 
-                    ? 'border-blue-600 text-blue-600 bg-white' 
-                    : 'border-transparent text-slate-500 hover:text-[#0f172a]'
+                    ? 'border-blue-600 text-blue-600 bg-transparent' 
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <Receipt size={16} className="mr-2" />
+                <Receipt size={15} className="mr-2" />
                 Tax Invoices
-                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${
-                  activeTab === 'invoices' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
+                <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  activeTab === 'invoices' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'
                 }`}>
                   {invoices.length}
                 </span>
               </button>
             </div>
 
-            {/* Search Input */}
+            {/* Search Bar */}
             <div className="relative py-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
                 type="text"
                 placeholder={`Search ${activeTab === 'quotes' ? 'quotes' : activeTab === 'orders' ? 'orders' : 'invoices'}...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-4 py-2 border border-slate-300 rounded-xl text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none w-full sm:w-64"
+                className="pl-8 pr-4 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none w-full sm:w-64"
               />
             </div>
           </div>
@@ -388,10 +479,10 @@ export const SalesPage: React.FC = () => {
                 <button
                   key={st}
                   onClick={() => setQuoteStatusFilter(st)}
-                  className={`px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap transition ${
+                  className={`px-3 py-1 rounded-md font-medium whitespace-nowrap transition border ${
                     quoteStatusFilter === st
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
                   {st}
@@ -401,46 +492,52 @@ export const SalesPage: React.FC = () => {
 
             {/* Quotations Table */}
             {filteredQuotations.length > 0 ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-left border-collapse min-w-[900px]">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-[11px] uppercase border-y border-slate-200">
-                      <th className="py-3 px-3 font-semibold">Quote Number</th>
-                      <th className="py-3 px-3 font-semibold">Customer / Account</th>
-                      <th className="py-3 px-3 font-semibold text-right">Grand Total</th>
-                      <th className="py-3 px-3 font-semibold">Date & Validity</th>
-                      <th className="py-3 px-3 font-semibold text-center">Status</th>
-                      <th className="py-3 px-3 font-semibold text-center w-64">Workflow Action</th>
+                    <tr className="bg-slate-50 text-slate-600 text-[11px] font-semibold uppercase tracking-wider border-b border-slate-200">
+                      <th className="py-3 px-3">Quote Number</th>
+                      <th className="py-3 px-3">Customer / Account</th>
+                      <th className="py-3 px-3 text-right">Grand Total</th>
+                      <th className="py-3 px-3">Date & Validity</th>
+                      <th className="py-3 px-3 text-center">Status</th>
+                      <th className="py-3 px-3 text-center w-64">Workflow Action</th>
                       <th className="py-3 px-2 text-center w-12"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
+                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                     {filteredQuotations.map(quote => {
                       const hasLinkedOrder = Boolean(quote.salesOrderId || salesOrders.some(so => so.quotationId === quote.id));
                       const linkedSO = salesOrders.find(so => so.quotationId === quote.id);
 
                       return (
-                        <tr key={quote.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3.5 px-3">
-                            <div className="font-mono font-bold text-slate-900">{quote.quoteNumber}</div>
+                        <tr key={quote.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3 px-3">
+                            <div className="font-mono font-semibold text-slate-900">{quote.quoteNumber}</div>
                             {quote.revisionNumber && quote.revisionNumber > 1 && (
-                              <span className="inline-block mt-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
+                              <span className="inline-block mt-0.5 text-[10px] font-medium px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
                                 Rev #{quote.revisionNumber}
                               </span>
                             )}
                           </td>
 
-                          <td className="py-3.5 px-3">
+                          <td className="py-3 px-3">
                             <div className="font-semibold text-slate-900">{quote.customerName}</div>
+                            {quote.leadId && (
+                              <div className="text-[11px] text-indigo-600 font-semibold flex items-center gap-1 mt-0.5">
+                                <User size={11} className="text-indigo-500 shrink-0" />
+                                <span>Lead: {leads.find(l => l.id === quote.leadId)?.name || quote.leadId}</span>
+                              </div>
+                            )}
                             {quote.opportunityId && (
-                              <div className="text-[11px] text-indigo-600 flex items-center gap-1 mt-0.5 font-medium">
-                                <Tag size={10} /> Linked Opp: {quote.opportunityId}
+                              <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <Tag size={10} className="text-slate-400 shrink-0" /> Opp: {quote.opportunityId}
                               </div>
                             )}
                           </td>
 
-                          <td className="py-3.5 px-3 text-right">
-                            <div className="font-extrabold text-[#0f172a] text-sm">
+                          <td className="py-3 px-3 text-right">
+                            <div className="font-bold text-slate-900 text-xs">
                               {formatINR(quote.amount)}
                             </div>
                             <div className="text-[10px] text-slate-400">
@@ -448,25 +545,34 @@ export const SalesPage: React.FC = () => {
                             </div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-slate-600">
+                          <td className="py-3 px-3 text-slate-600">
                             <div>Issued: {quote.date}</div>
                             <div className="text-[11px] text-slate-400">Valid: {quote.validUntil || '—'}</div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-center">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-full font-bold border text-[11px] ${getQuotationBadgeClass(quote.status)}`}>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-block px-2.5 py-0.5 rounded-full font-medium border text-[11px] ${getQuotationBadgeClass(quote.status)}`}>
                               {quote.status}
                             </span>
                           </td>
 
                           {/* Controlled Workflow Actions */}
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3 px-3 text-center">
                             {quote.status === 'Draft' && (
                               <button
                                 onClick={() => handleSendQuote(quote)}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow-xs transition flex items-center justify-center gap-1.5 w-full"
+                                disabled={sendingQuoteId === quote.id}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1.5 w-full shadow-xs disabled:opacity-60"
                               >
-                                <Send size={13} /> Send Quotation
+                                {sendingQuoteId === quote.id ? (
+                                  <>
+                                    <Loader2 size={13} className="animate-spin" /> Sending...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send size={13} /> Send Quotation
+                                  </>
+                                )}
                               </button>
                             )}
 
@@ -474,21 +580,21 @@ export const SalesPage: React.FC = () => {
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   onClick={() => handleAcceptQuote(quote)}
-                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-[11px] shadow-xs transition flex items-center gap-1"
+                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold text-[11px] transition flex items-center gap-1 shadow-xs"
                                   title="Customer Accepted Quotation"
                                 >
                                   <Check size={13} /> Accept
                                 </button>
                                 <button
                                   onClick={() => handleRequestRevision(quote)}
-                                  className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-semibold text-[11px] transition"
+                                  className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md font-medium text-[11px] transition"
                                   title="Customer Requested Revision"
                                 >
                                   Req Rev
                                 </button>
                                 <button
                                   onClick={() => handleRejectQuote(quote)}
-                                  className="px-2 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg font-semibold text-[11px] transition"
+                                  className="px-2 py-1.5 text-rose-600 border border-slate-200 hover:bg-rose-50 hover:border-rose-200 rounded-md font-semibold text-[11px] transition"
                                   title="Mark as Rejected"
                                 >
                                   ✕
@@ -500,7 +606,7 @@ export const SalesPage: React.FC = () => {
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   onClick={() => handleOpenReviseModal(quote)}
-                                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs shadow-xs transition flex items-center justify-center gap-1.5 w-full"
+                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1.5 w-full shadow-xs"
                                 >
                                   <RefreshCw size={12} /> Revise & Update Quote
                                 </button>
@@ -515,14 +621,14 @@ export const SalesPage: React.FC = () => {
                                       setActiveTab('orders');
                                       setSearchTerm(linkedSO?.soNumber || quote.salesOrderNumber || '');
                                     }}
-                                    className="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-lg font-semibold text-xs transition flex items-center justify-center gap-1 w-full"
+                                    className="px-3 py-1.5 bg-white border border-slate-200 text-blue-600 hover:bg-blue-50 rounded-md font-medium text-xs transition flex items-center justify-center gap-1 w-full"
                                   >
                                     <Eye size={13} /> View Order ({linkedSO?.soNumber || quote.salesOrderNumber || 'Linked'})
                                   </button>
                                 ) : (
                                   <button
                                     onClick={() => handleOpenCreateOrder(quote)}
-                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs shadow-xs transition flex items-center justify-center gap-1.5 w-full"
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1.5 w-full shadow-xs"
                                   >
                                     <ShoppingCart size={13} /> Create Sales Order
                                   </button>
@@ -531,20 +637,20 @@ export const SalesPage: React.FC = () => {
                             )}
 
                             {(quote.status === 'Rejected' || quote.status === 'Expired') && (
-                              <span className="text-slate-400 italic text-[11px]">No further actions available</span>
+                              <span className="text-slate-400 italic text-[11px]">No actions available</span>
                             )}
                           </td>
 
                           {/* Options Menu */}
-                          <td className="py-3.5 px-2 text-center">
+                          <td className="py-3 px-2 text-center">
                             <div className="relative group/menu inline-block">
-                              <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+                              <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100">
                                 <MoreVertical size={15} />
                               </button>
-                              <div className="absolute right-0 top-0 w-32 bg-white rounded-xl shadow-lg border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
+                              <div className="absolute right-0 top-0 w-32 bg-white rounded-md shadow-md border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
                                 <button
                                   onClick={() => { setEditingQuotation(quote); setIsRevisionMode(false); setShowQuoteModal(true); }}
-                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-medium"
                                 >
                                   Edit Details
                                 </button>
@@ -568,10 +674,10 @@ export const SalesPage: React.FC = () => {
                 </table>
               </div>
             ) : (
-              <div className="p-12 text-center text-slate-400">
+              <div className="p-12 text-center text-slate-400 bg-slate-50/50 border border-slate-200 rounded-lg">
                 <FileText size={32} className="mx-auto mb-2 text-slate-300" />
                 <p className="font-semibold text-slate-700 text-sm">No quotations found</p>
-                <p className="text-xs mt-0.5">Try adjusting your filter or create a new commercial quotation.</p>
+                <p className="text-xs mt-0.5 text-slate-500">Try adjusting your filter or create a new commercial quotation.</p>
               </div>
             )}
           </div>
@@ -586,10 +692,10 @@ export const SalesPage: React.FC = () => {
                 <button
                   key={st}
                   onClick={() => setOrderStatusFilter(st)}
-                  className={`px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap transition ${
+                  className={`px-3 py-1 rounded-md font-medium whitespace-nowrap transition border ${
                     orderStatusFilter === st
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
                   {st}
@@ -599,43 +705,43 @@ export const SalesPage: React.FC = () => {
 
             {/* Sales Orders Table */}
             {filteredOrders.length > 0 ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-left border-collapse min-w-[900px]">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-[11px] uppercase border-y border-slate-200">
-                      <th className="py-3 px-3 font-semibold">SO Number</th>
-                      <th className="py-3 px-3 font-semibold">Customer Account</th>
-                      <th className="py-3 px-3 font-semibold">Source Quotation</th>
-                      <th className="py-3 px-3 font-semibold text-right">Order Amount</th>
-                      <th className="py-3 px-3 font-semibold">Order Date</th>
-                      <th className="py-3 px-3 font-semibold text-center">Status</th>
-                      <th className="py-3 px-3 font-semibold text-center w-56">Billing Action</th>
+                    <tr className="bg-slate-50 text-slate-600 text-[11px] font-semibold uppercase tracking-wider border-b border-slate-200">
+                      <th className="py-3 px-3">SO Number</th>
+                      <th className="py-3 px-3">Customer Account</th>
+                      <th className="py-3 px-3">Source Quotation</th>
+                      <th className="py-3 px-3 text-right">Order Amount</th>
+                      <th className="py-3 px-3">Order Date</th>
+                      <th className="py-3 px-3 text-center">Status</th>
+                      <th className="py-3 px-3 text-center w-56">Billing Action</th>
                       <th className="py-3 px-2 text-center w-12"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
+                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                     {filteredOrders.map(so => {
                       const hasLinkedInvoice = Boolean(so.invoiceId || invoices.some(inv => inv.salesOrderId === so.id));
                       const linkedInv = invoices.find(inv => inv.salesOrderId === so.id);
 
                       return (
-                        <tr key={so.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3.5 px-3">
-                            <div className="font-mono font-bold text-indigo-700">{so.soNumber}</div>
+                        <tr key={so.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3 px-3">
+                            <div className="font-mono font-semibold text-slate-900">{so.soNumber}</div>
                           </td>
 
-                          <td className="py-3.5 px-3">
+                          <td className="py-3 px-3">
                             <div className="font-semibold text-slate-900">{so.customerName}</div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-slate-600">
+                          <td className="py-3 px-3 text-slate-600">
                             {so.quoteNumber ? (
                               <button
                                 onClick={() => {
                                   setActiveTab('quotes');
                                   setSearchTerm(so.quoteNumber || '');
                                 }}
-                                className="font-mono text-emerald-700 hover:underline flex items-center gap-1 font-semibold"
+                                className="font-mono text-blue-600 hover:underline flex items-center gap-1 font-medium"
                               >
                                 <FileText size={12} /> {so.quoteNumber}
                               </button>
@@ -644,31 +750,31 @@ export const SalesPage: React.FC = () => {
                             )}
                           </td>
 
-                          <td className="py-3.5 px-3 text-right">
-                            <div className="font-extrabold text-[#0f172a] text-sm">
+                          <td className="py-3 px-3 text-right">
+                            <div className="font-bold text-slate-900 text-xs">
                               {formatINR(so.totalAmount)}
                             </div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-slate-600">
+                          <td className="py-3 px-3 text-slate-600">
                             {so.date}
                           </td>
 
-                          <td className="py-3.5 px-3 text-center">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-full font-bold border text-[11px] ${getOrderBadgeClass(so.status || so.fulfillmentStatus)}`}>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-block px-2.5 py-0.5 rounded-full font-medium border text-[11px] ${getOrderBadgeClass(so.status || so.fulfillmentStatus)}`}>
                               {so.status || so.fulfillmentStatus || 'Confirmed'}
                             </span>
                           </td>
 
                           {/* Billing Action */}
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3 px-3 text-center">
                             {hasLinkedInvoice ? (
                               <button
                                 onClick={() => {
                                   setActiveTab('invoices');
                                   setSearchTerm(linkedInv?.invoiceNumber || so.invoiceNumber || '');
                                 }}
-                                className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg font-semibold text-xs transition flex items-center justify-center gap-1 w-full"
+                                className="px-3 py-1.5 bg-white border border-slate-200 text-blue-600 hover:bg-blue-50 rounded-md font-medium text-xs transition flex items-center justify-center gap-1 w-full"
                               >
                                 <Eye size={13} /> View Invoice ({linkedInv?.invoiceNumber || so.invoiceNumber || 'Linked'})
                               </button>
@@ -676,7 +782,7 @@ export const SalesPage: React.FC = () => {
                               <button
                                 onClick={() => handleOpenCreateInvoice(so)}
                                 disabled={so.status === 'Cancelled' || so.fulfillmentStatus === 'Cancelled'}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-semibold text-xs shadow-xs transition flex items-center justify-center gap-1.5 w-full"
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1.5 w-full shadow-xs"
                               >
                                 <Receipt size={13} /> Issue Tax Invoice
                               </button>
@@ -684,21 +790,21 @@ export const SalesPage: React.FC = () => {
                           </td>
 
                           {/* Menu */}
-                          <td className="py-3.5 px-2 text-center">
+                          <td className="py-3 px-2 text-center">
                             <div className="relative group/menu inline-block">
-                              <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+                              <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100">
                                 <MoreVertical size={15} />
                               </button>
-                              <div className="absolute right-0 top-0 w-36 bg-white rounded-xl shadow-lg border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
+                              <div className="absolute right-0 top-0 w-36 bg-white rounded-md shadow-md border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
                                 <button
                                   onClick={() => updateSalesOrder(so.id, { status: 'Delivered', fulfillmentStatus: 'Fulfilled' })}
-                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700"
+                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-medium"
                                 >
                                   Mark Delivered
                                 </button>
                                 <button
                                   onClick={() => updateSalesOrder(so.id, { status: 'Cancelled', fulfillmentStatus: 'Cancelled' })}
-                                  className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600"
+                                  className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600 font-medium"
                                 >
                                   Cancel Order
                                 </button>
@@ -723,10 +829,10 @@ export const SalesPage: React.FC = () => {
                 </table>
               </div>
             ) : (
-              <div className="p-12 text-center text-slate-400">
+              <div className="p-12 text-center text-slate-400 bg-slate-50/50 border border-slate-200 rounded-lg">
                 <ShoppingCart size={32} className="mx-auto mb-2 text-slate-300" />
                 <p className="font-semibold text-slate-700 text-sm">No sales orders found</p>
-                <p className="text-xs mt-0.5">Accept an active quotation to generate its corresponding sales order.</p>
+                <p className="text-xs mt-0.5 text-slate-500">Accept an active quotation to generate its corresponding sales order.</p>
               </div>
             )}
           </div>
@@ -741,10 +847,10 @@ export const SalesPage: React.FC = () => {
                 <button
                   key={st}
                   onClick={() => setInvoiceStatusFilter(st)}
-                  className={`px-3 py-1.5 rounded-lg font-semibold whitespace-nowrap transition ${
+                  className={`px-3 py-1 rounded-md font-medium whitespace-nowrap transition border ${
                     invoiceStatusFilter === st
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200 font-semibold'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
                   {st}
@@ -754,44 +860,44 @@ export const SalesPage: React.FC = () => {
 
             {/* Invoices Table */}
             {filteredInvoices.length > 0 ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-left border-collapse min-w-[950px]">
                   <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-[11px] uppercase border-y border-slate-200">
-                      <th className="py-3 px-3 font-semibold">Invoice Number</th>
-                      <th className="py-3 px-3 font-semibold">Customer Account</th>
-                      <th className="py-3 px-3 font-semibold">Source Order / Quote</th>
-                      <th className="py-3 px-3 font-semibold text-right">Invoice Amount</th>
-                      <th className="py-3 px-3 font-semibold text-right">Balance Due</th>
-                      <th className="py-3 px-3 font-semibold">Due Date</th>
-                      <th className="py-3 px-3 font-semibold text-center">Status</th>
-                      <th className="py-3 px-3 font-semibold text-center w-48">Accounts Action</th>
+                    <tr className="bg-slate-50 text-slate-600 text-[11px] font-semibold uppercase tracking-wider border-b border-slate-200">
+                      <th className="py-3 px-3">Invoice Number</th>
+                      <th className="py-3 px-3">Customer Account</th>
+                      <th className="py-3 px-3">Source Order / Quote</th>
+                      <th className="py-3 px-3 text-right">Invoice Amount</th>
+                      <th className="py-3 px-3 text-right">Balance Due</th>
+                      <th className="py-3 px-3">Due Date</th>
+                      <th className="py-3 px-3 text-center">Status</th>
+                      <th className="py-3 px-3 text-center w-48">Accounts Action</th>
                       <th className="py-3 px-2 text-center w-12"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
+                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
                     {filteredInvoices.map(inv => {
                       const balance = Math.max(0, inv.amount - (inv.paidAmount || 0));
 
                       return (
-                        <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3.5 px-3">
-                            <div className="font-mono font-bold text-blue-700">{inv.invoiceNumber}</div>
+                        <tr key={inv.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3 px-3">
+                            <div className="font-mono font-semibold text-slate-900">{inv.invoiceNumber}</div>
                             <div className="text-[10px] text-slate-400">Date: {inv.date}</div>
                           </td>
 
-                          <td className="py-3.5 px-3">
+                          <td className="py-3 px-3">
                             <div className="font-semibold text-slate-900">{inv.customerName}</div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-slate-600">
+                          <td className="py-3 px-3 text-slate-600">
                             {inv.salesOrderNumber ? (
                               <button
                                 onClick={() => {
                                   setActiveTab('orders');
                                   setSearchTerm(inv.salesOrderNumber || '');
                                 }}
-                                className="font-mono text-indigo-700 hover:underline flex items-center gap-1 font-semibold"
+                                className="font-mono text-blue-600 hover:underline flex items-center gap-1 font-medium"
                               >
                                 <ShoppingCart size={11} /> {inv.salesOrderNumber}
                               </button>
@@ -799,14 +905,14 @@ export const SalesPage: React.FC = () => {
                               <span className="text-slate-400 italic">Direct Invoice</span>
                             )}
                             {inv.quoteNumber && (
-                              <div className="text-[10px] text-emerald-700 font-mono mt-0.5">
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                                 Ref: {inv.quoteNumber}
                               </div>
                             )}
                           </td>
 
-                          <td className="py-3.5 px-3 text-right">
-                            <div className="font-extrabold text-[#0f172a] text-sm">
+                          <td className="py-3 px-3 text-right">
+                            <div className="font-bold text-slate-900 text-xs">
                               {formatINR(inv.amount)}
                             </div>
                             <div className="text-[10px] text-slate-400">
@@ -814,32 +920,32 @@ export const SalesPage: React.FC = () => {
                             </div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-right">
-                            <div className={`font-bold ${balance > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                          <td className="py-3 px-3 text-right">
+                            <div className={`font-semibold ${balance > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
                               {formatINR(balance)}
                             </div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-slate-600">
+                          <td className="py-3 px-3 text-slate-600">
                             <div>{inv.dueDate}</div>
                           </td>
 
-                          <td className="py-3.5 px-3 text-center">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-full font-bold border text-[11px] ${getInvoiceBadgeClass(inv.status)}`}>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-block px-2.5 py-0.5 rounded-full font-medium border text-[11px] ${getInvoiceBadgeClass(inv.status)}`}>
                               {inv.status}
                             </span>
                           </td>
 
                           {/* Accounts / Payment Action */}
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3 px-3 text-center">
                             {inv.status === 'Paid' ? (
-                              <span className="text-emerald-700 font-bold text-xs flex items-center justify-center gap-1">
-                                <CheckCircle2 size={14} /> Settlement Complete
+                              <span className="text-emerald-700 font-semibold text-xs flex items-center justify-center gap-1">
+                                <CheckCircle2 size={14} /> Paid in Full
                               </span>
                             ) : (
                               <button
                                 onClick={() => handleRecordPayment(inv)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs shadow-xs transition flex items-center justify-center gap-1 w-full"
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1 w-full shadow-xs"
                               >
                                 <DollarSign size={13} /> Record Payment
                               </button>
@@ -847,12 +953,12 @@ export const SalesPage: React.FC = () => {
                           </td>
 
                           {/* Menu */}
-                          <td className="py-3.5 px-2 text-center">
+                          <td className="py-3 px-2 text-center">
                             <div className="relative group/menu inline-block">
-                              <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+                              <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100">
                                 <MoreVertical size={15} />
                               </button>
-                              <div className="absolute right-0 top-0 w-32 bg-white rounded-xl shadow-lg border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
+                              <div className="absolute right-0 top-0 w-32 bg-white rounded-md shadow-md border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
                                 <button
                                   onClick={() => {
                                     if (window.confirm('Delete this invoice?')) {
@@ -874,10 +980,10 @@ export const SalesPage: React.FC = () => {
                 </table>
               </div>
             ) : (
-              <div className="p-12 text-center text-slate-400">
+              <div className="p-12 text-center text-slate-400 bg-slate-50/50 border border-slate-200 rounded-lg">
                 <Receipt size={32} className="mx-auto mb-2 text-slate-300" />
                 <p className="font-semibold text-slate-700 text-sm">No tax invoices found</p>
-                <p className="text-xs mt-0.5">Issue an invoice from a confirmed sales order to begin receivables tracking.</p>
+                <p className="text-xs mt-0.5 text-slate-500">Issue an invoice from a confirmed sales order to begin receivables tracking.</p>
               </div>
             )}
           </div>
@@ -887,9 +993,10 @@ export const SalesPage: React.FC = () => {
       {/* MODALS */}
       <QuotationModal
         isOpen={showQuoteModal}
-        onClose={() => { setShowQuoteModal(false); setEditingQuotation(null); setIsRevisionMode(false); }}
+        onClose={() => { setShowQuoteModal(false); setEditingQuotation(null); setIsRevisionMode(false); setInitialLeadIdForQuote(undefined); }}
         quotationToEdit={editingQuotation}
         isRevisionMode={isRevisionMode}
+        initialLeadId={initialLeadIdForQuote}
       />
 
       <SalesOrderModal
@@ -903,6 +1010,123 @@ export const SalesPage: React.FC = () => {
         onClose={() => { setShowInvoiceModal(false); setSelectedOrderForInvoice(null); }}
         salesOrder={selectedOrderForInvoice}
       />
+
+      {/* Rejection Modal for Quotations with CRM Sync Options */}
+      {rejectionModalQuote && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl border border-slate-200">
+            <h3 className="text-sm font-bold text-slate-900 mb-1">Reject Quotation ({rejectionModalQuote.quoteNumber})</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Select how this quotation rejection affects the sales workflow and linked CRM lead.
+            </p>
+
+            {/* Workflow Mode Selector */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-3 mb-4">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="lossType"
+                  checked={!isDefinitiveLoss}
+                  onChange={() => setIsDefinitiveLoss(false)}
+                  className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900 text-xs block">Reject Quotation Only (Negotiation Continues)</span>
+                  <span className="text-[11px] text-slate-500 block leading-relaxed">
+                    Customer declined these specific commercial terms or pricing. Linked CRM Lead remains <strong>Qualified</strong> so a revised quotation can be created.
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer pt-3 border-t border-slate-200">
+                <input
+                  type="radio"
+                  name="lossType"
+                  checked={isDefinitiveLoss}
+                  onChange={() => setIsDefinitiveLoss(true)}
+                  className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                />
+                <div>
+                  <span className="font-semibold text-rose-800 text-xs block">Close Deal as Lost (Definitive Loss)</span>
+                  <span className="text-[11px] text-slate-500 block leading-relaxed">
+                    Customer definitively declined the offer or chose a competitor. Automatically marks linked CRM Lead as <strong>Lost</strong> with mandatory reason & notes.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {isDefinitiveLoss && (
+              <div className="space-y-3.5 border-t border-slate-100 pt-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Lost Reason <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 focus:outline-none bg-white"
+                  >
+                    {CRM_LOST_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {rejectReason === 'Other' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Custom Reason Explanation <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Specify custom reason..."
+                      value={rejectReasonDetails}
+                      onChange={(e) => setRejectReasonDetails(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Lost Notes / Comments <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    placeholder="Provide details explaining why the deal was lost..."
+                    value={rejectNotes}
+                    onChange={(e) => setRejectNotes(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:border-rose-500 focus:outline-none text-slate-800"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRejectionModalQuote(null)}
+                className="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRejectQuote}
+                className={`px-4 py-1.5 text-white rounded-lg text-xs font-semibold shadow-xs transition ${
+                  isDefinitiveLoss ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-800 hover:bg-slate-900'
+                }`}
+              >
+                {isDefinitiveLoss ? 'Confirm Deal as Lost' : 'Reject Quotation (Keep Lead Open)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

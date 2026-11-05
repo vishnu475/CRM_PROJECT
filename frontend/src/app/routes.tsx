@@ -36,7 +36,17 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'notes', path: '/crm/notes', label: 'Notes' },
     ]
   },
-  { id: 'customers', path: '/customers', label: 'Customers & Account Ledger' },
+  {
+    id: 'customers',
+    path: '/customers',
+    label: 'Customers & Account Ledger',
+    defaultSubSection: 'list',
+    subSections: [
+      { id: 'list', path: '/customers/list', label: 'Customers' },
+      { id: 'add-customer', path: '/customers/add-customer', label: 'Add Customer' },
+      { id: 'customer-details', path: '/customers/customer-details', label: 'Customer Details' },
+    ]
+  },
   { id: 'sales', path: '/sales', label: 'Sales Orders & Invoicing' },
   { id: 'vendors', path: '/vendors', label: 'Vendors & Procurement' },
   { id: 'purchases', path: '/purchases', label: 'Purchase Orders & Bills' },
@@ -57,7 +67,62 @@ export const MODULE_ROUTES: RouteConfig[] = [
       { id: 'reports', path: '/tasks/reports', label: 'Task Reports' },
     ]
   },
-  { id: 'helpdesk', path: '/helpdesk', label: 'Support Helpdesk & Tickets' },
+  {
+    id: 'testing',
+    path: '/testing',
+    label: 'Testing & QA Management',
+    defaultSubSection: 'dashboard',
+    subSections: [
+      { id: 'dashboard', path: '/testing/dashboard', label: 'Testing Dashboard' },
+      { id: 'queue', path: '/testing/queue', label: 'Testing Queue' },
+      { id: 'test-cases', path: '/testing/test-cases', label: 'Test Cases' },
+      { id: 'bugs', path: '/testing/bugs', label: 'Bug Management' },
+      { id: 'reports', path: '/testing/reports', label: 'Testing Reports' },
+      { id: 'my-testing', path: '/testing/my-testing', label: 'My Assigned Testing' },
+      { id: 'my-bugs', path: '/testing/my-bugs', label: 'My Reported Bugs' },
+      { id: 'audit-logs', path: '/testing/audit-logs', label: 'Testing Audit Logs' },
+    ]
+  },
+  {
+    id: 'timesheet',
+    path: '/timesheet',
+    label: 'Timesheet Management',
+    defaultSubSection: 'dashboard',
+    subSections: [
+      { id: 'dashboard', path: '/timesheet/dashboard', label: 'Timesheet Dashboard' },
+      { id: 'employee-timesheets', path: '/timesheet/employee-timesheets', label: 'Employee Timesheets' },
+      { id: 'my-timesheet', path: '/timesheet/my-timesheet', label: 'My Timesheet' },
+      { id: 'my-history', path: '/timesheet/my-history', label: 'My History' },
+      { id: 'history', path: '/timesheet/history', label: 'Timesheet History' },
+      { id: 'reports', path: '/timesheet/reports', label: 'Timesheet Reports' },
+    ]
+  },
+  {
+    id: 'timesheets',
+    path: '/timesheets',
+    label: 'Timesheet Management',
+    defaultSubSection: 'dashboard',
+    subSections: [
+      { id: 'dashboard', path: '/timesheets/dashboard', label: 'Timesheet Dashboard' },
+      { id: 'employee-timesheets', path: '/timesheets/employee-timesheets', label: 'Employee Timesheets' },
+      { id: 'my-timesheet', path: '/timesheets/my-timesheet', label: 'My Timesheet' },
+      { id: 'my-history', path: '/timesheets/my-history', label: 'My History' },
+      { id: 'history', path: '/timesheets/history', label: 'Timesheet History' },
+      { id: 'reports', path: '/timesheets/reports', label: 'Timesheet Reports' },
+    ]
+  },
+  {
+    id: 'helpdesk',
+    path: '/helpdesk',
+    label: 'Support Helpdesk & Tickets',
+    defaultSubSection: 'my-tickets',
+    subSections: [
+      { id: 'my-tickets', path: '/helpdesk/my-tickets', label: 'My Tickets' },
+      { id: 'all-tickets', path: '/helpdesk/all-tickets', label: 'All System Tickets' },
+      { id: 'raise-ticket', path: '/helpdesk/raise-ticket', label: 'Raise a Ticket' },
+      { id: 'queue', path: '/helpdesk/queue', label: 'My Tickets Queue' },
+    ]
+  },
   {
     id: 'administration',
     path: '/administration',
@@ -266,18 +331,35 @@ export function parseRouteFromPath(pathname: string): { module: ModuleId; subSec
     return { module: 'tasks', subSection: 'all-tasks' };
   }
 
-  // 4. CRM direct routes for /crm/opportunities/:id, /crm/leads/:id, /crm/customers/:id
-  if (moduleSlug === 'crm' && parts.length >= 3) {
-    const sec = parts[1].toLowerCase();
-    const entityId = parts[2];
-    if (sec === 'opportunities' || sec === 'opportunity') {
-      return { module: 'crm', subSection: `opportunities/${entityId}` };
+  // Testing & QA direct mapping for root /testing and /qa (including deep project/employee/module routes)
+  if (moduleSlug === 'testing' || moduleSlug === 'qa') {
+    if (parts.length > 1) {
+      return { module: 'testing', subSection: parts.slice(1).join('/') };
     }
-    if (sec === 'leads' || sec === 'lead' || sec === 'lead-details') {
-      return { module: 'crm', subSection: `lead-details/${entityId}` };
+    return { module: 'testing', subSection: 'projects' };
+  }
+
+  // Helpdesk & Support Tickets direct mapping (including /tickets, /my-tickets, /raise-ticket)
+  if (moduleSlug === 'helpdesk' || moduleSlug === 'tickets') {
+    if (subSlug === 'raise-ticket' || subSlug === 'new') {
+      return { module: 'helpdesk', subSection: 'raise-ticket' };
     }
-    if (sec === 'customers' || sec === 'customer' || sec === 'customer-details') {
-      return { module: 'crm', subSection: `customer-details/${entityId}` };
+    if (subSlug === 'all-tickets' || subSlug === 'all') {
+      return { module: 'helpdesk', subSection: 'all-tickets' };
+    }
+    if (subSlug === 'queue') {
+      return { module: 'helpdesk', subSection: 'queue' };
+    }
+    return { module: 'helpdesk', subSection: 'my-tickets' };
+  }
+
+  // Direct alias for Customer Portal ticket routes
+  if (moduleSlug === 'customer') {
+    if (subSlug === 'raise-ticket' || subSlug === 'raise') {
+      return { module: 'helpdesk', subSection: 'raise-ticket' };
+    }
+    if (subSlug === 'tickets' || subSlug === 'my-tickets') {
+      return { module: 'helpdesk', subSection: 'my-tickets' };
     }
   }
 

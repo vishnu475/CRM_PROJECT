@@ -3,9 +3,25 @@ import { crmPool as pool } from '../db/pool.js'; // CRM DB — Friend 1
 
 const router = express.Router();
 
-// GET /api/vendors — Fetch all vendors with live purchase & payable aggregation
+// GET /api/vendors — Fetch all vendors with live purchase & payable aggregation (Deduplicated unique vendors)
 router.get('/', async (req, res) => {
   try {
+    const { status, search, dedupe } = req.query;
+    const whereClauses = [];
+    const params = [];
+
+    if (status && status !== 'All') {
+      params.push(status);
+      whereClauses.push(`v.status ILIKE $${params.length}`);
+    }
+
+    if (search && search.trim()) {
+      params.push(`%${search.trim()}%`);
+      whereClauses.push(`(v.name ILIKE $${params.length} OR v.code ILIKE $${params.length} OR v.email ILIKE $${params.length})`);
+    }
+
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
     const query = `
       SELECT 
         v.*,
@@ -17,7 +33,11 @@ router.get('/', async (req, res) => {
         COALESCE(po_stats.paid_amount, 0) AS total_paid_amount,
         COALESCE(po_stats.amount_due, v.payable_balance, 0) AS calculated_amount_due,
         COALESCE(po_stats.overdue_amount, 0) AS overdue_amount
-      FROM vendors v
+      FROM (
+        SELECT DISTINCT ON (LOWER(TRIM(name))) *
+        FROM vendors
+        ORDER BY LOWER(TRIM(name)), created_at DESC
+      ) v
       LEFT JOIN (
         SELECT 
           po.vendor_id,
@@ -41,11 +61,25 @@ router.get('/', async (req, res) => {
         WHERE po.vendor_id IS NOT NULL
         GROUP BY po.vendor_id
       ) po_stats ON v.id = po_stats.vendor_id
+      ${whereStr}
       ORDER BY v.name ASC
     `;
 
-    const result = await pool.query(query);
-    res.json({ success: true, data: result.rows });
+    const result = await pool.query(query, params);
+    let rows = result.rows;
+
+    // Optional client-side dedupe request by business entity (GSTIN or name)
+    if (dedupe === 'true' || dedupe === '1') {
+      const seen = new Set();
+      rows = rows.filter(r => {
+        const key = (r.gstin && r.gstin.trim()) ? r.gstin.trim().toLowerCase() : (r.name || '').trim().toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

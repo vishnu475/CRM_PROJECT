@@ -304,6 +304,8 @@ export const validateLeadConversion = (lead: Lead): StageTransitionResult => {
 /**
  * Validates lead stage transitions according to CRM workflow business rules.
  * 
+ * CRM LEAD STAGES: New -> Contacted -> Qualified -> (Sales Quotation / Outcome: Won / Lost)
+ * 
  * STEP 1 RULE:
  * New -> Contacted requires at least one completed interaction (Call, Email, or Meeting).
  * 
@@ -315,65 +317,47 @@ export const validateLeadConversion = (lead: Lead): StageTransitionResult => {
  * 4. Expected Closing Date (valid date)
  * 
  * STEP 3 RULE:
- * Qualified -> Proposal requires a valid proposal/quotation with:
- * 1. Proposal Amount (> 0)
- * 2. Proposal Date (valid date)
- * 3. Proposal Status ('Sent' - Draft is not allowed)
- * 4. Sent Date (valid date when status is Sent)
- * 
- * STEP 4 RULE:
- * Proposal -> Negotiation requires:
- * 1. Lead is currently in Proposal (no stage skipping).
- * 2. At least one completed interaction that represents an actual customer negotiation/discussion.
- * 
- * STEP 5 RULE:
- * Negotiation -> Won requires:
- * 1. Lead is currently in Negotiation (no stage skipping).
- * 2. Valid positive Final Agreed Amount (> 0).
- * 3. Valid Closed/Won Date.
- * 4. Explicit confirmation that customer accepted the deal (completed Customer Acceptance / Deal Closed activity).
- * 
- * STEP 6 RULE:
- * Lost Lead Workflow:
- * 1. Allowed from any active stage (New, Contacted, Qualified, Proposal, Negotiation).
- * 2. Won -> Lost is strictly BLOCKED.
- * 3. Requires a valid Lost Reason from controlled list.
- * 4. If "Other" reason is chosen, requires custom explanation.
- * 5. Requires Lost Notes/Comments explaining why the deal was lost.
- * 6. Lost leads cannot be transitioned forward to active stages (Lost -> * is blocked).
+ * Qualified leads become eligible for quotation management in the Sales module.
+ * Direct manual stage transitions to Won or Lost are prevented.
+ * Stage skipping and backward transitions are blocked.
  */
 export const validateLeadStageTransition = (
   lead: Lead,
   targetStage: Lead['stage'],
   activities: Activity[] = [],
-  quotations: Quotation[] = []
+  _quotations: Quotation[] = []
 ): StageTransitionResult => {
   const currentStage = lead.stage;
 
-  // No change in stage
+  // 1. No change in stage
   if (currentStage === targetStage) {
     return { allowed: true };
   }
 
-  // STEP 6.1: Once a lead is Lost, it cannot be transitioned to any other stage
+  // 2. Once a lead is Lost or Won, it cannot be transitioned to active stages
   if (currentStage === 'Lost') {
     return {
       allowed: false,
       message: `Cannot move lead from "Lost" to "${targetStage}". Deals marked as Lost cannot be transitioned to active stages.`,
     };
   }
+  if (currentStage === 'Won') {
+    return {
+      allowed: false,
+      message: `Cannot move lead from "Won" to "${targetStage}". Deals marked as Won are closed and finalized.`,
+    };
+  }
 
-  // STEP 6.2: Moving a lead to Lost
+  // 3. Direct transition to Won in CRM is blocked (Won is an outcome state reached via Sales/Quotation workflow)
+  if (targetStage === 'Won') {
+    return {
+      allowed: false,
+      message: 'Lead stage cannot be manually changed to Won. Won is an outcome reached when the linked quotation in Sales is accepted.',
+    };
+  }
+
+  // 4. Moving a lead to Lost (Outcome state)
   if (targetStage === 'Lost') {
-    // Cannot move a Won lead to Lost
-    if (currentStage === 'Won') {
-      return {
-        allowed: false,
-        message: 'Cannot move a "Won" lead to "Lost". Deals marked as Won are closed and finalized.',
-      };
-    }
-
-    // 1. Lost Reason is required
     const lostReason = (lead.lostReason || '').trim();
     if (!lostReason) {
       return {
@@ -382,7 +366,6 @@ export const validateLeadStageTransition = (
       };
     }
 
-    // 2. If "Other" reason, require custom explanation
     if (lostReason.toLowerCase() === 'other') {
       const otherDetails = (lead.lostReasonDetails || '').trim();
       const lostNotes = (lead.lostNotes || '').trim();
@@ -394,7 +377,6 @@ export const validateLeadStageTransition = (
       }
     }
 
-    // 3. Lost Notes / Comments are required
     const lostNotes = (lead.lostNotes || '').trim();
     if (!lostNotes) {
       return {
@@ -406,7 +388,39 @@ export const validateLeadStageTransition = (
     return { allowed: true };
   }
 
-  // STEP 1: Validation for New -> Contacted
+  // 5. Reject obsolete/unsupported Lead stages (e.g. Proposal, Negotiation)
+  const validLeadStages = ['New', 'Contacted', 'Qualified', 'Won', 'Lost'];
+  if (!validLeadStages.includes(targetStage)) {
+    return {
+      allowed: false,
+      message: `"${targetStage}" is not a valid CRM lead stage.`,
+    };
+  }
+
+  // 6. Check for backward stage transitions
+  const stageOrder = ['New', 'Contacted', 'Qualified'];
+  const currentIndex = stageOrder.indexOf(currentStage);
+  const targetIndex = stageOrder.indexOf(targetStage);
+
+  if (currentIndex !== -1 && targetIndex !== -1) {
+    if (targetIndex < currentIndex) {
+      return {
+        allowed: false,
+        message: `Backward stage transition from "${currentStage}" to "${targetStage}" is not allowed.`,
+      };
+    }
+
+    // 7. Check for stage skipping (e.g., New -> Qualified)
+    if (targetIndex > currentIndex + 1) {
+      return {
+        allowed: false,
+        message: `Stage skipping is not allowed. Lead must move from "${currentStage}" to "${stageOrder[currentIndex + 1]}" first.`,
+      };
+    }
+  }
+
+  // 8. Stage-specific prerequisites
+  // New -> Contacted: requires at least one completed interaction (Call, Email, or Meeting)
   if (currentStage === 'New' && targetStage === 'Contacted') {
     const hasCompletedInteraction = activities.some((act) => {
       const isRelated =
@@ -429,9 +443,11 @@ export const validateLeadStageTransition = (
         message: 'Please record a completed call, email, or meeting before moving this lead to Contacted.',
       };
     }
+
+    return { allowed: true };
   }
 
-  // STEP 2: Validation for Contacted -> Qualified
+  // Contacted -> Qualified: requires requirement, positive budget > 0, decision maker, expected close date
   if (currentStage === 'Contacted' && targetStage === 'Qualified') {
     const valResult = validateAllQualificationFields({
       requirement: lead.requirement,
@@ -445,59 +461,6 @@ export const validateLeadStageTransition = (
       return {
         allowed: false,
         message: 'Complete all 4 qualification details before moving this lead to Qualified:\n• ' + errorMsgs.join('\n• '),
-      };
-    }
-  }
-
-  // Direct transition to Won in CRM is blocked
-  if (targetStage === 'Won') {
-    return {
-      allowed: false,
-      message: 'Lead stage cannot be manually changed to Won. It is automatically updated when the linked quotation in Sales is accepted.',
-    };
-  }
-
-  // STEP 1: Validation for New -> Contacted
-  if (currentStage === 'New' && targetStage === 'Contacted') {
-    const hasCompletedInteraction = activities.some((act) => {
-      const isRelated =
-        act.relatedTo === lead.id ||
-        act.relatedTo === lead.name ||
-        (act.relatedTo && act.relatedTo.includes(lead.name)) ||
-        (act.relatedTo && act.relatedTo.includes(lead.id));
-
-      const isInteractionType =
-        act.type === 'Call' || act.type === 'Email' || act.type === 'Meeting';
-
-      const isCompleted = act.status === 'Completed';
-
-      return isRelated && isInteractionType && isCompleted;
-    });
-
-    if (!hasCompletedInteraction) {
-      return {
-        allowed: false,
-        message: 'Please record a completed call, email, or meeting before moving this lead to Contacted.',
-      };
-    }
-
-    return { allowed: true };
-  }
-
-  // STEP 2: Validation for Contacted -> Qualified
-  if (currentStage === 'Contacted' && targetStage === 'Qualified') {
-    const valResult = validateAllQualificationFields({
-      requirement: lead.requirement,
-      budget: lead.budget !== undefined ? lead.budget : lead.value,
-      decisionMaker: lead.decisionMaker || lead.contactPerson,
-      expectedCloseDate: lead.expectedCloseDate,
-    });
-
-    if (!valResult.isValid) {
-      const errorMsgs = Object.values(valResult.errors).filter(Boolean);
-      return {
-        allowed: false,
-        message: 'Complete all 4 qualification details before moving this lead to Qualified:\n' + errorMsgs.join('\n'),
       };
     }
 

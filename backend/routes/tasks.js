@@ -80,7 +80,8 @@ router.get('/completed', async (req, res) => {
     const tasks = await TaskService.getAllTasks({ ...req.query, status: 'COMPLETED' }, user);
     res.json({ success: true, count: tasks.length, data: tasks });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    console.error('Error fetching completed tasks:', err);
+    res.status(500).json({ success: false, message: 'Unable to retrieve completed task records at this time. Please try again.' });
   }
 });
 

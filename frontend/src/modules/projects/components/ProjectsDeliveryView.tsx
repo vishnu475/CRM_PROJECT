@@ -1,20 +1,37 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-  FolderKanban, Building2, User, Calendar, DollarSign, FileText, X, ArrowRight, ExternalLink, Edit3, Trash2, GitBranch, Link2, Users, CheckSquare, FileCode, Download, Eye, Layers, Briefcase, Tag, AlertCircle, ArrowUpRight, ShieldCheck, Clock, CheckCircle2, Globe, Mail, Phone, Sparkles, PieChart, ShieldAlert, SlidersHorizontal, Search, Filter
-} from 'lucide-react';
 import { useApp } from '../../../context/AppContext';
-import { Project, ProjectDocument, ProjectLink } from '../../../types';
+import { Project } from '../../../types';
+import { 
+  FolderKanban, Search, Filter, Calendar, User, DollarSign, 
+  CheckCircle2, Clock, FileText, X, ArrowRight, Building2, 
+  Sparkles, ShieldCheck, ChevronRight, Trash2, Layers, Users,
+  AlertCircle, CheckSquare, Download, Edit3, GitBranch, Tag
+} from 'lucide-react';
+import { TestingDocumentsView } from '../../testing/components/TestingDocumentsView';
+import { ProjectAllocationPanel } from './ProjectAllocationPanel';
 
 interface ProjectsDeliveryViewProps {
   onNavigateToTasks?: (projectId?: string) => void;
 }
 
 export const ProjectsDeliveryView: React.FC<ProjectsDeliveryViewProps> = ({ onNavigateToTasks }) => {
-  const { projects, employees, customers, contacts, leads, opportunities, updateProject, deleteProject } = useApp();
+  const {
+    projects = [],
+    employees = [],
+    customers = [],
+    contacts = [],
+    leads = [],
+    opportunities = [],
+    updateProject,
+    deleteProject
+  } = useApp() || {};
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [projectModalTab, setProjectModalTab] = useState<'overview' | 'team' | 'testing'>('overview');
+
+
 
   const [projectGroup, setProjectGroup] = useState<any | null>(null);
   const [taskSummary, setTaskSummary] = useState<{ total: number; notStarted: number; inProgress: number; completed: number }>({
@@ -424,336 +441,128 @@ export const ProjectsDeliveryView: React.FC<ProjectsDeliveryViewProps> = ({ onNa
               </div>
             </div>
 
-            {/* Scrollable Body Content */}
-            <div className="p-6 overflow-y-auto space-y-7 text-xs text-slate-700 font-sans leading-normal bg-slate-50/50 flex-1">
+            {/* Modal Tabs: Overview vs Testing Documents */}
+            <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-2.5 gap-2">
+              <button
+                type="button"
+                onClick={() => setProjectModalTab('overview')}
+                className={`px-4 py-2 text-xs font-bold border-b-2 transition ${
+                  projectModalTab === 'overview'
+                    ? 'border-purple-600 text-purple-700 bg-white rounded-t-lg shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectModalTab('team')}
+                className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  projectModalTab === 'team'
+                    ? 'border-purple-600 text-purple-700 bg-white rounded-t-lg shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Users size={13} />
+                Team Allocations & Progress
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectModalTab('testing')}
+                className={`px-4 py-2 text-xs font-bold border-b-2 flex items-center gap-1.5 transition ${
+                  projectModalTab === 'testing'
+                    ? 'border-purple-600 text-purple-700 bg-white rounded-t-lg shadow-xs'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <FileText size={13} />
+                Testing Documents
+              </button>
+            </div>
 
-              {/* 2. PROJECT OVERVIEW GRID */}
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                  <PieChart size={15} className="text-purple-600" /> Project Overview & Financial Snapshot
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Budget</span>
+            {/* Modal Content */}
+            {projectModalTab === 'overview' ? (
+              <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto text-xs">
+                {/* Project Stats Banner */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Budget</span>
                     <span className="text-sm font-bold text-slate-900">{formatCurrency(selectedProject.budget)}</span>
                   </div>
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Spent</span>
-                    <span className="text-sm font-bold text-slate-800">{formatCurrency(selectedProject.spent || 0)}</span>
-                  </div>
-                  <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Progress</span>
-                    <span className="text-sm font-bold text-emerald-700">{selectedProject.progress}%</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Progress</span>
+                    <span className="text-sm font-bold text-purple-700">{selectedProject.progress}%</span>
                   </div>
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Start Date</span>
-                    <span className="text-xs font-bold text-slate-900">{selectedProject.startDate || '—'}</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Start Date</span>
+                    <span className="text-xs font-bold text-slate-800">{selectedProject.startDate || '—'}</span>
                   </div>
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Expected End</span>
-                    <span className="text-xs font-bold text-slate-900">{selectedProject.endDate || '—'}</span>
-                  </div>
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Weightage</span>
-                    <span className="text-xs font-bold text-slate-900">{selectedProject.weightage || 100}%</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">Expected End</span>
+                    <span className="text-xs font-bold text-slate-800">{selectedProject.endDate || '—'}</span>
                   </div>
                 </div>
 
-                <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                  <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="text-slate-600">Overall Project Progress</span>
-                    <span className="text-purple-700">{selectedProject.progress}% Completed</span>
+                {/* Project Manager */}
+                <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold">
+                      <User size={16} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Project Manager</span>
+                      <span className="text-xs font-bold text-slate-900">{selectedProject.projectManager || 'Unassigned'}</span>
+                    </div>
                   </div>
-                  <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
-                    <div
-                      className="h-full bg-gradient-to-r from-purple-500 via-indigo-600 to-emerald-500 rounded-full transition-all duration-300"
-                      style={{ width: `${selectedProject.progress}%` }}
-                    />
+                  <span className="text-[11px] text-indigo-700 font-semibold bg-white px-2.5 py-1 rounded-lg border border-indigo-200">
+                    Lead Delivery Owner
+                  </span>
+                </div>
+
+                {/* Project Requirement */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                      <FileText size={14} className="text-purple-600" />
+                      Project Requirement (Customer Scope)
+                    </label>
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                      Canonical Requirement
+                    </span>
+                  </div>
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-normal leading-relaxed whitespace-pre-wrap">
+                    {selectedProject.projectRequirement || <span className="text-slate-400 italic">No specific project requirement recorded.</span>}
                   </div>
                 </div>
+
+                {/* Project Notes */}
+                {selectedProject.projectNotes && (
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-800 text-xs">
+                      Project Notes & Kick-off Details
+                    </label>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                      {selectedProject.projectNotes}
+                    </div>
+                  </div>
+                )}
               </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left 2 Columns */}
-                <div className="lg:col-span-2 space-y-6">
-                  
-                  {/* 3. PROJECT REQUIREMENTS (CUSTOMER SCOPE) */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                        <FileText size={16} className="text-purple-600" /> Project Requirements (Customer Scope)
-                      </h3>
-                      <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-0.5 rounded-full">
-                        Canonical Requirement
-                      </span>
-                    </div>
-
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-normal leading-relaxed whitespace-pre-wrap font-sans max-h-96 overflow-y-auto">
-                      {selectedProject.projectRequirement || <span className="text-slate-400 italic">No specific project requirement recorded.</span>}
-                    </div>
-                  </div>
-
-                  {/* 4. REQUIREMENT DOCUMENTS */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                        <FileCode size={16} className="text-indigo-600" /> Requirement Documents
-                      </h3>
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                        {normDocs.length} Attached File(s)
-                      </span>
-                    </div>
-
-                    {normDocs.length > 0 ? (
-                      <div className="divide-y divide-slate-100">
-                        {normDocs.map((doc, idx) => (
-                          <div key={idx} className="py-3 flex items-center justify-between gap-3 first:pt-0 last:pb-0">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 bg-purple-50 text-purple-700 rounded-lg flex items-center justify-center shrink-0 border border-purple-100">
-                                <FileText size={18} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-bold text-slate-900 text-xs truncate">{doc.name}</p>
-                                <p className="text-[10px] text-slate-400 flex items-center gap-2">
-                                  <span>{doc.type || 'Document'}</span>
-                                  {doc.size && <span>• {doc.size}</span>}
-                                  {doc.uploadedAt && <span>• {new Date(doc.uploadedAt).toLocaleDateString()}</span>}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                onClick={() => setPdfModalDoc(doc)}
-                                className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-[11px] font-bold rounded-lg transition border border-purple-200 flex items-center gap-1 cursor-pointer"
-                              >
-                                <Eye size={12} /> View
-                              </button>
-                              <a
-                                href={doc.url || '#'}
-                                target="_blank"
-                                rel="noreferrer"
-                                download={doc.name}
-                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition border border-slate-200 flex items-center gap-1 cursor-pointer"
-                              >
-                                <Download size={12} /> Download
-                              </a>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-400 italic p-3 bg-slate-50 rounded-lg border border-slate-100 text-center">
-                        No requirement documents uploaded for this project.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* 5. PROJECT NOTES & KICKOFF */}
-                  {selectedProject.projectNotes && (
-                    <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-3">
-                        <FileText size={16} className="text-amber-600" /> Project Notes & Delivery Instructions
-                      </h3>
-                      <div className="p-4 bg-amber-50/40 border border-amber-200/60 rounded-xl text-xs text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">
-                        {selectedProject.projectNotes}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 6. PROJECT TEAM / GROUP */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                        <Users size={16} className="text-indigo-600" /> Project Group & Delivery Team
-                      </h3>
-                      <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
-                        HRMS Team Group
-                      </span>
-                    </div>
-
-                    <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-indigo-100 text-indigo-700 rounded-xl flex items-center justify-center font-bold">
-                          <Users size={18} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900 text-xs">{projectGroup?.name || `${selectedProject.name} Team`}</p>
-                          <p className="text-[10px] text-indigo-700 font-semibold">
-                            Team Head: <span className="font-bold text-slate-900">{projectGroup?.team_head_name || selectedProject.projectManager || 'Vishnu Vardhan'}</span>
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Member Roster */}
-                    <div className="space-y-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Assigned Team Members</span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {projectGroup?.members && Array.isArray(projectGroup.members) && projectGroup.members.length > 0 ? (
-                          projectGroup.members.map((m: any, idx: number) => (
-                            <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center text-[10px] font-bold">
-                                  {(m.employeeName || m.name || 'M')[0]}
-                                </div>
-                                <div>
-                                  <p className="font-bold text-slate-900 text-xs">{m.employeeName || m.name}</p>
-                                  <p className="text-[10px] text-slate-400">{m.role || 'Member'}</p>
-                                </div>
-                              </div>
-                              <span className="text-[10px] font-mono font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                                {m.employeeId || m.employee_id || `EMP-00${idx+1}`}
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          ['Priya Sharma', 'Rahul Verma', 'Ramesh', 'Sarah Jenkins'].map((name, idx) => (
-                            <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center text-[10px] font-bold">
-                                  {name[0]}
-                                </div>
-                                <div>
-                                  <p className="font-bold text-slate-900 text-xs">{name}</p>
-                                  <p className="text-[10px] text-slate-400">{idx === 0 ? 'Team Head' : 'Software Engineer'}</p>
-                                </div>
-                              </div>
-                              <span className="text-[10px] font-mono font-semibold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                                {`EMP-00${idx + 3}`}
-                              </span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Right 1 Column (Sidebar info) */}
-                <div className="space-y-6">
-
-                  {/* 7. PROJECT MANAGER CARD */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2 border-b border-slate-100 pb-2.5">
-                      <User size={15} className="text-purple-600" /> Project Manager
-                    </h3>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-purple-100 text-purple-800 rounded-full flex items-center justify-center font-bold text-sm shrink-0">
-                        {(selectedProject.projectManager || 'PM')[0]}
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-900 text-sm">{selectedProject.projectManager || 'Unassigned'}</p>
-                        <p className="text-[11px] text-purple-700 font-semibold">Lead Delivery Owner</p>
-                      </div>
-                    </div>
-
-                    {matchedPM && (
-                      <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
-                        <div className="flex justify-between"><span className="text-slate-400">Employee ID:</span><span className="font-mono font-bold text-slate-800">{matchedPM.empCode || matchedPM.id}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">Designation:</span><span className="font-bold text-slate-800">{matchedPM.designation}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">Department:</span><span className="font-bold text-slate-800">{matchedPM.department}</span></div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 8. TASK SUMMARY CARD */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                        <CheckSquare size={15} className="text-purple-600" /> Task Summary
-                      </h3>
-                      {onNavigateToTasks && (
-                        <button
-                          onClick={() => {
-                            onNavigateToTasks(selectedProject.id);
-                            setSelectedProject(null);
-                          }}
-                          className="text-[11px] font-bold text-purple-600 hover:underline flex items-center gap-0.5 cursor-pointer"
-                        >
-                          View Tasks <ArrowRight size={11} />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-center">
-                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Tasks</span>
-                        <span className="text-base font-black text-slate-900">{taskSummary.total}</span>
-                      </div>
-                      <div className="p-2.5 bg-purple-50 border border-purple-100 rounded-xl">
-                        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block">In Progress</span>
-                        <span className="text-base font-black text-purple-700">{taskSummary.inProgress}</span>
-                      </div>
-                      <div className="p-2.5 bg-emerald-50 border border-emerald-100 rounded-xl">
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Completed</span>
-                        <span className="text-base font-black text-emerald-700">{taskSummary.completed}</span>
-                      </div>
-                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Not Started</span>
-                        <span className="text-base font-black text-slate-700">{taskSummary.notStarted}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 9. CRM SOURCE & TRACEABILITY CARD */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2 border-b border-slate-100 pb-2.5">
-                      <Tag size={15} className="text-indigo-600" /> CRM Traceability
-                    </h3>
-
-                    <div className="space-y-2 text-xs">
-                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Source Lead</span>
-                        <p className="font-bold text-slate-900 flex items-center gap-1.5">
-                          {matchedLead ? matchedLead.name : (selectedProject.sourceLeadId || 'Not linked')}
-                        </p>
-                      </div>
-
-                      {selectedProject.sourceOpportunityId && (
-                        <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Source Opportunity</span>
-                          <p className="font-bold text-slate-900">{selectedProject.sourceOpportunityId}</p>
-                        </div>
-                      )}
-
-                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Linked Customer</span>
-                        <p className="font-bold text-slate-900">{selectedProject.client}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 10. PROJECT LINKS & REPOSITORY CARD */}
-                  <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-2 border-b border-slate-100 pb-2.5">
-                      <Link2 size={15} className="text-purple-600" /> Project Links & Source Code
-                    </h3>
-
-                    <div className="space-y-2">
-                      {normLinks.map((link, idx) => (
-                        <a
-                          key={idx}
-                          href={link.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-2.5 bg-slate-50 hover:bg-purple-50/60 border border-slate-200 hover:border-purple-200 rounded-xl flex items-center justify-between transition group"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <GitBranch size={14} className="text-purple-600 shrink-0" />
-                            <span className="font-bold text-slate-800 group-hover:text-purple-700 truncate text-xs">{link.title}</span>
-                          </div>
-                          <ExternalLink size={13} className="text-slate-400 group-hover:text-purple-600 shrink-0" />
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-
-                </div>
+            ) : projectModalTab === 'team' ? (
+              <div className="p-6 max-h-[75vh] overflow-y-auto">
+                <ProjectAllocationPanel
+                  projectId={selectedProject.id}
+                  projectName={selectedProject.name}
+                />
               </div>
-
-            </div>
+            ) : (
+              <div className="p-6 max-h-[75vh] overflow-y-auto">
+                <TestingDocumentsView
+                  projectId={selectedProject.id}
+                  title={`${selectedProject.name} Testing Documents`}
+                  subtitle="Quality gate verified reports for modules in this project"
+                />
+              </div>
+            )}
 
             <div className="p-4 bg-white border-t border-slate-200 flex justify-between items-center shrink-0">
               <span className="text-xs text-slate-500 font-medium">

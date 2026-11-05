@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Boxes,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Product, Vendor } from '../../../types';
 import { useApp } from '../../../context/AppContext';
+import { getEligibleVendorsForDropdown, formatVendorDropdownLabel } from '../../vendors/utils/vendorDropdownUtils';
 
 interface ProductModalProps {
   isOpen: boolean;
@@ -135,6 +136,10 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       }
     }
   };
+
+  const eligibleVendors = useMemo(() => {
+    return getEligibleVendorsForDropdown(vendors, primaryVendorId);
+  }, [vendors, primaryVendorId]);
 
   if (!isOpen) return null;
 
@@ -441,15 +446,18 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Primary Supplier / Vendor</label>
+                <label htmlFor="product-vendor-select" className="block text-slate-700 font-semibold mb-1">Primary Supplier / Vendor</label>
                 <select
+                  id="product-vendor-select"
                   value={primaryVendorId}
                   onChange={(e) => setPrimaryVendorId(e.target.value)}
                   className="w-full px-3.5 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
                 >
                   <option value="">-- Select Supplier --</option>
-                  {vendors.map((v) => (
-                    <option key={v.id} value={v.id}>{v.name} ({v.code || v.id})</option>
+                  {eligibleVendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {formatVendorDropdownLabel(v, eligibleVendors, { includeCodeAlways: true })}
+                    </option>
                   ))}
                 </select>
               </div>
