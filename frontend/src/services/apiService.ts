@@ -391,6 +391,10 @@ export const CRMInvoicesAPI = {
   create: (data: any) => request('POST', '/crm/invoices', data),
   update: (id: string, data: any) => request('PATCH', `/crm/invoices/${id}`, data),
   delete: (id: string) => request('DELETE', `/crm/invoices/${id}`),
+  getNextNumberPreview: () => request('GET', '/crm/invoices/next-number/preview'),
+  recordPayment: (id: string, paymentData: any) => request('POST', `/crm/invoices/${id}/payments`, paymentData),
+  getPayments: (id: string) => request('GET', `/crm/invoices/${id}/payments`),
+  sendEmail: (id: string, payload?: any) => request('POST', `/crm/invoices/${id}/send`, payload),
 };
 
 // ────────────────────────────────────────────────────────────

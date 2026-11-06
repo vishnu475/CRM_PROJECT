@@ -210,6 +210,7 @@ interface AppContextType {
   addInvoice: (inv: Omit<Invoice, 'id'>) => Promise<Invoice | null>;
   updateInvoice: (id: string, updates: Partial<Invoice>) => Promise<void>;
   deleteInvoice: (id: string) => Promise<void>;
+  recordInvoicePayment: (invoiceId: string, paymentData: { amount: number; paymentDate?: string; paymentMethod?: string; bankAccountId?: string; referenceNumber?: string; notes?: string }) => Promise<any>;
   vendors: Vendor[];
   addVendor: (vendor: Omit<Vendor, 'id'>) => Promise<Vendor | null>;
   updateVendor: (id: string, updates: Partial<Vendor>) => Promise<void>;
@@ -1171,6 +1172,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             opportunityId: r.opportunity_id || '',
             contactId: r.contact_id || '',
             date: r.date ? (typeof r.date === 'string' ? r.date.split('T')[0] : new Date(r.date).toISOString().split('T')[0]) : '',
+            expectedDeliveryDate: r.expected_delivery_date ? (typeof r.expected_delivery_date === 'string' ? r.expected_delivery_date.split('T')[0] : new Date(r.expected_delivery_date).toISOString().split('T')[0]) : '',
+            expected_delivery_date: r.expected_delivery_date,
+            deliveryAddress: r.delivery_address || '',
+            delivery_address: r.delivery_address || '',
+            customerPoNumber: r.customer_po_number || '',
+            customer_po_number: r.customer_po_number || '',
             totalAmount: parseFloat(r.total_amount) || 0,
             subtotal: parseFloat(r.subtotal) || 0,
             taxAmount: parseFloat(r.tax_amount) || 0,
@@ -1210,6 +1217,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             paymentTerms: r.payment_terms || '',
             notes: r.notes || '',
             itemsCount: parseInt(r.items_count) || 1,
+            placeOfSupply: r.place_of_supply || '',
+            placeOfSupplyCode: r.place_of_supply_code || '',
+            billingAddress: r.billing_address || '',
+            customerGstin: r.customer_gstin || '',
+            sellerGstin: r.seller_gstin || '29AABCU9603R1ZM',
+            taxType: r.tax_type || 'INTRA_STATE',
+            cgstAmount: parseFloat(r.cgst_amount) || 0,
+            sgstAmount: parseFloat(r.sgst_amount) || 0,
+            igstAmount: parseFloat(r.igst_amount) || 0,
+            bankAccountId: r.bank_account_id || '',
+            bankDetails: r.bank_details_json || undefined,
+            paymentMethod: r.payment_method || 'Bank Transfer',
+            outstandingBalance: r.outstanding_balance !== undefined ? parseFloat(r.outstanding_balance) : Math.max(0, (parseFloat(r.amount) || 0) - (parseFloat(r.paid_amount) || 0)),
           })));
         }
 
@@ -2660,6 +2680,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...newSO,
           id: res.data.id,
           soNumber: res.data.so_number || newSO.soNumber,
+          expectedDeliveryDate: res.data.expected_delivery_date ? (typeof res.data.expected_delivery_date === 'string' ? res.data.expected_delivery_date.split('T')[0] : new Date(res.data.expected_delivery_date).toISOString().split('T')[0]) : newSO.expectedDeliveryDate,
+          expected_delivery_date: res.data.expected_delivery_date,
+          deliveryAddress: res.data.delivery_address || newSO.deliveryAddress,
+          delivery_address: res.data.delivery_address,
+          customerPoNumber: res.data.customer_po_number || newSO.customerPoNumber,
+          customer_po_number: res.data.customer_po_number,
         };
         setSalesOrders((prev) => prev.map((s) => (s.id === tempId ? savedSO : s)));
         // Also link the quotation to this sales order in local state
@@ -2709,6 +2735,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...newInv,
           id: res.data.id,
           invoiceNumber: res.data.invoice_number || newInv.invoiceNumber,
+          placeOfSupply: res.data.place_of_supply || newInv.placeOfSupply,
+          placeOfSupplyCode: res.data.place_of_supply_code || newInv.placeOfSupplyCode,
+          billingAddress: res.data.billing_address || newInv.billingAddress,
+          customerGstin: res.data.customer_gstin || newInv.customerGstin,
+          sellerGstin: res.data.seller_gstin || newInv.sellerGstin,
+          taxType: res.data.tax_type || newInv.taxType,
+          cgstAmount: parseFloat(res.data.cgst_amount) || newInv.cgstAmount,
+          sgstAmount: parseFloat(res.data.sgst_amount) || newInv.sgstAmount,
+          igstAmount: parseFloat(res.data.igst_amount) || newInv.igstAmount,
+          bankAccountId: res.data.bank_account_id || newInv.bankAccountId,
+          bankDetails: res.data.bank_details_json || newInv.bankDetails,
+          paymentMethod: res.data.payment_method || newInv.paymentMethod,
+          outstandingBalance: parseFloat(res.data.amount) || newInv.amount,
         };
         setInvoices((prev) => prev.map((i) => (i.id === tempId ? savedInv : i)));
         // Also link the sales order to this invoice in local state
@@ -2744,6 +2783,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await CRMInvoicesAPI.delete(id);
     } catch (err) {
       console.warn('⚠️ [CRM] deleteInvoice failed:', err);
+    }
+  }, []);
+
+  const recordInvoicePayment = useCallback(async (invoiceId: string, paymentData: { amount: number; paymentDate?: string; paymentMethod?: string; bankAccountId?: string; referenceNumber?: string; notes?: string }) => {
+    try {
+      const res = await CRMInvoicesAPI.recordPayment(invoiceId, paymentData);
+      if (res.success && res.data) {
+        setInvoices((prev) =>
+          prev.map((inv) => {
+            if (inv.id !== invoiceId) return inv;
+            const updatedPaid = parseFloat(res.data.paid_amount) || (inv.paidAmount + paymentData.amount);
+            const updatedAmt = parseFloat(res.data.amount) || inv.amount;
+            return {
+              ...inv,
+              paidAmount: updatedPaid,
+              status: res.data.status,
+              outstandingBalance: Math.max(0, updatedAmt - updatedPaid)
+            };
+          })
+        );
+        return res;
+      }
+      return res;
+    } catch (err) {
+      console.warn('⚠️ [CRM] recordInvoicePayment failed:', err);
+      throw err;
     }
   }, []);
 
@@ -3312,6 +3377,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addInvoice,
         updateInvoice,
         deleteInvoice,
+        recordInvoicePayment,
         purchaseOrders,
         addPurchaseOrder,
         updatePurchaseOrder,

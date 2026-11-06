@@ -185,6 +185,14 @@ export const QuotationModal: React.FC<QuotationModalProps> = ({
         setCustomerId(matchedCust?.id || customers[0]?.id || '');
         const matchedContact = contacts.find(con => con.leadId === initLead.id || (matchedCust && con.customerId === matchedCust.id) || con.email === initLead.email);
         setContactId(matchedContact?.id || '');
+
+        if (!matchedContact && (initLead.contactPerson || initLead.email)) {
+          setIsAddingContact(true);
+          setNewContactName(initLead.contactPerson || initLead.name);
+          setNewContactEmail(initLead.email || '');
+          setNewContactPhone(initLead.phone || '');
+          setNewContactDesignation('Decision Maker');
+        }
       } else {
         setLeadId('');
         const defaultCust = customers[0]?.id || '';
@@ -196,10 +204,25 @@ export const QuotationModal: React.FC<QuotationModalProps> = ({
       setValidUntil(new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]);
       setOwner(defaultOwnerName);
       setTerms('Standard payment terms: 30 days from invoice date. Delivery within 14 business days.');
-      setNotes('');
+      setNotes(initLead?.requirement ? `Customer Requirement: ${initLead.requirement}` : '');
       setOverallDiscountPercent(0);
 
-      if (products.length > 0) {
+      if (initLead && (initLead.budget || initLead.value || initLead.requirement)) {
+        const budgetVal = parseFloat(initLead.budget || initLead.value as any) || 0;
+        setItems([
+          {
+            productName: initLead.requirement 
+              ? (initLead.requirement.length > 50 ? `Solution: ${initLead.requirement.slice(0, 47)}...` : `Solution: ${initLead.requirement}`)
+              : 'Qualified Scope of Work & Solution',
+            quantity: 1,
+            unitPrice: budgetVal > 0 ? Math.round(budgetVal / 1.18) : 50000,
+            taxRate: 18,
+            total: budgetVal > 0 ? budgetVal : 59000,
+            mode: 'custom',
+            scope: initLead.requirement || 'Full client scope transferred from CRM Lead qualification.',
+          }
+        ]);
+      } else if (products.length > 0) {
         const p = products[0];
         setItems([
           {
@@ -858,10 +881,18 @@ export const QuotationModal: React.FC<QuotationModalProps> = ({
                 </div>
               </div>
               {leadId && (
-                <div className="mt-2 pt-2 border-t border-indigo-200/50 text-[11px] text-indigo-800 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span>Linked Lead: <strong>{leads.find(l => l.id === leadId)?.name}</strong></span>
-                  <span>Company: <strong>{leads.find(l => l.id === leadId)?.company}</strong></span>
-                  <span className="text-emerald-700 font-medium">✓ Quotation acceptance will automatically mark Lead as Won in CRM</span>
+                <div className="mt-2 pt-2 border-t border-indigo-200/50 text-[11px] text-indigo-800 space-y-1">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>Linked Lead: <strong>{leads.find(l => l.id === leadId)?.name}</strong></span>
+                    <span>Company: <strong>{leads.find(l => l.id === leadId)?.company || '—'}</strong></span>
+                    <span>Budget: <strong>{formatINR(leads.find(l => l.id === leadId)?.budget || leads.find(l => l.id === leadId)?.value || 0)}</strong></span>
+                    <span className="text-emerald-700 font-medium">✓ Quotation acceptance will automatically mark Lead as Won in CRM</span>
+                  </div>
+                  {leads.find(l => l.id === leadId)?.requirement && (
+                    <div className="text-[10.5px] text-indigo-900 bg-white/70 p-1.5 rounded border border-indigo-100">
+                      <strong>Customer Requirements:</strong> {leads.find(l => l.id === leadId)?.requirement}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

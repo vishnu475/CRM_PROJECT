@@ -5,11 +5,16 @@ import { formatINR } from '../../crm/utils/crmUtils';
 import { 
   TrendingUp, Plus, Search, FileText, ShoppingCart, CheckCircle2, 
   ChevronRight, RefreshCw, Send, Check, Eye, MoreVertical,
-  Receipt, DollarSign, ArrowRight, Tag, Loader2, User
+  Receipt, DollarSign, ArrowRight, Tag, Loader2, User,
+  UserCheck, History, Phone, Mail, Sparkles, AlertCircle, Building2, Calendar, FileCheck,
+  Truck, Hash, Lock, MapPin, X
 } from 'lucide-react';
 import { QuotationModal } from '../components/QuotationModal';
 import { SalesOrderModal } from '../components/SalesOrderModal';
 import { InvoiceModal } from '../components/InvoiceModal';
+import { TaxInvoiceDocumentModal } from '../components/TaxInvoiceDocumentModal';
+import { RecordPaymentModal } from '../components/RecordPaymentModal';
+import { CRMInvoicesAPI } from '../../../services/apiService';
 import { CRM_LOST_REASONS } from '../../crm/utils/leadWorkflowValidation';
 
 export const SalesPage: React.FC = () => {
@@ -27,7 +32,7 @@ export const SalesPage: React.FC = () => {
     deleteInvoice
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'quotes' | 'orders' | 'invoices'>('quotes');
+  const [activeTab, setActiveTab] = useState<'qualified' | 'quotes' | 'orders' | 'invoices'>('qualified');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Sub-filters per tab
@@ -47,6 +52,14 @@ export const SalesPage: React.FC = () => {
 
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<SalesOrder | null>(null);
+  const [selectedInvoiceForDoc, setSelectedInvoiceForDoc] = useState<Invoice | null>(null);
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
+
+  // Sales Order Details Modal state
+  const [selectedOrderForDetails, setSelectedOrderForDetails] = useState<SalesOrder | null>(null);
+
+  // Revision History Modal state
+  const [selectedQuoteForHistory, setSelectedQuoteForHistory] = useState<Quotation | null>(null);
 
   // Rejection Modal state
   const [rejectionModalQuote, setRejectionModalQuote] = useState<Quotation | null>(null);
@@ -54,8 +67,38 @@ export const SalesPage: React.FC = () => {
   const [rejectReasonDetails, setRejectReasonDetails] = useState<string>('');
   const [rejectNotes, setRejectNotes] = useState<string>('');
 
-  // 1. KPI Stats Computations from live data
+  // 1. Qualified Leads from CRM (Single source of truth)
+  const qualifiedLeads = useMemo(() => {
+    return leads.filter(l => l.stage === 'Qualified');
+  }, [leads]);
+
+  const filteredQualifiedLeads = useMemo(() => {
+    return qualifiedLeads.filter(l => {
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        const matchesName = (l.name || '').toLowerCase().includes(term);
+        const matchesCompany = (l.company || '').toLowerCase().includes(term);
+        const matchesContact = (l.contactPerson || '').toLowerCase().includes(term);
+        const matchesEmail = (l.email || '').toLowerCase().includes(term);
+        const matchesPhone = (l.phone || '').toLowerCase().includes(term);
+        const matchesReq = (l.requirement || '').toLowerCase().includes(term);
+        const matchesOwner = (l.assignedTo || '').toLowerCase().includes(term);
+        if (!matchesName && !matchesCompany && !matchesContact && !matchesEmail && !matchesPhone && !matchesReq && !matchesOwner) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [qualifiedLeads, searchTerm]);
+
+  // 2. Comprehensive KPI Stats Computations from live data
   const metrics = useMemo(() => {
+    const qualifiedLeadsCount = leads.filter(l => l.stage === 'Qualified').length;
+    const sentQuotesCount = quotations.filter(q => q.status === 'Sent').length;
+    const revisionRequestedCount = quotations.filter(q => q.status === 'Revision Requested').length;
+    const acceptedQuotesCount = quotations.filter(q => q.status === 'Accepted' || q.status === 'Approved').length;
+    const rejectedQuotesCount = quotations.filter(q => q.status === 'Rejected').length;
+
     const totalQuoteValue = quotations.reduce((sum, q) => sum + (parseFloat(q.amount as any) || 0), 0);
     const activeQuotes = quotations.filter(q => q.status === 'Draft' || q.status === 'Sent' || q.status === 'Revised' || q.status === 'Accepted');
     const activeQuoteValue = activeQuotes.reduce((sum, q) => sum + (parseFloat(q.amount as any) || 0), 0);
@@ -68,14 +111,40 @@ export const SalesPage: React.FC = () => {
     const outstandingBalance = Math.max(0, totalInvoiced - totalPaid);
 
     return {
+      qualifiedLeadsCount,
       totalQuoteValue,
       activeQuoteValue,
+      sentQuotesCount,
+      revisionRequestedCount,
+      acceptedQuotesCount,
+      rejectedQuotesCount,
       confirmedOrdersCount: confirmedOrders.length,
       confirmedOrdersValue,
       totalInvoiced,
       outstandingBalance,
+      totalQuotesCount: quotations.length,
     };
-  }, [quotations, salesOrders, invoices]);
+  }, [leads, quotations, salesOrders, invoices]);
+
+  // Quotation History List for Modal
+  const quotationHistory = useMemo(() => {
+    if (!selectedQuoteForHistory) return [];
+    const groupId = selectedQuoteForHistory.revisionGroupId || selectedQuoteForHistory.id;
+    const lId = selectedQuoteForHistory.leadId;
+    return quotations.filter(q =>
+      (q.revisionGroupId && q.revisionGroupId === groupId) ||
+      (groupId && q.id === groupId) ||
+      (lId && q.leadId === lId) ||
+      q.id === selectedQuoteForHistory.id
+    ).sort((a, b) => (Number(a.revisionNumber) || 1) - (Number(b.revisionNumber) || 1));
+  }, [selectedQuoteForHistory, quotations]);
+
+  const handleCreateQuoteFromLead = (lead: any) => {
+    setInitialLeadIdForQuote(lead.id);
+    setEditingQuotation(null);
+    setIsRevisionMode(false);
+    setShowQuoteModal(true);
+  };
 
   // 2. Filtered Quotations
   const filteredQuotations = useMemo(() => {
@@ -220,13 +289,8 @@ export const SalesPage: React.FC = () => {
     setShowInvoiceModal(true);
   };
 
-  const handleRecordPayment = async (inv: Invoice) => {
-    const amountToPay = inv.amount - (inv.paidAmount || 0);
-    if (amountToPay <= 0) return;
-    await updateInvoice(inv.id, {
-      paidAmount: inv.amount,
-      status: 'Paid',
-    });
+  const handleRecordPayment = (inv: Invoice) => {
+    setSelectedInvoiceForPayment(inv);
   };
 
   const getQuotationBadgeClass = (status: QuotationStatus) => {
@@ -289,6 +353,14 @@ export const SalesPage: React.FC = () => {
 
         {/* Primary Action Button */}
         <div className="flex items-center gap-2">
+          {activeTab === 'qualified' && (
+            <button
+              onClick={() => { setEditingQuotation(null); setIsRevisionMode(false); setInitialLeadIdForQuote(undefined); setShowQuoteModal(true); }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-xs transition flex items-center gap-1.5"
+            >
+              <Plus size={15} /> New Quotation
+            </button>
+          )}
           {activeTab === 'quotes' && (
             <button
               onClick={() => { setEditingQuotation(null); setIsRevisionMode(false); setShowQuoteModal(true); }}
@@ -395,6 +467,57 @@ export const SalesPage: React.FC = () => {
         </div>
       </div>
 
+      {/* 2b. DETAILED SALES PIPELINE METRICS STRIP */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 font-bold"><UserCheck size={14} /></span>
+          <div>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Qualified Leads</span>
+            <span className="font-bold text-slate-900">{metrics.qualifiedLeadsCount} Leads</span>
+          </div>
+        </div>
+        <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-blue-50 text-blue-600 font-bold"><Send size={14} /></span>
+          <div>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Sent Quotes</span>
+            <span className="font-bold text-slate-900">{metrics.sentQuotesCount} Quotes</span>
+          </div>
+        </div>
+        <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-amber-50 text-amber-600 font-bold"><RefreshCw size={14} /></span>
+          <div>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Revision Requested</span>
+            <span className="font-bold text-amber-700">{metrics.revisionRequestedCount} Quotes</span>
+          </div>
+        </div>
+        <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 font-bold"><CheckCircle2 size={14} /></span>
+          <div>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Accepted Quotes</span>
+            <span className="font-bold text-emerald-700">{metrics.acceptedQuotesCount} Quotes</span>
+          </div>
+        </div>
+        <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600 font-bold"><AlertCircle size={14} /></span>
+          <div>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Rejected Quotes</span>
+            <span className="font-bold text-rose-700">{metrics.rejectedQuotesCount} Quotes</span>
+          </div>
+        </div>
+        <div className="h-6 w-px bg-slate-200 hidden sm:block"></div>
+        <div className="flex items-center gap-2">
+          <span className="p-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold"><ShoppingCart size={14} /></span>
+          <div>
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Confirmed Orders</span>
+            <span className="font-bold text-slate-900">{metrics.confirmedOrdersCount} Orders</span>
+          </div>
+        </div>
+      </div>
+
       {/* 3. MAIN WORKSPACE CONTAINER */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
         
@@ -405,8 +528,25 @@ export const SalesPage: React.FC = () => {
             {/* Navigation Tabs */}
             <div className="flex gap-4 overflow-x-auto no-scrollbar">
               <button
+                onClick={() => { setActiveTab('qualified'); setSearchTerm(''); }}
+                className={`flex items-center py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition cursor-pointer ${
+                  activeTab === 'qualified'
+                    ? 'border-indigo-600 text-indigo-600 bg-transparent'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <UserCheck size={15} className="mr-2 text-indigo-600" />
+                Qualified Leads
+                <span className={`ml-2 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                  activeTab === 'qualified' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  {qualifiedLeads.length}
+                </span>
+              </button>
+
+              <button
                 onClick={() => { setActiveTab('quotes'); setSearchTerm(''); }}
-                className={`flex items-center py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition ${
+                className={`flex items-center py-3.5 text-xs font-semibold border-b-2 whitespace-nowrap transition cursor-pointer ${
                   activeTab === 'quotes' 
                     ? 'border-blue-600 text-blue-600 bg-transparent' 
                     : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -461,7 +601,7 @@ export const SalesPage: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
               <input
                 type="text"
-                placeholder={`Search ${activeTab === 'quotes' ? 'quotes' : activeTab === 'orders' ? 'orders' : 'invoices'}...`}
+                placeholder={`Search ${activeTab === 'qualified' ? 'qualified leads' : activeTab === 'quotes' ? 'quotes' : activeTab === 'orders' ? 'orders' : 'invoices'}...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-8 pr-4 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none w-full sm:w-64"
@@ -469,6 +609,143 @@ export const SalesPage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* 4. TAB CONTENT 0: QUALIFIED LEADS (CRM TO SALES AUTOMATION) */}
+        {activeTab === 'qualified' && (
+          <div className="p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-50/70 border border-indigo-200/80 p-3 rounded-xl">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-indigo-600 shrink-0" />
+                <span className="text-xs text-indigo-950 font-medium">
+                  Showing <strong>{filteredQualifiedLeads.length}</strong> Qualified Leads from CRM ready for Commercial Quotations.
+                </span>
+              </div>
+              <span className="text-[11px] text-indigo-700 bg-white/90 border border-indigo-200 px-2.5 py-0.5 rounded-full font-semibold shadow-2xs self-start sm:self-auto">
+                Lead ID Reference Linked • Zero Duplication
+              </span>
+            </div>
+
+            {filteredQualifiedLeads.length > 0 ? (
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-left border-collapse min-w-[980px]">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 text-[11px] font-semibold uppercase tracking-wider border-b border-slate-200">
+                      <th className="py-3 px-3">Lead / Company</th>
+                      <th className="py-3 px-3">Contact Person</th>
+                      <th className="py-3 px-3">Contact Channels</th>
+                      <th className="py-3 px-3">Customer Requirements</th>
+                      <th className="py-3 px-3 text-right">Target Budget</th>
+                      <th className="py-3 px-3">Expected Close</th>
+                      <th className="py-3 px-3 text-center">Quotation Status</th>
+                      <th className="py-3 px-3 text-center w-40">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                    {filteredQualifiedLeads.map(lead => {
+                      const linkedQuotes = quotations.filter(q => q.leadId === lead.id);
+                      const latestQuote = linkedQuotes.length > 0 ? linkedQuotes[linkedQuotes.length - 1] : null;
+
+                      return (
+                        <tr key={lead.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                              <span>{lead.name}</span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-normal">
+                                {lead.id}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
+                              <Building2 size={11} className="text-slate-400 shrink-0" />
+                              <span>{lead.company || 'Direct Corporate Account'}</span>
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-slate-800">
+                              {lead.contactPerson || lead.decisionMaker || lead.name}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-medium">
+                              Decision Maker
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            {lead.email && (
+                              <div className="text-[11px] text-slate-600 flex items-center gap-1 font-mono">
+                                <Mail size={11} className="text-slate-400 shrink-0" />
+                                <span>{lead.email}</span>
+                              </div>
+                            )}
+                            {lead.phone && (
+                              <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <Phone size={11} className="text-slate-400 shrink-0" />
+                                <span>{lead.phone}</span>
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 max-w-xs">
+                            <div className="text-slate-800 line-clamp-2" title={lead.requirement || 'No specific requirement recorded.'}>
+                              {lead.requirement || <span className="text-slate-400 italic">No specific requirement recorded</span>}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3 text-right">
+                            <div className="font-bold text-slate-900 text-xs">
+                              {formatINR(lead.budget || lead.value || 0)}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              Owner: {lead.assignedTo || 'Unassigned'}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3 text-slate-600 text-xs">
+                            <div>{lead.expectedCloseDate || '—'}</div>
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            {latestQuote ? (
+                              <div className="inline-flex flex-col items-center">
+                                <span className={`inline-block px-2 py-0.5 rounded-full font-semibold text-[10px] border ${getQuotationBadgeClass(latestQuote.status)}`}>
+                                  {latestQuote.quoteNumber} ({latestQuote.status})
+                                </span>
+                                {linkedQuotes.length > 1 && (
+                                  <span className="text-[9px] text-slate-400 mt-0.5">{linkedQuotes.length} quotes drafted</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="inline-block px-2 py-0.5 rounded-full font-medium text-[10px] bg-slate-100 text-slate-600 border border-slate-200">
+                                Awaiting Quotation
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleCreateQuoteFromLead(lead)}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1.5 w-full shadow-xs cursor-pointer"
+                            >
+                              <Plus size={13} /> Create Quotation
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-12 text-center text-slate-400 bg-slate-50/50 border border-slate-200 rounded-lg">
+                <UserCheck size={32} className="mx-auto mb-2 text-slate-300" />
+                <p className="font-semibold text-slate-700 text-sm">No qualified leads found</p>
+                <p className="text-xs mt-0.5 text-slate-500">
+                  Leads in CRM that satisfy all 4 qualification criteria will appear here automatically.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 4. TAB CONTENT 1: QUOTATIONS */}
         {activeTab === 'quotes' && (
@@ -513,12 +790,30 @@ export const SalesPage: React.FC = () => {
                       return (
                         <tr key={quote.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="py-3 px-3">
-                            <div className="font-mono font-semibold text-slate-900">{quote.quoteNumber}</div>
-                            {quote.revisionNumber && quote.revisionNumber > 1 && (
-                              <span className="inline-block mt-0.5 text-[10px] font-medium px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                                Rev #{quote.revisionNumber}
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-mono font-semibold text-slate-900">{quote.quoteNumber}</span>
+                              {quote.revisionNumber && quote.revisionNumber > 1 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedQuoteForHistory(quote)}
+                                  className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 flex items-center gap-1 cursor-pointer transition"
+                                  title="Click to view Revision History"
+                                >
+                                  <History size={10} /> Rev #{quote.revisionNumber}
+                                </button>
+                              ) : (
+                                quotations.some(q => (q.revisionGroupId && q.revisionGroupId === (quote.revisionGroupId || quote.id)) && q.id !== quote.id) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedQuoteForHistory(quote)}
+                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1 cursor-pointer transition"
+                                    title="Click to view Revision History"
+                                  >
+                                    <History size={10} /> History
+                                  </button>
+                                )
+                              )}
+                            </div>
                           </td>
 
                           <td className="py-3 px-3">
@@ -655,6 +950,12 @@ export const SalesPage: React.FC = () => {
                                   Edit Details
                                 </button>
                                 <button
+                                  onClick={() => setSelectedQuoteForHistory(quote)}
+                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5"
+                                >
+                                  <History size={12} className="text-slate-400" /> Revision History
+                                </button>
+                                <button
                                   onClick={() => {
                                     if (window.confirm('Delete this quotation record?')) {
                                       deleteQuotation(quote.id);
@@ -727,7 +1028,20 @@ export const SalesPage: React.FC = () => {
                       return (
                         <tr key={so.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="py-3 px-3">
-                            <div className="font-mono font-semibold text-slate-900">{so.soNumber}</div>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrderForDetails(so)}
+                              className="font-mono font-semibold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer text-left"
+                              title="Click to view full Sales Order details"
+                            >
+                              {so.soNumber}
+                            </button>
+                            {so.customerPoNumber && (
+                              <div className="text-[10px] text-slate-500 font-normal flex items-center gap-1 mt-0.5">
+                                <span className="text-slate-400 font-medium">PO:</span>
+                                <span className="font-mono text-slate-700 font-bold bg-slate-100 px-1 py-0.2 rounded">{so.customerPoNumber}</span>
+                              </div>
+                            )}
                           </td>
 
                           <td className="py-3 px-3">
@@ -757,7 +1071,14 @@ export const SalesPage: React.FC = () => {
                           </td>
 
                           <td className="py-3 px-3 text-slate-600">
-                            {so.date}
+                            <div>{so.date}</div>
+                            {so.expectedDeliveryDate && (
+                              <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5" title="Expected Delivery Date">
+                                <Truck size={10} className="text-indigo-500 shrink-0" />
+                                <span className="text-slate-400 font-medium">Due:</span>
+                                <span className="font-medium text-slate-700">{so.expectedDeliveryDate}</span>
+                              </div>
+                            )}
                           </td>
 
                           <td className="py-3 px-3 text-center">
@@ -795,7 +1116,14 @@ export const SalesPage: React.FC = () => {
                               <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100">
                                 <MoreVertical size={15} />
                               </button>
-                              <div className="absolute right-0 top-0 w-36 bg-white rounded-md shadow-md border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
+                              <div className="absolute right-0 top-0 w-44 bg-white rounded-md shadow-md border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
+                                <button
+                                  onClick={() => setSelectedOrderForDetails(so)}
+                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <Eye size={12} className="text-indigo-600" /> View Order Details
+                                </button>
+                                <div className="h-px bg-slate-100 my-1" />
                                 <button
                                   onClick={() => updateSalesOrder(so.id, { status: 'Delivered', fulfillmentStatus: 'Fulfilled' })}
                                   className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-medium"
@@ -882,8 +1210,15 @@ export const SalesPage: React.FC = () => {
                       return (
                         <tr key={inv.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="py-3 px-3">
-                            <div className="font-mono font-semibold text-slate-900">{inv.invoiceNumber}</div>
-                            <div className="text-[10px] text-slate-400">Date: {inv.date}</div>
+                            <button
+                              onClick={() => setSelectedInvoiceForDoc(inv)}
+                              className="font-mono font-bold text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-1.5 text-left group"
+                              title="View official GST Tax Invoice document"
+                            >
+                              <FileText size={13} className="text-blue-600 shrink-0 group-hover:scale-110 transition-transform" />
+                              <span>{inv.invoiceNumber}</span>
+                            </button>
+                            <div className="text-[10px] text-slate-400 mt-0.5">Date: {inv.date}</div>
                           </td>
 
                           <td className="py-3 px-3">
@@ -938,18 +1273,27 @@ export const SalesPage: React.FC = () => {
 
                           {/* Accounts / Payment Action */}
                           <td className="py-3 px-3 text-center">
-                            {inv.status === 'Paid' ? (
-                              <span className="text-emerald-700 font-semibold text-xs flex items-center justify-center gap-1">
-                                <CheckCircle2 size={14} /> Paid in Full
-                              </span>
-                            ) : (
+                            <div className="flex items-center justify-center gap-1.5">
                               <button
-                                onClick={() => handleRecordPayment(inv)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1 w-full shadow-xs"
+                                onClick={() => setSelectedInvoiceForDoc(inv)}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-md font-semibold text-xs transition flex items-center gap-1 border border-slate-200"
+                                title="View GST Tax Invoice Document"
                               >
-                                <DollarSign size={13} /> Record Payment
+                                <Eye size={13} /> View
                               </button>
-                            )}
+                              {inv.status === 'Paid' ? (
+                                <span className="text-emerald-700 font-semibold text-xs flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-50 rounded-md border border-emerald-200">
+                                  <CheckCircle2 size={13} /> Paid
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleRecordPayment(inv)}
+                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold text-xs transition flex items-center justify-center gap-1 shadow-xs"
+                                >
+                                  <DollarSign size={13} /> Record Payment
+                                </button>
+                              )}
+                            </div>
                           </td>
 
                           {/* Menu */}
@@ -958,7 +1302,35 @@ export const SalesPage: React.FC = () => {
                               <button className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100">
                                 <MoreVertical size={15} />
                               </button>
-                              <div className="absolute right-0 top-0 w-32 bg-white rounded-md shadow-md border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
+                              <div className="absolute right-0 top-0 w-44 bg-white rounded-md shadow-md border border-slate-200 py-1 hidden group-hover/menu:block z-20 text-xs">
+                                <button
+                                  onClick={() => setSelectedInvoiceForDoc(inv)}
+                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5"
+                                >
+                                  <Eye size={13} className="text-blue-600" /> View Tax Invoice
+                                </button>
+                                {balance > 0 && (
+                                  <button
+                                    onClick={() => handleRecordPayment(inv)}
+                                    className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-emerald-700 font-semibold flex items-center gap-1.5"
+                                  >
+                                    <DollarSign size={13} /> Record Payment
+                                  </button>
+                                )}
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const res = await CRMInvoicesAPI.sendEmail(inv.id);
+                                      alert(res?.message || 'Invoice sent to customer email.');
+                                    } catch (err: any) {
+                                      alert(err?.message || 'Failed to email invoice');
+                                    }
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5"
+                                >
+                                  <Mail size={13} className="text-indigo-600" /> Email Customer
+                                </button>
+                                <div className="border-t border-slate-100 my-1"></div>
                                 <button
                                   onClick={() => {
                                     if (window.confirm('Delete this invoice?')) {
@@ -966,9 +1338,9 @@ export const SalesPage: React.FC = () => {
                                     }
                                   }}
                                   disabled={inv.status === 'Paid'}
-                                  className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600 font-semibold disabled:opacity-30"
+                                  className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600 font-semibold disabled:opacity-30 flex items-center gap-1.5"
                                 >
-                                  Delete Invoice
+                                  <X size={13} /> Delete Invoice
                                 </button>
                               </div>
                             </div>
@@ -1009,6 +1381,20 @@ export const SalesPage: React.FC = () => {
         isOpen={showInvoiceModal}
         onClose={() => { setShowInvoiceModal(false); setSelectedOrderForInvoice(null); }}
         salesOrder={selectedOrderForInvoice}
+        onInvoiceCreated={(newInv) => setSelectedInvoiceForDoc(newInv)}
+      />
+
+      <TaxInvoiceDocumentModal
+        isOpen={Boolean(selectedInvoiceForDoc)}
+        onClose={() => setSelectedInvoiceForDoc(null)}
+        invoice={selectedInvoiceForDoc}
+        onOpenRecordPayment={(inv) => setSelectedInvoiceForPayment(inv)}
+      />
+
+      <RecordPaymentModal
+        isOpen={Boolean(selectedInvoiceForPayment)}
+        onClose={() => setSelectedInvoiceForPayment(null)}
+        invoice={selectedInvoiceForPayment}
       />
 
       {/* Rejection Modal for Quotations with CRM Sync Options */}
@@ -1110,18 +1496,261 @@ export const SalesPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setRejectionModalQuote(null)}
-                className="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium"
+                className="px-3.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmRejectQuote}
-                className={`px-4 py-1.5 text-white rounded-lg text-xs font-semibold shadow-xs transition ${
+                className={`px-4 py-1.5 text-white rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer ${
                   isDefinitiveLoss ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-800 hover:bg-slate-900'
                 }`}
               >
                 {isDefinitiveLoss ? 'Confirm Deal as Lost' : 'Reject Quotation (Keep Lead Open)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. QUOTATION REVISION HISTORY MODAL */}
+      {selectedQuoteForHistory && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto animate-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-100 text-amber-700 rounded-xl">
+                  <History size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <span>Quotation Revision History</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                      {quotationHistory.length} Version{quotationHistory.length === 1 ? '' : 's'}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Account: <strong className="text-slate-800">{selectedQuoteForHistory.customerName}</strong>
+                    {selectedQuoteForHistory.leadId && (
+                      <span className="ml-2 text-indigo-600 font-semibold">• CRM Lead Linked</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedQuoteForHistory(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="text-xs text-amber-900 bg-amber-50/70 border border-amber-200/80 p-3 rounded-xl flex items-start gap-2">
+                <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Strict Version Integrity:</strong> All prior quotation versions are permanently preserved. Creating revisions preserves historical records and records sequential numbering (Rev #1, Rev #2, Rev #3).
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {quotationHistory.map((q, idx) => {
+                  const isCurrentSelected = q.id === selectedQuoteForHistory.id;
+                  const revNum = q.revisionNumber || (idx + 1);
+
+                  return (
+                    <div
+                      key={q.id}
+                      className={`p-4 rounded-xl border transition ${
+                        isCurrentSelected
+                          ? 'border-blue-400 bg-blue-50/20 shadow-xs ring-2 ring-blue-500/10'
+                          : 'border-slate-200 bg-white hover:bg-slate-50/60'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                            revNum === 1 ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}>
+                            Revision #{revNum} {revNum === 1 ? '(Original)' : ''}
+                          </span>
+                          <span className="font-mono font-bold text-xs text-slate-900">{q.quoteNumber}</span>
+                          <span className={`px-2.5 py-0.5 rounded-full font-semibold text-[10px] border ${getQuotationBadgeClass(q.status)}`}>
+                            {q.status}
+                          </span>
+                          {isCurrentSelected && (
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-100 border border-blue-200 px-2 py-0.2 rounded-full">
+                              Active View
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-bold text-slate-900 text-sm">
+                          {formatINR(q.amount)}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                        <div>
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Date Issued</span>
+                          <span className="font-medium text-slate-700">{q.date || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Valid Until</span>
+                          <span className="font-medium text-slate-700">{q.validUntil || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Sent Date</span>
+                          <span className="font-medium text-slate-700">{q.sentDate || 'Not Sent'}</span>
+                        </div>
+                        <div>
+                          <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Decision Date</span>
+                          <span className="font-medium text-slate-700">{q.acceptedDate ? `Accepted: ${q.acceptedDate}` : 'Pending'}</span>
+                        </div>
+                      </div>
+
+                      {q.notes && (
+                        <div className="mt-2.5 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                          <strong className="text-slate-700">Proposal Scope / Notes:</strong> {q.notes}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedQuoteForHistory(null)}
+                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer shadow-2xs transition"
+              >
+                Close History
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sales Order Details Modal */}
+      {selectedOrderForDetails && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-5 my-8 animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <ShoppingCart size={20} className="text-indigo-600" />
+                    Sales Order Details
+                  </h3>
+                  <span className="font-mono font-bold text-xs bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full text-slate-800">
+                    {selectedOrderForDetails.soNumber}
+                  </span>
+                  <span className={`px-2.5 py-0.5 rounded-full font-semibold text-[10px] border ${getOrderBadgeClass(selectedOrderForDetails.status || selectedOrderForDetails.fulfillmentStatus)}`}>
+                    {selectedOrderForDetails.status || selectedOrderForDetails.fulfillmentStatus || 'Confirmed'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Binding commercial sales order converted from accepted quotation.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setSelectedOrderForDetails(null)} 
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Core Info Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50/80 p-4 rounded-xl border border-slate-200/80 text-xs">
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Customer</span>
+                <span className="font-semibold text-slate-900 block truncate">{selectedOrderForDetails.customerName}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Source Quote</span>
+                <span className="font-mono font-semibold text-indigo-700 block">{selectedOrderForDetails.quoteNumber || 'Direct Order'}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Order Date</span>
+                <span className="font-medium text-slate-700 block">{selectedOrderForDetails.date}</span>
+              </div>
+              <div>
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Expected Delivery</span>
+                <span className="font-bold text-slate-900 block">{selectedOrderForDetails.expectedDeliveryDate || 'Standard Schedule'}</span>
+              </div>
+            </div>
+
+            {/* PO & Payment Info */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl border border-slate-200 bg-white">
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Customer PO Number</span>
+                <div className="font-mono text-sm font-bold text-indigo-950">
+                  {selectedOrderForDetails.customerPoNumber || <span className="font-sans text-xs text-slate-400 font-normal italic">None provided</span>}
+                </div>
+              </div>
+              <div className="p-3 rounded-xl border border-slate-200 bg-white">
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Payment Terms</span>
+                <div className="text-xs font-medium text-slate-800">
+                  {selectedOrderForDetails.paymentTerms || 'Standard 30 days net upon invoice'}
+                </div>
+              </div>
+            </div>
+
+            {/* Delivery Details Card */}
+            <div className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2 text-xs">
+              <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Delivery Address & Instructions</span>
+              <div className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                <span className="font-semibold text-slate-700 block mb-0.5">Delivery Address:</span>
+                <p className="text-slate-600">{selectedOrderForDetails.deliveryAddress || 'Standard customer registered address / digital fulfillment.'}</p>
+              </div>
+              {selectedOrderForDetails.deliveryNotes && (
+                <div className="text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="font-semibold text-slate-700 block mb-0.5">Scope & Delivery Instructions:</span>
+                  <p className="text-slate-600">{selectedOrderForDetails.deliveryNotes}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Financial Summary */}
+            <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50 flex justify-between items-center text-xs">
+              <div>
+                <span className="block text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Order Value</span>
+                <span className="font-extrabold text-indigo-950 text-base">{formatINR(selectedOrderForDetails.totalAmount)}</span>
+              </div>
+              {selectedOrderForDetails.invoiceNumber ? (
+                <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 flex items-center gap-1.5">
+                  <Receipt size={14} /> Invoiced ({selectedOrderForDetails.invoiceNumber})
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const so = selectedOrderForDetails;
+                    setSelectedOrderForDetails(null);
+                    handleOpenCreateInvoice(so);
+                  }}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Receipt size={13} /> Issue Tax Invoice
+                </button>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedOrderForDetails(null)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-xl font-semibold text-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>

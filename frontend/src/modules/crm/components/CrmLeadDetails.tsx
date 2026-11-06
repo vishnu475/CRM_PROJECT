@@ -1335,11 +1335,11 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
           </div>
         </div>
 
-        {/* STAGE PROGRESSION */}
+        {/* STAGE PROGRESSION (Automated Workflow) */}
         <div className="mt-8 pt-6 border-t border-slate-100">
           <div className="flex justify-between items-center mb-3">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Sales Stage</p>
-            <span className="text-[11px] text-slate-400">Click a stage bubble to advance stage based on workflow rules</span>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Sales Stage Progression</p>
+            <span className="text-[11px] text-slate-400 font-medium">Automated workflow progression • Manual stage jumps disabled</span>
           </div>
           <div className="flex items-center justify-between relative">
             <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-1 bg-slate-100 z-0"></div>
@@ -1356,8 +1356,8 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               const isLost = stage === 'Lost' && isCurrent;
               const isWon = stage === 'Won' && isCurrent;
               
-              let bubbleColor = 'bg-slate-200 border-white text-transparent hover:border-blue-200';
-              if (isPast) bubbleColor = 'bg-blue-500 border-white text-white hover:bg-blue-600';
+              let bubbleColor = 'bg-slate-200 border-white text-transparent';
+              if (isPast) bubbleColor = 'bg-blue-500 border-white text-white';
               if (isCurrent) {
                 if (isWon) bubbleColor = 'bg-emerald-600 border-emerald-200 shadow-md shadow-emerald-500/30 text-white';
                 else if (isLost) bubbleColor = 'bg-rose-600 border-rose-200 shadow-md shadow-rose-500/30 text-white';
@@ -1365,12 +1365,10 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
               }
 
               return (
-                <button
+                <div
                   key={stage}
-                  type="button"
-                  onClick={() => handleStageChange(stage as Lead['stage'])}
-                  className="relative z-10 flex flex-col items-center group cursor-pointer focus:outline-none transition-transform hover:scale-105"
-                  title={`Click to set stage to ${stage}`}
+                  className="relative z-10 flex flex-col items-center select-none cursor-default"
+                  title={`Stage: ${stage} (${isCurrent ? 'Current' : isPast ? 'Completed' : 'Upcoming'})`}
                 >
                   <div className={`w-6 h-6 rounded-full border-4 flex items-center justify-center transition-colors ${bubbleColor}`}>
                     {isPast && <CheckCircle2 size={12} />}
@@ -1378,15 +1376,100 @@ export const CrmLeadDetails: React.FC<CrmLeadDetailsProps> = ({ leadId, onViewCh
                   <span className={`absolute top-8 text-[10px] font-bold whitespace-nowrap transition-colors ${
                     isCurrent 
                       ? (isLost ? 'text-rose-600' : isWon ? 'text-emerald-600' : 'text-blue-600') 
-                      : 'text-slate-400 group-hover:text-slate-700'
+                      : 'text-slate-400'
                   }`}>
                     {stage}
                   </span>
-                </button>
+                </div>
               );
             })}
           </div>
           <div className="h-8"></div> {/* spacer for absolute text */}
+
+          {/* Workflow Stage Guidance & Action Box */}
+          <div className="mt-2 p-3 rounded-xl border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/70 border-slate-200">
+            {lead.stage === 'New' && (
+              <div className="flex items-center gap-2 text-slate-700">
+                <Clock size={16} className="text-blue-600 shrink-0" />
+                <span>
+                  <strong>Stage: New.</strong> To advance to <strong>Contacted</strong>, record a completed customer interaction (Call, Email, or Meeting) in the Timeline below.
+                </span>
+              </div>
+            )}
+
+            {lead.stage === 'Contacted' && (
+              <>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <CheckCircle2 size={16} className="text-blue-600 shrink-0" />
+                  <span>
+                    <strong>Stage: Contacted.</strong> Customer interaction verified. Complete the 4 qualification criteria (Requirements, Budget, Decision Maker, Closing Date) to advance to <strong>Qualified</strong>.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={openEditModal}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+                >
+                  <Sparkles size={13} /> Qualify Lead
+                </button>
+              </>
+            )}
+
+            {lead.stage === 'Qualified' && (
+              <>
+                <div className="flex items-center gap-2 text-slate-700">
+                  <Sparkles size={16} className="text-purple-600 shrink-0" />
+                  <span>
+                    <strong>Stage: Qualified.</strong> Automatically synced to the <strong>Sales & Revenue Management</strong> module. This lead will automatically transition to <strong>Won</strong> upon customer acceptance of the final quotation.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveModule('sales')}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+                >
+                  <FileText size={13} /> View in Sales
+                </button>
+              </>
+            )}
+
+            {lead.stage === 'Won' && (
+              <>
+                <div className="flex items-center gap-2 text-emerald-800">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>Stage: Won (Closed-Won).</strong> Customer accepted final quotation. Won on {lead.wonDate ? new Date(lead.wonDate).toLocaleDateString() : 'recent acceptance'} with agreed value of {formatINR(lead.finalAgreedAmount || lead.value || 0)}.
+                  </span>
+                </div>
+                {hasProject ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveModule('projects')}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+                  >
+                    <FolderKanban size={13} /> View Project ({linkedProject?.id || lead.projectId || 'Linked'})
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateProjectModal(true)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
+                  >
+                    <FolderKanban size={13} /> Create Delivery Project
+                  </button>
+                )}
+              </>
+            )}
+
+            {lead.stage === 'Lost' && (
+              <div className="flex items-center gap-2 text-rose-800">
+                <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                <span>
+                  <strong>Stage: Lost.</strong> Deal closed as unsuccessful. Reason: <strong>{lead.lostReason || 'Unspecified'}</strong>. {lead.lostNotes ? `Notes: "${lead.lostNotes}"` : ''}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

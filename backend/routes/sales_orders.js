@@ -3,6 +3,18 @@ import { crmPool as pool } from '../db/pool.js'; // CRM DB — Friend 1
 
 const router = express.Router();
 
+// Ensure expected_delivery_date, delivery_address, and customer_po_number columns exist
+const ensureSalesOrderColumns = async () => {
+  try {
+    await pool.query(`ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS expected_delivery_date DATE`);
+    await pool.query(`ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS delivery_address TEXT`);
+    await pool.query(`ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS customer_po_number TEXT`);
+  } catch (err) {
+    console.warn('⚠️ [CRM] Failed to add sales_orders columns:', err.message);
+  }
+};
+ensureSalesOrderColumns();
+
 // GET /api/sales-orders — Fetch all sales orders with item count and invoice linkage
 router.get('/', async (req, res) => {
   try {
@@ -92,6 +104,12 @@ router.post('/', async (req, res) => {
     opportunityId,
     contactId,
     date, 
+    expectedDeliveryDate,
+    expected_delivery_date,
+    deliveryAddress,
+    delivery_address,
+    customerPoNumber,
+    customer_po_number,
     totalAmount, 
     subtotal,
     taxAmount,
@@ -103,6 +121,18 @@ router.post('/', async (req, res) => {
     notes,
     items 
   } = req.body;
+
+  const orderDate = date || new Date().toISOString().split('T')[0];
+  const finalExpectedDelivery = (expectedDeliveryDate !== undefined ? expectedDeliveryDate : expected_delivery_date) || null;
+  const finalDeliveryAddress = (deliveryAddress !== undefined ? deliveryAddress : delivery_address) || null;
+  const finalPoNumber = (customerPoNumber !== undefined ? customerPoNumber : customer_po_number) || null;
+
+  if (finalExpectedDelivery && finalExpectedDelivery < orderDate) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Expected Delivery Date cannot be earlier than Order Date.' 
+    });
+  }
 
   const client = await pool.connect();
   try {
@@ -150,10 +180,11 @@ router.post('/', async (req, res) => {
     const soRes = await client.query(
       `INSERT INTO sales_orders (
         id, so_number, quotation_id, customer_id, customer_name, opportunity_id, 
-        contact_id, date, total_amount, subtotal, tax_amount, discount_amount, 
+        contact_id, date, expected_delivery_date, delivery_address, customer_po_number,
+        total_amount, subtotal, tax_amount, discount_amount, 
         fulfillment_status, status, payment_terms, delivery_notes, notes
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
       [
         soId, 
         soNum, 
@@ -162,7 +193,10 @@ router.post('/', async (req, res) => {
         customerName, 
         opportunityId || null,
         contactId || null,
-        date || new Date().toISOString().split('T')[0], 
+        orderDate, 
+        finalExpectedDelivery,
+        finalDeliveryAddress,
+        finalPoNumber,
         parseFloat(totalAmount) || 0, 
         parseFloat(subtotal) || 0,
         parseFloat(taxAmount) || 0,
@@ -220,12 +254,29 @@ router.post('/', async (req, res) => {
 // PATCH /api/sales-orders/:id — Update fulfillment status or order status
 router.patch('/:id', async (req, res) => {
   const { id } = req.params;
-  const { fulfillmentStatus, status, totalAmount, paymentTerms, deliveryNotes, notes } = req.body;
+  const { 
+    fulfillmentStatus, 
+    status, 
+    totalAmount, 
+    paymentTerms, 
+    deliveryNotes, 
+    notes,
+    expectedDeliveryDate,
+    expected_delivery_date,
+    deliveryAddress,
+    delivery_address,
+    customerPoNumber,
+    customer_po_number
+  } = req.body;
   try {
     const existingRes = await pool.query('SELECT * FROM sales_orders WHERE id = $1', [id]);
     if (existingRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Sales order not found' });
     }
+
+    const finalExpectedDelivery = expectedDeliveryDate !== undefined ? expectedDeliveryDate : expected_delivery_date;
+    const finalDeliveryAddress = deliveryAddress !== undefined ? deliveryAddress : delivery_address;
+    const finalPoNumber = customerPoNumber !== undefined ? customerPoNumber : customer_po_number;
 
     // If transitioning to Fulfilled, issue stock from inventory and log Sales Issue movement
     if (fulfillmentStatus === 'Fulfilled' && existingRes.rows[0].fulfillment_status !== 'Fulfilled') {
@@ -273,9 +324,12 @@ router.patch('/:id', async (req, res) => {
          payment_terms = COALESCE($5, payment_terms),
          delivery_notes = COALESCE($6, delivery_notes),
          notes = COALESCE($7, notes),
+         expected_delivery_date = COALESCE($8, expected_delivery_date),
+         delivery_address = COALESCE($9, delivery_address),
+         customer_po_number = COALESCE($10, customer_po_number),
          updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 RETURNING *`,
-      [id, fulfillmentStatus, status, totalAmount, paymentTerms, deliveryNotes, notes]
+      [id, fulfillmentStatus, status, totalAmount, paymentTerms, deliveryNotes, notes, finalExpectedDelivery, finalDeliveryAddress, finalPoNumber]
     );
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {

@@ -390,6 +390,12 @@ export interface SalesOrder {
   opportunityId?: string;
   contactId?: string;
   date: string;
+  expectedDeliveryDate?: string;
+  expected_delivery_date?: string;
+  deliveryAddress?: string;
+  delivery_address?: string;
+  customerPoNumber?: string;
+  customer_po_number?: string;
   totalAmount: number;
   total_amount?: number;
   subtotal?: number;
@@ -420,9 +426,33 @@ export interface InvoiceItem {
 
 export type InvoiceStatus = 'Draft' | 'Issued' | 'Paid' | 'Partially Paid' | 'Overdue' | 'Cancelled';
 
+export interface InvoicePaymentRecord {
+  id: string;
+  invoiceId: string;
+  paymentDate: string;
+  amount: number;
+  paymentMethod: string;
+  bankAccountId?: string;
+  referenceNumber?: string;
+  notes?: string;
+  createdAt?: string;
+}
+
+export interface InvoiceBankDetails {
+  bankName?: string;
+  accountName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  upiId?: string;
+  branchName?: string;
+  branch?: string;
+  accountType?: string;
+}
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
+  invoice_number?: string;
   salesOrderId?: string;
   salesOrderNumber?: string;
   quotationId?: string;
@@ -432,16 +462,48 @@ export interface Invoice {
   customerName: string;
   date: string;
   dueDate: string;
+  due_date?: string;
   amount: number;
   subtotal?: number;
   taxAmount?: number;
+  tax_amount?: number;
   discountAmount?: number;
+  discount_amount?: number;
   paidAmount: number;
+  paid_amount?: number;
+  outstandingBalance?: number;
+  outstanding_balance?: number;
   status: InvoiceStatus;
   paymentTerms?: string;
+  payment_terms?: string;
   notes?: string;
+  placeOfSupply?: string;
+  place_of_supply?: string;
+  placeOfSupplyCode?: string;
+  place_of_supply_code?: string;
+  billingAddress?: string;
+  billing_address?: string;
+  customerGstin?: string;
+  customer_gstin?: string;
+  sellerGstin?: string;
+  seller_gstin?: string;
+  taxType?: 'INTRA_STATE' | 'INTER_STATE';
+  tax_type?: 'INTRA_STATE' | 'INTER_STATE' | string;
+  cgstAmount?: number;
+  cgst_amount?: number;
+  sgstAmount?: number;
+  sgst_amount?: number;
+  igstAmount?: number;
+  igst_amount?: number;
+  bankAccountId?: string;
+  bank_account_id?: string;
+  bankDetails?: InvoiceBankDetails;
+  bank_details_json?: any;
+  paymentMethod?: string;
+  payment_method?: string;
   itemsCount?: number;
   items?: InvoiceItem[];
+  payments?: InvoicePaymentRecord[];
 }
 
 export type EmployeeLifecycleStatus = 'Joined' | 'Probation' | 'Confirmed' | 'Active' | 'Transferred' | 'Exited';
